@@ -6,3 +6,4 @@
 - Add validated application composition, dependency ordering and bounded lifecycle cleanup.
 - Add immutable configuration generations with protected dynamic reloads.
 - Audit committed reloads with a safe fallback for failed diagnostic sinks.
+- Preserve long operation deadlines without native timer overflow.
