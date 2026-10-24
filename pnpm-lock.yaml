@@ -200,6 +200,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
 
+  examples/observability:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/diagnostics':
+        specifier: workspace:*
+        version: link:../../packages/diagnostics
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+
   packages/config:
     dependencies:
       '@arkenivajs/core':

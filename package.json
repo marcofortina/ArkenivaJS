@@ -20,7 +20,7 @@
     "coverage": "node scripts/test.mjs all --coverage",
     "smoke": "node scripts/smoke.mjs",
     "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm coverage && pnpm test:docs && pnpm docs:build && pnpm smoke",
-    "test:docs": "pnpm --filter @arkenivajs/example-configuration test",
+    "test:docs": "pnpm --filter './examples/*' test",
     "docs:build": "typedoc --options typedoc.json && node scripts/check-docs.mjs"
   },
   "devDependencies": {
