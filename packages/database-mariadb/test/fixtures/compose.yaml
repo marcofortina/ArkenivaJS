@@ -1,0 +1,50 @@
+# prepare.py writes private material outside the checkout; no fixture credentials belong here.
+name: arkenivajs-mariadb-test
+x-mariadb: &mariadb
+  image: mariadb:12.3.3-noble@sha256:99c125f103f5d081ebbc9ffe064e63daf7f688ac33a5f7f29af2d7260a96debf
+  user: '999:999'
+  environment:
+    MARIADB_ROOT_PASSWORD_FILE: /fixture/admin-password
+    MARIADB_DATABASE: arkeniva_test
+  command:
+    - --ssl-ca=/fixture/ca.crt
+    - --ssl-cert=/fixture/server.crt
+    - --ssl-key=/fixture/server.key
+    - --require-secure-transport=ON
+    - --skip-name-resolve
+    - --local-infile=OFF
+  healthcheck:
+    # The official probe rejects the temporary skip-networking initialization server.
+    test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+    interval: 2s
+    timeout: 2s
+    retries: 60
+    start_period: 15s
+  mem_limit: 768m
+  cpus: 1
+  pids_limit: 128
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+services:
+  mariadb:
+    <<: *mariadb
+    ports:
+      - '${MARIADB_FIXTURE_BIND_ADDRESS:-127.0.0.1}:13307:3306'
+    volumes:
+      - '${MARIADB_FIXTURE_DIRECTORY:?Prepare private MariaDB fixtures}/data-server:/var/lib/mysql'
+      - '${MARIADB_FIXTURE_DIRECTORY}/server.crt:/fixture/server.crt:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/server.key:/fixture/server.key:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/server-ca.crt:/fixture/ca.crt:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'
+  wrong-san:
+    <<: *mariadb
+    ports:
+      - '${MARIADB_FIXTURE_BIND_ADDRESS:-127.0.0.1}:13309:3306'
+    volumes:
+      - '${MARIADB_FIXTURE_DIRECTORY:?Prepare private MariaDB fixtures}/data-wrong-san:/var/lib/mysql'
+      - '${MARIADB_FIXTURE_DIRECTORY}/wrong-san.crt:/fixture/server.crt:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/wrong-san.key:/fixture/server.key:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/server-ca.crt:/fixture/ca.crt:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
+      - '${MARIADB_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'
