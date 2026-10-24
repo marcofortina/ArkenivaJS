@@ -317,3 +317,35 @@ test('EK-LOG-001 dates retain ISO semantics and hostile object hooks get a safe 
   assert.ok(!lines.join('').includes('fake-'));
   await logger.close();
 });
+
+test('EK-LOG-001 contextual and nested child records emit each protected binding exactly once', async () => {
+  const { lines, destination } = capture();
+  const logger = createLogger({ service, destination });
+  try {
+    logger.info('root');
+    const child = logger
+      .child({ component: 'storage', traceId: 'owned-trace' })
+      .child({ component: 'query' });
+    child.run({ requestId: 'owned-request' }, () =>
+      child.info('nested', { service: 'forged', traceId: 'forged' }),
+    );
+    child.setLevel('silent');
+    child.info('hidden');
+    logger.info('root remains enabled');
+    await logger.flush();
+    assert.equal(lines.length, 3);
+    for (const line of lines) {
+      for (const key of ['service', 'serviceVersion', 'environment', 'level', 'time', 'msg'])
+        assert.equal(line.match(new RegExp('"' + key + '":', 'g'))?.length, 1);
+    }
+    const record = JSON.parse(lines[1]!) as Record<string, unknown>;
+    assert.equal(record.service, service.name);
+    assert.equal(record.traceId, 'owned-trace');
+    assert.equal(record.requestId, 'owned-request');
+    assert.equal(record.component, 'query');
+    assert.equal(lines[1]!.match(/"traceId":/g)?.length, 1);
+  } finally {
+    await logger.close();
+    destination.destroy();
+  }
+});

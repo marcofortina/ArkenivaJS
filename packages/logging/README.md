@@ -25,3 +25,5 @@ await log.close();
 ```
 
 The JSON line includes the service, request id, timestamp and info severity; the password field contains `[REDACTED]`. `pnpm smoke` exercises the same flow against a captured writable stream and checks the actual JSON output.
+
+Base service metadata and scoped child/context fields appear once per JSON object. Native child loggers retain independent level controls while wrapper-owned bindings preserve protected context without duplicating Pino's base bindings.
