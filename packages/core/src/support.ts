@@ -1,5 +1,5 @@
 import { Ajv } from 'ajv';
-import type { AnySchema, ValidateFunction } from 'ajv';
+import type { AnySchema } from 'ajv';
 import { isDeepStrictEqual } from 'node:util';
 import { KitError } from './errors.js';
 import type { ConfigService, OperationOptions } from './contracts.js';
@@ -94,7 +94,7 @@ export function redactData<T>(input: T, paths: readonly string[] = [], prefix = 
 }
 
 /** Compile strict JSON Schema once; coercion and silent defaults are disabled. */
-export function compileSchema(schema: object): ValidateFunction {
+export function compileSchema(schema: object): (input: unknown) => boolean {
   try {
     return new Ajv({ allErrors: true, strict: true, ownProperties: true }).compile(
       schema as AnySchema,
@@ -121,7 +121,7 @@ export interface StoreOptions<T extends Record<string, unknown>> {
 export class ConfigStore<T extends Record<string, unknown>> implements ConfigService<T> {
   private current: T;
   private view: Readonly<T>;
-  private readonly validate: ValidateFunction;
+  private readonly validate: (input: unknown) => boolean;
   private readonly options: StoreOptions<T>;
   private pending: Promise<unknown> = Promise.resolve();
 

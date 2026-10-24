@@ -1,0 +1,18 @@
+{
+  "entryPoints": ["src/index.ts", "src/support.ts"],
+  "tsconfig": "tsconfig.json",
+  "intentionallyNotExported": [
+    "ApiServer",
+    "OutboundHttpClient",
+    "AuthService",
+    "CacheProvider",
+    "MessageBus",
+    "SqlProvider",
+    "RedisProvider",
+    "EtcdProvider",
+    "DocumentProvider",
+    "Telemetry",
+    "UsageMeter",
+    "HealthRegistry"
+  ]
+}
