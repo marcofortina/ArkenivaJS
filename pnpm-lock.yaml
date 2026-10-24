@@ -230,6 +230,24 @@ importers:
         specifier: workspace:*
         version: link:../../packages/logging
 
+  examples/oidc-tenants:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+
   packages/api:
     dependencies:
       '@arkenivajs/core':
