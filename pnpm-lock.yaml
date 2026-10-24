@@ -242,6 +242,27 @@ importers:
         specifier: 10.4.0
         version: 10.4.0
 
+  tools/benchmark:
+    devDependencies:
+      '@arkenivajs/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/diagnostics':
+        specifier: workspace:*
+        version: link:../../packages/diagnostics
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      pino:
+        specifier: 10.4.0
+        version: 10.4.0
+      tinybench:
+        specifier: 6.2.2
+        version: 6.2.2
+
 packages:
 
   '@cacheable/memory@2.2.0':
@@ -736,6 +757,10 @@ packages:
   thread-stream@4.2.0:
     resolution: {integrity: sha512-e2zZ96wSChazBsbENf/Pcm/4swHt2cEKQ92rhUjkL9GCKiTDJIaTBenjE/m9DXi0QBmTMDkFDdOomUy20A1tDQ==}
     engines: {node: '>=20'}
+
+  tinybench@6.2.2:
+    resolution: {integrity: sha512-nIZ2N2dFpjBsg2hgitKu7mA+FvsIJuGJOwysRngmVRRmWgR/UyPjwJj8c/fT/dhm8EkHnF5EOogRf+0Z2qrimA==}
+    engines: {node: '>=20.0.0'}
 
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
@@ -1313,6 +1338,8 @@ snapshots:
   thread-stream@4.2.0:
     dependencies:
       real-require: 1.0.0
+
+  tinybench@6.2.2: {}
 
   tinyglobby@0.2.17:
     dependencies:

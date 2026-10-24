@@ -1,0 +1,17 @@
+{
+  "name": "@arkenivajs/benchmark-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node foundation.mjs"
+  },
+  "devDependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/config": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/diagnostics": "workspace:*",
+    "pino": "10.4.0",
+    "tinybench": "6.2.2"
+  }
+}
