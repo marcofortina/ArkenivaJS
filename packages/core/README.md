@@ -40,3 +40,5 @@ The optional `ACTIVATE_PLUGIN` hook runs after every ordinary `init` hook; inbou
 `SEMVER_PATTERN` from the support entry point shares strict service/plugin version validation with adapters.
 
 Optional `DRAIN_PLUGIN` hooks stop inbound work before any downstream resource closes. They share the shutdown deadline; a failed drain is collected while reverse-order `close` still runs for every initialized plugin. Listener adapters use this phase to finish requests while database/client dependencies remain available.
+
+Adapter authors can use `instrumentOperation(telemetry,name,attributes,work,onFailure)` from the support entry point. It invokes business work at most once, preserves its original value/exception even when a diagnostic provider fails, and reports instrumentation failures through a protected synchronous callback. It does not retry business operations. Providers must still honor their own bounded lifecycle; use the application operation signal for cancellable business work.
