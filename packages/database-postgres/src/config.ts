@@ -1,6 +1,6 @@
 import { checkServerIdentity } from 'node:tls';
 import { isIP } from 'node:net';
-import { KitError } from '@arkenivajs/core';
+import { KitError, DEFAULT_POOL_ACQUIRE_TIMEOUT_MS } from '@arkenivajs/core';
 import type { DatabaseDefinition, Environment } from '@arkenivajs/core';
 import { parse, toClientConfig } from 'pg-connection-string';
 import type { PoolConfig } from 'pg';
@@ -97,7 +97,7 @@ export function postgresConfiguration(
       ssl,
       min,
       max,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: DEFAULT_POOL_ACQUIRE_TIMEOUT_MS,
       idleTimeoutMillis: 10_000,
       application_name: config.application_name ?? `${service}:${name}`.slice(0, 63),
       client_encoding: 'UTF8',

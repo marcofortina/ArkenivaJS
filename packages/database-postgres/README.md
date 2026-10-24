@@ -51,6 +51,8 @@ certificate verification reject. Use `sslmode=verify-full` and, for a private CA
 `sslrootcert` in the environment URL. Native certificate/key file options remain
 explicit environment configuration. Never log that URL or the native pool config.
 
+The default SQL deadline is **15,000 ms**, including acquisition, matching
+`DEFAULT_SQL_TIMEOUT_MS`. An explicit positive `timeoutMs` overrides it.
 Native connection/acquisition timeout is bounded to five seconds. An operation's
 `timeoutMs` can impose an earlier total deadline, including pool wait. The portable
 adapter owns the client deadline and disables `pg`'s separate `query_timeout`;

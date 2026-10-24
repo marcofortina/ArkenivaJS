@@ -2,13 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as pause } from 'node:timers/promises';
 import { getEventListeners } from 'node:events';
-import { KitError } from '@arkenivajs/core';
+import { KitError, DEFAULT_SQL_TIMEOUT_MS } from '@arkenivajs/core';
 import { SqlDeadline } from '../../dist/deadline.js';
 
 const code =
   (expected: string) =>
   (error: unknown): boolean =>
     error instanceof KitError && error.code === expected;
+
+test('EK-DB-001 an omitted SQL deadline schedules the documented fifteen-second default', (context) => {
+  const scheduled = context.mock.method(globalThis, 'setTimeout');
+  const deadline = new SqlDeadline();
+  try {
+    assert.equal(scheduled.mock.calls.length, 1);
+    const delay = scheduled.mock.calls[0]!.arguments[1];
+    assert.ok(
+      typeof delay === 'number' &&
+        delay > DEFAULT_SQL_TIMEOUT_MS - 1000 &&
+        delay <= DEFAULT_SQL_TIMEOUT_MS,
+    );
+  } finally {
+    deadline.close();
+  }
+});
 
 test('EK-CORE-001 SQL deadlines preserve values and errors while closing listener bookkeeping', async () => {
   const controller = new AbortController();
