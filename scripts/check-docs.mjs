@@ -11,7 +11,13 @@ function markdown(directory) {
     return entry.isDirectory() ? markdown(path) : path.endsWith('.md') ? [path] : [];
   });
 }
-const files = ['README.md', ...markdown('docs'), ...markdown('packages'), ...markdown('examples')];
+const files = [
+  'README.md',
+  ...markdown('docs'),
+  ...markdown('packages'),
+  ...markdown('examples'),
+  ...markdown('tools'),
+];
 if (existsSync('CONTRIBUTING.md')) files.push('CONTRIBUTING.md');
 for (const file of files) {
   const source = readFileSync(file, 'utf8');
