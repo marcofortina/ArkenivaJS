@@ -1,0 +1,17 @@
+# Installed dependencies.
+node_modules/
+
+# Compiler outputs and local quality reports.
+dist/
+dist-test/
+.build/
+coverage/
+artifacts/
+*.tsbuildinfo
+
+# Local secrets, profiles and review patches.
+.env
+.env.local
+*.patch
+*.cpuprofile
+*.heapprofile
