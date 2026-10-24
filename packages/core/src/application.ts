@@ -11,7 +11,7 @@ import type {
 import { KitError } from './errors.js';
 import { ConfigStore, copyData, freezeData, within } from './support.js';
 import { APPLICATION_SCHEMA, SEMVER_PATTERN } from './application-schema.js';
-import { PREPARE_PLUGIN, ACTIVATE_PLUGIN } from './composition.js';
+import { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN } from './composition.js';
 import type { ComposablePlugin } from './composition.js';
 
 /** EK-CORE-002: explicit capability keys; no optional adapters load implicitly. */
@@ -76,6 +76,8 @@ function ordered(plugins: readonly Plugin[]): ComposablePlugin[] {
         typeof composition[PREPARE_PLUGIN] !== 'function') ||
       (composition[ACTIVATE_PLUGIN] !== undefined &&
         typeof composition[ACTIVATE_PLUGIN] !== 'function') ||
+      (composition[DRAIN_PLUGIN] !== undefined &&
+        typeof composition[DRAIN_PLUGIN] !== 'function') ||
       !plugin.capabilities ||
       typeof plugin.capabilities.has !== 'function' ||
       typeof plugin.capabilities[Symbol.iterator] !== 'function' ||
@@ -99,6 +101,9 @@ function ordered(plugins: readonly Plugin[]): ComposablePlugin[] {
           : {}),
         ...(composition[ACTIVATE_PLUGIN]
           ? { [ACTIVATE_PLUGIN]: composition[ACTIVATE_PLUGIN].bind(plugin) }
+          : {}),
+        ...(composition[DRAIN_PLUGIN]
+          ? { [DRAIN_PLUGIN]: composition[DRAIN_PLUGIN].bind(plugin) }
           : {}),
         dependencies: Object.freeze([...(plugin.dependencies ?? [])]),
         capabilities: readonlyCapabilities(plugin.capabilities),
@@ -413,7 +418,28 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
           }
           // Startup rollback can change the state while the awaited promise settles.
           if ((state as LifecycleState) !== 'CLOSED') state = 'DRAINING';
-          const errors = [...startupCleanupErrors, ...(await cleanup(deadline))];
+          const errors = [...startupCleanupErrors];
+          // Drain listeners while their downstream services are still available.
+          for (const { plugin, context } of [...started].reverse()) {
+            const drain = plugin[DRAIN_PLUGIN];
+            if (!drain) continue;
+            try {
+              const remaining = Math.ceil(deadline - performance.now());
+              const draining = Promise.resolve().then(() => drain(context));
+              if (remaining <= 0) {
+                void draining.catch(() => undefined);
+                errors.push(
+                  new KitError({
+                    code: 'EK_TIMEOUT',
+                    message: 'Shutdown deadline exhausted during drain',
+                  }),
+                );
+              } else await within(() => draining, { timeoutMs: remaining });
+            } catch (error) {
+              errors.push(error);
+            }
+          }
+          errors.push(...(await cleanup(deadline)));
           if (startupTimeout) errors.push(startupTimeout);
           values.clear();
           state = 'CLOSED';

@@ -4,6 +4,8 @@ import type { ApplicationOptions, LifecycleState, Plugin, PluginContext } from '
 export const PREPARE_PLUGIN = Symbol('arkenivajs.prepare');
 /** Final activation runs after every init hook; inbound listeners activate last. */
 export const ACTIVATE_PLUGIN = Symbol('arkenivajs.activate');
+/** Stop inbound work before dependencies enter reverse-order resource cleanup. */
+export const DRAIN_PLUGIN = Symbol('arkenivajs.drain');
 /** Read-only composition context exposes no foreign service registry. */
 export interface PreparationContext {
   readonly options: ApplicationOptions;
@@ -13,4 +15,5 @@ export interface PreparationContext {
 export interface ComposablePlugin extends Plugin {
   [PREPARE_PLUGIN]?(context: PreparationContext): ReadonlyMap<symbol, unknown>;
   [ACTIVATE_PLUGIN]?(context: PluginContext): Promise<void> | void;
+  [DRAIN_PLUGIN]?(context: PluginContext): Promise<void> | void;
 }

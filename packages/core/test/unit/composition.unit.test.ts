@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApplication, COMPONENTS, KitError, APPLICATION_SIGNAL } from '@arkenivajs/core';
-import { PREPARE_PLUGIN, ACTIVATE_PLUGIN } from '@arkenivajs/core/support';
+import { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN } from '@arkenivajs/core/support';
 import type { ComposablePlugin } from '@arkenivajs/core/support';
 
 const service = { name: 'composition-test', version: '1.0.0', environment: 'test' as const };
@@ -138,6 +138,7 @@ test('EK-CORE-002 malformed composition hooks and undeclared prepared components
   for (const plugin of [
     { ...base, [PREPARE_PLUGIN]: 1 },
     { ...base, [ACTIVATE_PLUGIN]: 1 },
+    { ...base, [DRAIN_PLUGIN]: 1 },
     { ...base, [PREPARE_PLUGIN]: () => null },
     { ...base, [PREPARE_PLUGIN]: () => new Map([[COMPONENTS.logger, {}]]) },
     { ...base, [PREPARE_PLUGIN]: () => new Map([[COMPONENTS.api, null]]) },
@@ -158,4 +159,38 @@ test('EK-CORE-002 malformed composition hooks and undeclared prepared components
     createApplication({ service, plugins: [repeated] }),
     code('EK_PLUGIN_DUPLICATE'),
   );
+});
+
+test('EK-CORE-001 inbound drain precedes reverse cleanup and failures do not skip close', async () => {
+  for (const fail of [false, true]) {
+    const events: string[] = [];
+    const listener: ComposablePlugin = {
+      id: 'listener',
+      version: '1.0.0',
+      capabilities: new Set(),
+      init() {},
+      [DRAIN_PLUGIN]() {
+        events.push('drain');
+        if (fail) throw new Error('drain failed');
+      },
+      close() {
+        events.push('listener.close');
+      },
+    };
+    const resource: ComposablePlugin = {
+      id: 'resource',
+      version: '1.0.0',
+      capabilities: new Set(),
+      init() {},
+      close() {
+        events.push('resource.close');
+      },
+    };
+    const app = await createApplication({ service, plugins: [listener, resource] });
+    await app.start();
+    if (fail) await assert.rejects(app.stop(), code('EK_PLUGIN_FAILED'));
+    else await app.stop();
+    assert.deepEqual(events, ['drain', 'resource.close', 'listener.close']);
+    assert.equal(app.state, 'CLOSED');
+  }
 });

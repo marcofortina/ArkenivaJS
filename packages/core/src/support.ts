@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { KitError } from './errors.js';
 import type { ConfigService, OperationOptions } from './contracts.js';
-export { PREPARE_PLUGIN, ACTIVATE_PLUGIN } from './composition.js';
+export { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN } from './composition.js';
 export type { ComposablePlugin, PreparationContext } from './composition.js';
 
 /** EK-CONF-001: reject objects whose accessors or prototypes could execute code. */
