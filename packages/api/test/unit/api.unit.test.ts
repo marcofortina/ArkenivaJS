@@ -114,6 +114,18 @@ test('EK-HTTP-001 typed failures use stable HTTP mappings and never disclose nat
     ['EK_AUTH_INVALID', 401],
     ['EK_AUTH_FORBIDDEN', 403],
     ['EK_TENANT_UNVERIFIED', 403],
+    ['EK_MFA_POLICY', 500],
+    ['EK_MFA_ASSURANCE_REQUIRED', 403],
+    ['EK_MFA_INVALID', 401],
+    ['EK_MFA_EXPIRED', 410],
+    ['EK_MFA_REPLAY', 409],
+    ['EK_MFA_RATE_LIMIT', 429],
+    ['EK_MFA_STORAGE', 503],
+    ['EK_MFA_ALREADY_ENROLLED', 409],
+    ['EK_MFA_ENROLLMENT_EXPIRED', 410],
+    ['EK_MFA_CHALLENGE_EXPIRED', 410],
+    ['EK_MFA_CREDENTIAL_CONFLICT', 409],
+    ['EK_MFA_COUNTER_REGRESSION', 409],
     ['EK_HTTP_NOT_FOUND', 404],
     ['EK_HTTP_RATE_LIMIT', 429],
     ['EK_TIMEOUT', 408],
@@ -239,6 +251,9 @@ test('EK-HTTP-001 protected routes reject absent providers; public routes never 
     requireScope(_identity, scope) {
       assert.equal(scope, 'read');
       scopes++;
+    },
+    requireAssurance() {
+      throw new KitError({ code: 'EK_MFA_ASSURANCE_REQUIRED', message: 'No assurance policy' });
     },
     tenantFrom(identity) {
       return {
@@ -587,5 +602,80 @@ test('EK-HTTP-001 application drain keeps downstream clients available to active
     await app.stop();
     backend.closeAllConnections();
     await new Promise<void>((resolve) => backend.close(() => resolve()));
+  }
+});
+
+test('MFA-AUTH-001 assurance routes reject missing or failing provider policy before binding a listener', async () => {
+  for (const policy of [
+    undefined,
+    () => false,
+    () => {
+      throw new Error('fake-policy-failure');
+    },
+  ]) {
+    const api = createApi({
+      service,
+      port: 0,
+      ...(policy ? { auth: { hasAssurancePolicy: policy } as never } : {}),
+    });
+    api.get('/protected', {
+      ...publicRoute(() => ({ value: 'unreachable' })),
+      auth: { required: true, assurance: 'mfa' },
+    });
+    try {
+      await assert.rejects(api.start(), code('EK_MFA_POLICY'));
+      assert.equal(api.address(), undefined);
+    } finally {
+      await api.close();
+    }
+  }
+  const api = createApi({ service, port: 0 });
+  try {
+    for (const auth of [
+      { required: false, assurance: 'mfa' },
+      { required: true, assurance: 'unknown' },
+    ])
+      assert.throws(
+        () => api.get('/invalid', { ...publicRoute(() => ({})), auth: auth as never }),
+        code('EK_MFA_POLICY'),
+      );
+    assert.throws(
+      () =>
+        api.get('/typo', {
+          ...publicRoute(() => ({})),
+          auth: { required: true, assuranc: 'mfa' } as never,
+        }),
+      code('EK_CONFIG_INVALID'),
+    );
+  } finally {
+    await api.close();
+  }
+});
+
+test('MFA-AUTH-001 rate-limit responses expose only bounded integer Retry-After metadata', async () => {
+  const api = createApi({ service, port: 0 });
+  const values = [1001, 0, -1, 1.5, 86_400_001, 'fake-secret'];
+  values.forEach((value, index) =>
+    api.get(
+      '/rate/' + index,
+      publicRoute(() => {
+        throw new KitError({
+          code: 'EK_MFA_RATE_LIMIT',
+          message: 'fake-private-policy',
+          details: { retryAfterMs: value },
+        });
+      }),
+    ),
+  );
+  try {
+    await api.start();
+    for (const [index] of values.entries()) {
+      const reply = await api.native().inject('/rate/' + index);
+      assert.equal(reply.statusCode, 429);
+      assert.equal(reply.headers['retry-after'], index === 0 ? '2' : undefined);
+      assert.ok(!reply.body.includes('fake-'));
+    }
+  } finally {
+    await api.close();
   }
 });

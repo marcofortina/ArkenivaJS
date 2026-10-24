@@ -3,7 +3,13 @@ export type { ErrorCode, KitErrorOptions } from './contracts.js';
 export type { ConfigService, OperationOptions } from './contracts.js';
 export type { Telemetry, MeasureOptions } from './ports.js';
 export type { OutboundHttpClient } from './ports.js';
-export type { AuthService, Identity, TenantId, VerifiedTenantContext } from './ports.js';
+export type {
+  AuthService,
+  Identity,
+  TenantId,
+  VerifiedTenantContext,
+  MfaAssurance,
+} from './ports.js';
 export type {
   ApiServer,
   RouteContext,

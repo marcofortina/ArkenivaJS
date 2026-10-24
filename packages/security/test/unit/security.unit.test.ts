@@ -7,7 +7,7 @@ import { KitError, createApplication, COMPONENTS } from '@arkenivajs/core';
 import type { Plugin, Logger } from '@arkenivajs/core';
 import { createAuthService, securityPlugin } from '@arkenivajs/security';
 import type { AuthOptions, AuthObservation } from '@arkenivajs/security';
-import { createApi } from '@arkenivajs/api';
+import { createApi, apiPlugin } from '@arkenivajs/api';
 
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
@@ -563,6 +563,213 @@ test('EK-AUTH-001 plugin setup failures close the verifier and observations rema
       await app.stop();
     }
   } finally {
+    await source.close();
+  }
+});
+
+test('MFA-AUTH-001 only explicit issuer mapping and current freshness grant assurance to provider-owned identities', async () => {
+  const source = await issuer();
+  let evaluations = 0;
+  let now = Math.floor(Date.now() / 1000);
+  const auth = await createAuthService({
+    ...source.options,
+    assuranceResolver(identity) {
+      evaluations++;
+      assert.equal(identity.issuer, source.origin);
+      assert.ok(Object.isFrozen(identity));
+      const { acr, amr, auth_time: authenticatedAt } = identity.claims;
+      if (
+        typeof authenticatedAt !== 'number' ||
+        now - authenticatedAt > 60 ||
+        authenticatedAt > now
+      )
+        return 'single-factor';
+      if (acr === 'urn:example:webauthn' && Array.isArray(amr) && amr.includes('fido2'))
+        return 'phishing-resistant';
+      if (acr === 'urn:example:mfa' && Array.isArray(amr) && amr.includes('otp')) return 'mfa';
+      return 'single-factor';
+    },
+  });
+  const foreign = await createAuthService({
+    ...source.options,
+    assuranceResolver: () => 'phishing-resistant',
+  });
+  try {
+    assert.equal(auth.hasAssurancePolicy(), true);
+    await assert.rejects(
+      auth.verifyBearer(await source.bearer({ aud: 'wrong-audience' })),
+      code('EK_AUTH_INVALID'),
+    );
+    assert.equal(evaluations, 0);
+    const single = await auth.verifyBearer(
+      await source.bearer({ mfa: true, amr: ['mfa'], auth_time: now }),
+    );
+    assert.equal(single.assurance, 'single-factor');
+    auth.requireAssurance(single, 'single-factor');
+    assert.throws(() => auth.requireAssurance(single, 'mfa'), code('EK_MFA_ASSURANCE_REQUIRED'));
+    const mfa = await auth.verifyBearer(
+      await source.bearer({ acr: 'urn:example:mfa', amr: ['otp'], auth_time: now }),
+    );
+    assert.equal(mfa.assurance, 'mfa');
+    auth.requireAssurance(mfa, 'mfa');
+    assert.throws(
+      () => auth.requireAssurance(mfa, 'phishing-resistant'),
+      code('EK_MFA_ASSURANCE_REQUIRED'),
+    );
+    const high = await auth.verifyBearer(
+      await source.bearer({ acr: 'urn:example:webauthn', amr: ['fido2'], auth_time: now }),
+    );
+    auth.requireAssurance(high, 'phishing-resistant');
+    const stale = await auth.verifyBearer(
+      await source.bearer({ acr: 'urn:example:webauthn', amr: ['fido2'], auth_time: now - 61 }),
+    );
+    assert.equal(stale.assurance, 'single-factor');
+    const other = await foreign.verifyBearer(await source.bearer());
+    const prior = evaluations;
+    for (const forged of [null, { ...high }, { ...single, assurance: 'phishing-resistant' }, other])
+      assert.throws(
+        () => auth.requireAssurance(forged as never, 'mfa'),
+        code('EK_MFA_ASSURANCE_REQUIRED'),
+      );
+    assert.equal(evaluations, prior);
+    assert.throws(() => auth.requireAssurance(high, 'invalid' as never), code('EK_MFA_POLICY'));
+    now += 61;
+    assert.throws(() => auth.requireAssurance(high, 'mfa'), code('EK_MFA_ASSURANCE_REQUIRED'));
+    await auth.close();
+    assert.equal(auth.hasAssurancePolicy(), false);
+    assert.throws(() => auth.requireAssurance(high, 'mfa'), code('EK_RESOURCE_CLOSED'));
+  } finally {
+    await auth.close();
+    await foreign.close();
+    await source.close();
+  }
+});
+
+test('MFA-AUTH-001 missing, invalid and failing assurance resolvers cannot fabricate elevated proof', async () => {
+  const source = await issuer();
+  const absent = await createAuthService(source.options);
+  try {
+    const identity = await absent.verifyBearer(
+      await source.bearer({ assurance: 'mfa', mfa: true }),
+    );
+    assert.equal(identity.assurance, undefined);
+    assert.equal(absent.hasAssurancePolicy(), false);
+    assert.throws(
+      () => absent.requireAssurance(identity, 'mfa'),
+      code('EK_MFA_ASSURANCE_REQUIRED'),
+    );
+    await assert.rejects(
+      createAuthService({ ...source.options, assuranceResolver: 'mfa' as never }),
+      code('EK_MFA_POLICY'),
+    );
+    for (const resolve of [
+      () => 'unknown',
+      () => {
+        throw new Error('fake-policy-secret');
+      },
+      async () => {
+        throw new Error('fake-async-secret');
+      },
+    ]) {
+      const auth = await createAuthService({
+        ...source.options,
+        assuranceResolver: resolve as never,
+      });
+      try {
+        await assert.rejects(auth.verifyBearer(await source.bearer()), (error) => {
+          assert.ok(code('EK_MFA_POLICY')(error));
+          assert.ok(!JSON.stringify(error).includes('fake-'));
+          return true;
+        });
+        assert.equal(auth.stats().verified, 0);
+      } finally {
+        await auth.close();
+      }
+    }
+  } finally {
+    await absent.close();
+    await source.close();
+  }
+});
+
+test('MFA-AUTH-001 REST rejects insufficient assurance before tenant resolution, middleware and handler execution', async () => {
+  const source = await issuer();
+  const auth = await createAuthService({
+    ...source.options,
+    assuranceResolver: (identity) =>
+      identity.claims.acr === 'urn:example:trusted-mfa' ? 'mfa' : 'single-factor',
+  });
+  const api = createApi({
+    service: { name: 'assurance-rest', version: '1.0.0', environment: 'test' },
+    port: 0,
+    auth,
+  });
+  let calls = 0;
+  api.registerMiddleware('postAuthentication', async (_ctx, next) => {
+    calls++;
+    await next();
+  });
+  api.get('/sensitive', {
+    schema: {
+      response: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'] },
+    },
+    auth: { required: true, scopes: ['orders:read'], assurance: 'mfa' },
+    handler: () => {
+      calls++;
+      return { value: 'ok' };
+    },
+  });
+  try {
+    await api.start();
+    assert.equal((await api.native().inject('/sensitive')).statusCode, 401);
+    const denied = await api.native().inject({
+      url: '/sensitive',
+      headers: {
+        authorization: await source.bearer({ mfa: true, tenant_id: null }),
+        'x-mfa': 'true',
+        baggage: 'assurance=mfa',
+      },
+    });
+    assert.equal(denied.statusCode, 403);
+    assert.equal(denied.json().error.code, 'EK_MFA_ASSURANCE_REQUIRED');
+    assert.equal(calls, 0);
+    const accepted = await api.native().inject({
+      url: '/sensitive',
+      headers: { authorization: await source.bearer({ acr: 'urn:example:trusted-mfa' }) },
+    });
+    assert.equal(accepted.statusCode, 200);
+    assert.equal(calls, 2);
+    assert.ok(JSON.stringify(api.openApiDocument()).includes('x-arkenivajs-assurance'));
+  } finally {
+    await api.close();
+    await auth.close();
+    await source.close();
+  }
+});
+
+test('MFA-AUTH-001 application startup retains the policy failure code and rolls back before listener binding', async () => {
+  const source = await issuer();
+  const app = await createApplication({
+    service: { name: 'assurance-application', version: '1.0.0', environment: 'test' },
+    security: { issuer: source.origin, audience },
+    plugins: [
+      logging,
+      securityPlugin({ allowInsecureLoopback: true, jwksCooldownMs: 0 }),
+      apiPlugin({ dependencies: ['security'] }),
+    ],
+  });
+  app.api!.get('/sensitive', {
+    schema: { response: { type: 'object' } },
+    auth: { required: true, assurance: 'mfa' },
+    handler: () => {
+      throw new Error('Assurance-protected handler must remain unreachable');
+    },
+  });
+  try {
+    await assert.rejects(app.start(), code('EK_MFA_POLICY'));
+    assert.equal(app.state, 'CLOSED');
+  } finally {
+    await app.stop();
     await source.close();
   }
 });

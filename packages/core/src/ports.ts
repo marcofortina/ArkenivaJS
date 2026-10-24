@@ -5,6 +5,9 @@ import type { OperationOptions, Environment } from './contracts.js';
 /** Compile-time tenant brand; runtime verification must come from the authentication provider. */
 export type TenantId = string & { readonly __brand: 'VerifiedTenantId' };
 
+/** Minimum issuer-bound authentication assurance; this does not assert a regulatory AAL. */
+export type MfaAssurance = 'single-factor' | 'mfa' | 'phishing-resistant';
+
 /** Immutable issuer/audience-verified identity; claims may contain sensitive application data. */
 export interface Identity {
   readonly subject: string;
@@ -12,6 +15,7 @@ export interface Identity {
   readonly audience: readonly string[];
   readonly scopes: readonly string[];
   readonly claims: Readonly<Record<string, unknown>>;
+  readonly assurance?: MfaAssurance;
 }
 
 /** Authorized single-tenant context. Serialization and object cloning do not preserve provenance. */
@@ -37,6 +41,8 @@ export interface AuthService {
   ): Promise<Identity>;
   /** Require exact scope membership on a current verified identity; otherwise EK_AUTH_FORBIDDEN. */
   requireScope(identity: Identity, scope: string): void;
+  /** Require a current issuer-bound policy decision; insufficient proof uses EK_MFA_ASSURANCE_REQUIRED. */
+  requireAssurance(identity: Identity, requirement: MfaAssurance): void;
   /** Derive one authorized tenant from verified claims; ambiguous/foreign values use EK_TENANT_UNVERIFIED. */
   tenantFrom(identity: Identity): VerifiedTenantContext;
 }
@@ -62,7 +68,7 @@ export type RouteHandler<P, Q, B, R> = (ctx: RouteContext<P, Q, B>) => Promise<R
 /** RouteDefinition shape used by the application facade. */
 export interface RouteDefinition<P, Q, B, R> {
   schema: { params?: object; query?: object; body?: object; response: object };
-  auth: { required: boolean; scopes?: readonly string[] };
+  auth: { required: boolean; scopes?: readonly string[]; assurance?: MfaAssurance };
   handler: RouteHandler<P, Q, B, R>;
 }
 

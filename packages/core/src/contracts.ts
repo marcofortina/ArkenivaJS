@@ -11,6 +11,8 @@ import type {
   Telemetry,
   UsageMeter,
   HealthRegistry,
+  Identity,
+  MfaAssurance,
 } from './ports.js';
 
 /** Stable framework error codes for typed public failures. */
@@ -44,6 +46,18 @@ export type ErrorCode =
   | 'EK_AUTH_INVALID'
   | 'EK_AUTH_FORBIDDEN'
   | 'EK_TENANT_UNVERIFIED'
+  | 'EK_MFA_POLICY'
+  | 'EK_MFA_ASSURANCE_REQUIRED'
+  | 'EK_MFA_INVALID'
+  | 'EK_MFA_EXPIRED'
+  | 'EK_MFA_REPLAY'
+  | 'EK_MFA_RATE_LIMIT'
+  | 'EK_MFA_STORAGE'
+  | 'EK_MFA_ALREADY_ENROLLED'
+  | 'EK_MFA_ENROLLMENT_EXPIRED'
+  | 'EK_MFA_CHALLENGE_EXPIRED'
+  | 'EK_MFA_CREDENTIAL_CONFLICT'
+  | 'EK_MFA_COUNTER_REGRESSION'
   | 'EK_TELEMETRY_CONFLICT'
   | 'EK_METER_SESSION'
   | 'EK_METER_CAPACITY'
@@ -156,6 +170,7 @@ export interface ApplicationOptions {
     audience: string;
     tenantClaim?: string;
     algorithms?: readonly string[];
+    assuranceResolver?: (identity: Identity) => MfaAssurance;
   };
   readonly logging?: { level: LogLevel };
   readonly telemetry?: {

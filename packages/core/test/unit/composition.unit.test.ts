@@ -194,3 +194,67 @@ test('EK-CORE-001 inbound drain precedes reverse cleanup and failures do not ski
     assert.equal(app.state, 'CLOSED');
   }
 });
+
+test('MFA-AUTH-001 executable assurance policy is immutable wiring, outside configuration snapshots and reloads', async () => {
+  const resolver = () => 'mfa' as const;
+  let observed = false;
+  const plugin: ComposablePlugin = {
+    id: 'policy',
+    version: '1.0.0',
+    capabilities: new Set(['auth']),
+    init(context) {
+      observed = true;
+      assert.equal(context.options.security!.assuranceResolver, resolver);
+      assert.ok(Object.isFrozen(context.options.security));
+    },
+    close() {},
+  };
+  const security = {
+    issuer: 'https://issuer.invalid',
+    audience: 'api',
+    assuranceResolver: resolver,
+  };
+  const app = await createApplication({ service, security, plugins: [plugin] });
+  security.assuranceResolver = () => 'single-factor' as never;
+  try {
+    assert.deepEqual(app.config.get('security'), {
+      issuer: 'https://issuer.invalid',
+      audience: 'api',
+    });
+    assert.ok(!JSON.stringify(app.config.snapshot()).includes('assuranceResolver'));
+    await assert.rejects(
+      app.config.reload({ security: { assuranceResolver: () => 'mfa' } }),
+      code('EK_CONFIG_RELOAD_REJECTED'),
+    );
+    await app.start();
+    assert.equal(observed, true);
+  } finally {
+    await app.stop();
+  }
+  let accessed = false;
+  const accessor = Object.defineProperty(
+    { issuer: 'https://issuer.invalid', audience: 'api' },
+    'assuranceResolver',
+    {
+      enumerable: true,
+      get() {
+        accessed = true;
+        return resolver;
+      },
+    },
+  );
+  for (const input of [accessor, { ...security, assuranceResolver: 'mfa' }])
+    await assert.rejects(
+      createApplication({ service, security: input as never, plugins: [plugin] }),
+      code('EK_MFA_POLICY'),
+    );
+  assert.equal(accessed, false);
+  await assert.rejects(
+    createApplication({
+      service,
+      security: { ...security, other: resolver } as never,
+      plugins: [plugin],
+    }),
+    code('EK_CONFIG_INVALID'),
+  );
+});
