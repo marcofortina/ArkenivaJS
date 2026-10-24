@@ -26,7 +26,9 @@
     "test:integration:telemetry": "node scripts/test.mjs telemetry-integration",
     "test:integration:metering": "node scripts/test.mjs metering-integration",
     "test:integration:postgres": "node scripts/test.mjs database-postgres-integration",
-    "coverage:postgres": "pnpm --filter @arkenivajs/database-postgres coverage"
+    "coverage:postgres": "pnpm --filter @arkenivajs/database-postgres coverage",
+    "test:integration:mysql": "node scripts/test.mjs database-mysql-integration",
+    "coverage:mysql": "pnpm --filter @arkenivajs/database-mysql coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
