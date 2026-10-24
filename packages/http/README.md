@@ -1,5 +1,7 @@
 # @arkenivajs/http
 
+Default address policy rejects private and transition networks, including NAT64 and 6to4; only globally routed IPv6 unicast is eligible. A resolver answer must match its declared address family. Upstream deadline errors carry `details.upstream:true`, allowing the API boundary to return HTTP 504.
+
 `createHttpClient(options)` implements `OutboundHttpClient` with an isolated Undici agent. Importing the package opens no connection. `httpPlugin(options)` installs and closes a client per application. Standalone clients require `await client.close()` in a finally block.
 
 Required `allowedOrigins` lists exact scheme/host/port combinations; an empty list denies all destinations. HTTPS is the default. Credentials, fragments and unapproved destinations reject with `EK_CONFIG_INVALID`. Connection-time DNS checks reject private, loopback, link-local, mapped and reserved address ranges, including mixed public/private answers. A trusted custom `resolve` function remains subject to the same address checks. `allowPrivateNetwork:true` explicitly permits HTTP and private addresses for isolated local integrations; retain an origin allowlist. TLS certificate/hostname verification remains enabled, with TLS 1.2 minimum.
