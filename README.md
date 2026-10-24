@@ -20,3 +20,5 @@ Read the [API reference](docs/api.md) and run the [configuration example](exampl
 The [observability example](examples/observability/README.md) demonstrates contextual JSON logging, safe errors, native process snapshots and resource cleanup without external services.
 
 Use the [foundation measurement tool](tools/benchmark/README.md) to repeat exploratory local component benchmarks and inspect their measurement limits.
+
+Run the [typed HTTP example](examples/hello-http/README.md) for a Fastify service with OpenAPI, a bounded outbound client and a real curl/SIGTERM check.

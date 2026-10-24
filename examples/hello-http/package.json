@@ -1,0 +1,19 @@
+{
+  "name": "@arkenivajs/example-hello-http",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test --test-reporter=spec dist-test/test/unit/*.test.js",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/config": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/http": "workspace:*"
+  }
+}
