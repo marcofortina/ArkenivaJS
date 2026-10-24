@@ -29,3 +29,24 @@ database connection or query is involved. Whole-process CPU and event-loop delta
 include warmup and benchmark overhead. RSS is sampled at interval endpoints, while
 event-loop delay and GC pauses remain null. Retain the JSON outside the checkout;
 this short component workload has `releaseGate:false`.
+
+`pnpm --silent --filter @arkenivajs/benchmark-foundation postgres` compares a real
+PostgreSQL `SELECT` through direct `pg`/`pg-cursor` and through the SQL facade.
+It requires the [disposable TLS fixture](../../packages/database-postgres/test/fixtures/README.md),
+`ARKENIVA_POSTGRES_URL` and `ARKENIVA_POSTGRES_DISPOSABLE=1`. Use the fixture's
+private environment runner rather than printing or pasting its credentials.
+`ARKENIVA_POSTGRES_IMAGE` and `ARKENIVA_POSTGRES_CONTAINER_LIMITS` can supply
+non-secret fixture metadata; omitted metadata remains null rather than guessed.
+
+Both paths verify TLS identity, use a pool maximum of two, discard session state,
+restore UTF-8/standard strings and fetch at most two rows. Both assert the same
+integer result. The framework path additionally validates/captures named bindings,
+computes a fingerprint and owns cancellation and observation boundaries.
+Each path warms up for 100 operations and measures 1,000 sequential operations.
+The report records the actual server version, p50/p95/p99/max client latency,
+whole-client-process CPU/memory/loop observations and waiting counts sampled after
+completion. Those samples do not establish the maximum queue length under load.
+Server CPU, network bytes, GC pauses and exporter drops remain unobserved.
+Tracing, metrics and metering are disabled. This short, single-repetition component
+comparison has `releaseGate:false`; it does not replace the dedicated four-mode
+HTTP/authentication/database measurements and soak runs required before release.

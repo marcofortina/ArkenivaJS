@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node foundation.mjs",
     "metering": "node metering.mjs",
-    "sql": "node sql.mjs"
+    "sql": "node sql.mjs",
+    "postgres": "node postgres.mjs"
   },
   "devDependencies": {
     "@arkenivajs/core": "workspace:*",
@@ -16,6 +17,10 @@
     "@arkenivajs/diagnostics": "workspace:*",
     "pino": "10.4.0",
     "tinybench": "6.2.2",
-    "@arkenivajs/metering": "workspace:*"
+    "@arkenivajs/metering": "workspace:*",
+    "@arkenivajs/database-postgres": "workspace:*",
+    "pg": "8.23.1",
+    "pg-cursor": "2.22.1",
+    "pg-connection-string": "2.14.1"
   }
 }
