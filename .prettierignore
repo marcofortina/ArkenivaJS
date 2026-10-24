@@ -1,0 +1,6 @@
+node_modules/
+.build/
+**/dist/
+**/dist-test/
+pnpm-lock.yaml
+artifacts/
