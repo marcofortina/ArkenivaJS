@@ -333,6 +333,12 @@ importers:
         specifier: 8.20.0
         version: 8.20.0
 
+  packages/database:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/diagnostics:
     dependencies:
       '@arkenivajs/core':

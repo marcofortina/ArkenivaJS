@@ -204,24 +204,25 @@ export interface UsageMeter {
   snapshot(): Readonly<{ activeSessions: number; queueDepth: number; dropped: number }>;
 }
 
-/** SqlValue shape used by the application facade. */
+/** Portable input values; native arrays, JSON objects, OUT binds and LOBs are adapter-specific. */
 export type SqlValue = string | number | bigint | boolean | null | Date | Uint8Array;
 
-/** SqlBindings shape used by the application facade. */
+/** Exact own named parameters; names use ASCII letters, digits and underscore, starting without a digit. */
 export type SqlBindings = Readonly<Record<string, SqlValue>>;
 
-/** SqlStatement shape used by the application facade. */
+/** SQL with :name placeholders; values remain separate from SQL text and identifiers. */
 export interface SqlStatement {
   text: string;
   bindings?: SqlBindings;
 }
 
-/** SqlQueryOptions shape used by the application facade. */
+/** Bounded materialization and cooperative cancellation; limits do not bound server work. */
 export interface SqlQueryOptions extends OperationOptions {
+  /** Default 10,000; range 1..100,000. Exceeding the limit rejects without partial success. */
   maxRows?: number;
 }
 
-/** SqlResult shape used by the application facade. */
+/** Backend rows and honest result metadata; an unknown count remains null. */
 export interface SqlResult<T extends object = Record<string, unknown>> {
   rows: readonly T[];
   rowCount: number | null;
@@ -232,7 +233,7 @@ export interface SqlResult<T extends object = Record<string, unknown>> {
   }>;
 }
 
-/** SqlTransaction shape used by the application facade. */
+/** One pinned connection, owned by its active transaction callback and never implicitly retried. */
 export interface SqlTransaction {
   query<T extends object = Record<string, unknown>>(
     statement: SqlStatement,
@@ -241,30 +242,40 @@ export interface SqlTransaction {
   execute(statement: SqlStatement, options?: OperationOptions): Promise<SqlResult>;
 }
 
-/** SqlProvider shape used by the application facade. */
+/** Named SQL connections; native clients and pools belong to independent adapters. */
 export interface SqlProvider {
+  /** Return bounded rows; oversized results use EK_DATABASE_QUERY with limitExceeded=true. */
   query<T extends object = Record<string, unknown>>(
     connectionName: string,
     statement: SqlStatement,
     options?: SqlQueryOptions,
   ): Promise<SqlResult<T>>;
+  /** Fetch at most two rows: none returns null, one returns the row, two reject with EK_DATABASE_QUERY. */
   queryOne<T extends object = Record<string, unknown>>(
     connectionName: string,
     statement: SqlStatement,
     options?: OperationOptions,
   ): Promise<T | null>;
+  /** Execute once and retain backend-provided rows and affected-row metadata without guessing counts. */
   execute(
     connectionName: string,
     statement: SqlStatement,
     options?: OperationOptions,
   ): Promise<SqlResult>;
+  /**
+   * Begin and commit on one connection, or roll back on callback failure; nesting rejects.
+   * A lost/timed-out commit reports outcome='unknown'; primary and cleanup failures are retained.
+   */
   transaction<T>(
     connectionName: string,
     handler: (tx: SqlTransaction) => Promise<T>,
     options?: OperationOptions,
   ): Promise<T>;
+  /** Return false for normal unhealthy state; structural configuration failures still throw. */
   ping(connectionName: string, options?: OperationOptions): Promise<boolean>;
+  /** Report only driver-observed counters; unsupported counters remain null. */
   stats(connectionName: string): Readonly<Record<string, number | null>>;
+  /** Driver/pool escape hatch; advanced operations have adapter-specific instrumentation limits. */
   native(connectionName: string): unknown;
 }
 
