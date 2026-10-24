@@ -41,6 +41,7 @@ export interface LoggerOptions {
   redactValues?: readonly string[];
   onDiagnostic?: (event: Readonly<{ code: 'EK_BACKEND_UNAVAILABLE'; message: string }>) => void;
 }
+const EMPTY_FIELDS: LogFields = Object.freeze({});
 const levels = new Set<LogLevel>(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']);
 const protectedKeys = new Set([
   'service',
@@ -147,15 +148,20 @@ export function createLogger(options: LoggerOptions): ManagedLogger {
       )
         return value;
       if (typeof value !== 'object') return '[Unsupported]';
-      if (value instanceof KitError) return value.toSafeJSON();
+      if (value instanceof KitError) return KitError.prototype.toSafeJSON.call(value);
       if (value instanceof Error) return { name: 'Error', message: 'An operation failed' };
       if (value instanceof Uint8Array) return '[Binary]';
+      if (value instanceof Date) {
+        const stamp = Date.prototype.getTime.call(value);
+        return Number.isFinite(stamp) ? new Date(stamp).toISOString() : '[InvalidDate]';
+      }
       if (seen.has(value)) return '[Circular]';
       seen.add(value);
       try {
         const result: Record<string, unknown> | unknown[] = Array.isArray(value) ? [] : {};
-        for (const key of Object.keys(value)) {
-          if (remaining <= 0) break;
+        for (const key in value) {
+          if (remaining-- <= 0) break;
+          if (!Object.hasOwn(value, key)) continue;
           const descriptor = Object.getOwnPropertyDescriptor(value, key);
           if (
             ['__proto__', 'constructor', 'prototype'].includes(key) ||
@@ -178,7 +184,14 @@ export function createLogger(options: LoggerOptions): ManagedLogger {
         seen.delete(value);
       }
     };
-    return visit(input, 0) as Record<string, unknown>;
+    try {
+      const safe = visit(input, 0);
+      return safe && typeof safe === 'object' && !Array.isArray(safe)
+        ? (safe as Record<string, unknown>)
+        : { serialization: safe };
+    } catch {
+      return { serialization: '[Unserializable]' };
+    }
   };
   const merge = (parent: LogFields, next: LogFields): Record<string, unknown> => {
     const result = { ...parent, ...next };
@@ -271,12 +284,15 @@ export function createLogger(options: LoggerOptions): ManagedLogger {
     const emit = (
       severity: Exclude<LogLevel, 'silent'>,
       message: string,
-      data: LogFields = {},
+      data: LogFields = EMPTY_FIELDS,
     ): void => {
       open();
       if (typeof message !== 'string')
         throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Log message must be a string' });
-      const scoped = merge(bound, context.getStore() ?? {});
+      if (!data || typeof data !== 'object' || Array.isArray(data))
+        throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Log fields must be an object' });
+      if (!logger.isLevelEnabled(severity)) return;
+      const scoped = merge(bound, context.getStore() ?? EMPTY_FIELDS);
       logger[severity](merge(scoped, fields(data)), text(message));
     };
     return Object.freeze({
