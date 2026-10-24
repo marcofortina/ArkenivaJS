@@ -49,3 +49,7 @@ See the [configuration example](../examples/configuration/README.md) for complet
 ## Outbound HTTP
 
 `@arkenivajs/http` exports `OutboundHttpClient`, `createHttpClient(options)`, `httpPlugin(options)` and `DEFAULT_HTTP_TIMEOUT_MS=10000`. The managed client adds `close` and transport statistics. Destinations require exact origins and connection-time DNS validation; response bodies, connection count, deadline and retries are bounded. See the [HTTP client reference](../packages/http/README.md) for argument policies, cancellation, trace/service identity hooks and observed-byte coverage.
+
+## HTTP server
+
+`@arkenivajs/api` exports the typed route contracts, `createApi(options)` and `apiPlugin(options?)`. Registration precedes startup, and activation follows resource initialization. Schemas are mandatory, middleware stages preserve authentication, OpenAPI is deterministic 3.1, and shutdown drains inbound work before downstream resources close. See the [server reference](../packages/api/README.md).

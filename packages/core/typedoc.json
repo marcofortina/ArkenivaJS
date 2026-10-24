@@ -2,8 +2,6 @@
   "entryPoints": ["src/index.ts", "src/support.ts"],
   "tsconfig": "tsconfig.json",
   "intentionallyNotExported": [
-    "ApiServer",
-    "AuthService",
     "CacheProvider",
     "MessageBus",
     "SqlProvider",
