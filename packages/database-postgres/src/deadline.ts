@@ -1,5 +1,5 @@
 import { performance } from 'node:perf_hooks';
-import { KitError } from '@arkenivajs/core';
+import { KitError, DEFAULT_SQL_TIMEOUT_MS } from '@arkenivajs/core';
 import type { OperationOptions } from '@arkenivajs/core';
 
 /** One owned deadline covers queueing and native work; closing always removes listeners and timers. */
@@ -15,7 +15,7 @@ export class SqlDeadline {
         code: 'EK_CONFIG_INVALID',
         message: 'SQL operation options must be an object',
       });
-    const timeout = options.timeoutMs ?? 30_000;
+    const timeout = options.timeoutMs ?? DEFAULT_SQL_TIMEOUT_MS;
     if (
       !Number.isSafeInteger(timeout) ||
       timeout <= 0 ||
