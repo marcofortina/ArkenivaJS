@@ -597,3 +597,5 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
   };
   return Object.freeze(api);
 }
+
+export { parseMeteringEvent } from './event.js';
