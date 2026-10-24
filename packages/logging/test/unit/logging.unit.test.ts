@@ -259,3 +259,61 @@ test('EK-LOG-001 synchronous transport failure and failing diagnostic callbacks 
   assert.equal(logger.stats().failedWrites, 1);
   await assert.rejects(logger.close(), code('EK_BACKEND_UNAVAILABLE'));
 });
+
+test('EK-LOG-001 muted levels skip field traversal and accessor-only objects stay bounded', async () => {
+  const { lines, destination } = capture();
+  const logger = createLogger({ service, destination, level: 'silent' });
+  let traversals = 0;
+  const proxy = new Proxy(
+    {},
+    {
+      ownKeys() {
+        traversals++;
+        return [];
+      },
+    },
+  );
+  logger.info('muted', proxy);
+  assert.equal(traversals, 0);
+  assert.equal(logger.stats().emitted, 0);
+  logger.setLevel('info');
+  let getters = 0;
+  const input: Record<string, unknown> = {};
+  for (let index = 0; index < 1000; index++)
+    Object.defineProperty(input, `field${index}`, {
+      enumerable: true,
+      get() {
+        getters++;
+        return 'fake-secret';
+      },
+    });
+  logger.info('bounded', input);
+  await logger.flush();
+  const output = JSON.parse(lines[0]!);
+  assert.ok(Object.keys(output).filter((key) => key.startsWith('field')).length <= 256);
+  assert.equal(getters, 0);
+  await logger.close();
+});
+
+test('EK-LOG-001 dates retain ISO semantics and hostile object hooks get a safe fallback', async () => {
+  const { lines, destination } = capture();
+  const logger = createLogger({ service, destination });
+  logger.info('dates', { at: new Date('2026-10-24T10:00:00.000Z'), invalid: new Date(NaN) });
+  logger.info(
+    'hostile',
+    new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error('fake-prototype-secret');
+        },
+      },
+    ),
+  );
+  await logger.flush();
+  assert.equal(JSON.parse(lines[0]!).at, '2026-10-24T10:00:00.000Z');
+  assert.equal(JSON.parse(lines[0]!).invalid, '[InvalidDate]');
+  assert.ok(lines[1]?.includes('[Unserializable]'));
+  assert.ok(!lines.join('').includes('fake-'));
+  await logger.close();
+});
