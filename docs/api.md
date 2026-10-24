@@ -57,3 +57,7 @@ See the [configuration example](../examples/configuration/README.md) for complet
 ## Identity and trusted tenant context
 
 `@arkenivajs/security` exports `createAuthService`, `securityPlugin` and the public authentication types. Signature, issuer, audience, time, type and scope checks precede tenant attribution. Runtime provenance rejects cloned or foreign identity/context objects. See the [security reference](../packages/security/README.md) and [executable tenant guide](../examples/oidc-tenants/README.md).
+
+## Metrics and tracing
+
+`@arkenivajs/telemetry` exports `createTelemetry`, `telemetryPlugin`, `DURATION_BUCKETS_SECONDS` and the public telemetry port. Providers and W3C async context are instance-owned; no process-global SDK is replaced. Metric labels and series, span queues and exporter deadlines are bounded. See the [telemetry reference](../packages/telemetry/README.md) for modes, units, sampling, resource metadata and actual collector integration.
