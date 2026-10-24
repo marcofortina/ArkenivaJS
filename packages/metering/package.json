@@ -28,6 +28,7 @@
     "test:contract": "node --test dist-test/test/contract/*.test.js"
   },
   "dependencies": {
-    "@arkenivajs/core": "workspace:*"
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/http": "workspace:*"
   }
 }

@@ -23,7 +23,8 @@
     "test:docs": "pnpm --filter './examples/*' test",
     "docs:build": "typedoc --options typedoc.json && node scripts/check-docs.mjs",
     "test:integration": "node scripts/test.mjs integration",
-    "test:integration:telemetry": "node scripts/test.mjs telemetry-integration"
+    "test:integration:telemetry": "node scripts/test.mjs telemetry-integration",
+    "test:integration:metering": "node scripts/test.mjs metering-integration"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
