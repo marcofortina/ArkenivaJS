@@ -4,9 +4,66 @@ import { isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { KitError } from './errors.js';
 import type { ConfigService, OperationOptions } from './contracts.js';
+import type { Telemetry } from './ports.js';
 export { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN } from './composition.js';
 export type { ComposablePlugin, PreparationContext } from './composition.js';
 export { SEMVER_PATTERN } from './application-schema.js';
+
+/**
+ * Adapter instrumentation preserves the callback's own result and invokes it at most once.
+ * A diagnostic failure is reported without replaying business work or replacing its exception.
+ */
+export async function instrumentOperation<T>(
+  telemetry: Telemetry | undefined,
+  name: string,
+  attributes: Readonly<Record<string, string | number | boolean>>,
+  work: () => Promise<T> | T,
+  onFailure: () => void,
+): Promise<T> {
+  if (typeof work !== 'function')
+    throw new KitError({
+      code: 'EK_CONFIG_INVALID',
+      message: 'Instrumented work must be a function',
+    });
+  if (!telemetry) return work();
+  let result: Promise<T> | undefined;
+  const invoke = () => {
+    if (result)
+      throw new KitError({
+        code: 'EK_LIFECYCLE_STATE',
+        message: 'Instrumentation may invoke work only once',
+      });
+    result = Promise.resolve().then(work);
+    return result;
+  };
+  const report = () => {
+    try {
+      onFailure();
+    } catch {
+      /* Diagnostic callbacks cannot change business outcomes. */
+    }
+  };
+  let failed = false,
+    failure: unknown;
+  try {
+    await telemetry.withSpan(name, invoke, { attributes });
+  } catch (error) {
+    failed = true;
+    failure = error;
+  }
+  if (!result) {
+    report();
+    return invoke();
+  }
+  try {
+    const value = await result;
+    if (failed) report();
+    return value;
+  } catch (error) {
+    if (failed && failure !== error) report();
+    throw error;
+  }
+}
 
 /** EK-CONF-001: reject objects whose accessors or prototypes could execute code. */
 export function copyData<T>(input: T, seen = new Set<unknown>()): T {
