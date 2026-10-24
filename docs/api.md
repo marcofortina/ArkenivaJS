@@ -64,7 +64,7 @@ See the [configuration example](../examples/configuration/README.md) for complet
 
 The [metering reference](../packages/metering/README.md) and [verified tenant metering example](../examples/metering/README.md) cover independent events, failure/pressure semantics and automatic request scopes.
 
-## SQL, PostgreSQL and MySQL
+## SQL, PostgreSQL, MySQL and MariaDB
 
 `@arkenivajs/database` provides the bounded named-bind compiler and application-owned
 SQL coordination. Install `postgresPlugin()` from `@arkenivajs/database-postgres`
@@ -80,3 +80,9 @@ TLS, preserve bigint/decimal/temporal precision, and never replay statements or
 callbacks. MySQL DDL may implicitly commit: the adapter reports that outcome rather
 than promising rollback. See the [MySQL reference](../packages/database-mysql/README.md)
 and [runnable MySQL orders example](../examples/mysql/README.md).
+
+`mariadbPlugin()` from `@arkenivajs/database-mariadb` owns separate native Promise
+pools for `driver: 'mariadb'`. Its bigint results, awaited release, CA/IP/DNS policy
+and MariaDB error codes are verified independently. See the
+[MariaDB reference](../packages/database-mariadb/README.md) and
+[runnable MariaDB consumer](../examples/mariadb/README.md).
