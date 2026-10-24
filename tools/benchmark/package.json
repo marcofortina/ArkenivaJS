@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "start": "node foundation.mjs",
-    "metering": "node metering.mjs"
+    "metering": "node metering.mjs",
+    "sql": "node sql.mjs"
   },
   "devDependencies": {
     "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/database": "workspace:*",
     "@arkenivajs/config": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/diagnostics": "workspace:*",
