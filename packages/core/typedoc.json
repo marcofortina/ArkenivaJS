@@ -8,7 +8,6 @@
     "RedisProvider",
     "EtcdProvider",
     "DocumentProvider",
-    "Telemetry",
     "UsageMeter",
     "HealthRegistry"
   ]
