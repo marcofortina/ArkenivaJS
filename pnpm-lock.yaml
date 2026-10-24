@@ -188,6 +188,15 @@ importers:
         specifier: 8.72.0
         version: 8.72.0(eslint@10.13.0)(typescript@6.0.3)
 
+  examples/configuration:
+    dependencies:
+      '@arkenivajs/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   packages/config:
     dependencies:
       '@arkenivajs/core':
