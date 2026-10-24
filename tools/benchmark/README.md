@@ -19,3 +19,13 @@ The report records the commit, exact runtime, tool versions, CPU model, affinity
 Every report has `measured:true` and `releaseGate:false`. Shared-host timing, brief warmup and one repetition cannot prove a regression budget. A release comparison requires equivalent HTTP, authentication and database workloads in baseline, framework, standard telemetry and detailed modes, a dedicated runner, at least 60 seconds of warmup, 180 seconds of steady load and five independent repetitions, with confidence analysis and retained raw evidence. Those workloads require their respective implemented modules. Do not infer request or tenant CPU/RAM from whole-process counters.
 
 `pnpm --silent --filter @arkenivajs/benchmark-foundation metering` exercises trusted meter scopes with export disabled and with real private JSONL export. It uses the same 100 warmup/1,000 measured iteration policy and reports observed scope/enqueue latency, whole-process CPU/RSS, queue/drop/failure counts and actual file readback. File dispatch overlaps the measured asynchronous work; the final flush/readback verifies delivery without pretending enqueue latency is durable acknowledgment latency. The operation counter records one actual benchmark callback invocation; it does not represent a database query. Temporary files are removed. Keep the JSON report outside the checkout; this is a local component observation with `releaseGate:false`.
+
+`pnpm --silent --filter @arkenivajs/benchmark-foundation sql` measures the named
+binding compiler in four dialects with representative quoted tokens, comments and
+repeated bigint parameters. Each dialect warms up for 1,000 operations and measures
+10,000 operations. Assertions verify the exact number of compiler calls and consume
+their output. Latency includes value capture and the statement fingerprint; no
+database connection or query is involved. Whole-process CPU and event-loop deltas
+include warmup and benchmark overhead. RSS is sampled at interval endpoints, while
+event-loop delay and GC pauses remain null. Retain the JSON outside the checkout;
+this short component workload has `releaseGate:false`.

@@ -437,6 +437,9 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@arkenivajs/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@arkenivajs/diagnostics':
         specifier: workspace:*
         version: link:../../packages/diagnostics
