@@ -111,6 +111,7 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   direction: ['server.response', 'client.response'],
   'db.system.name': ['postgresql', 'mysql', 'mariadb', 'oracle', 'redis', 'etcd', 'mongodb'],
+  'db.operation.name': ['query', 'execute', 'ping'],
   driver: ['postgresql', 'mysql', 'mariadb', 'oracle', 'redis', 'etcd', 'mongodb'],
   state: ['user', 'system'],
   exporter: ['jsonl', 'http', 'otlp'],
@@ -127,6 +128,8 @@ const units: Record<string, string> = {
   'http.client.request.duration': 's',
   'db.client.operation.duration': 's',
   'arkenivajs.db.pool.acquire.duration': 's',
+  'arkenivajs.db.pool.active': '{connection}',
+  'arkenivajs.db.pool.idle': '{connection}',
   'arkenivajs.process.cpu.time': 's',
   'arkenivajs.process.memory.rss': 'By',
   'arkenivajs.runtime.event_loop.delay': 's',
@@ -630,8 +633,17 @@ export function telemetryPlugin(options: TelemetryPluginOptions = {}): Plugin {
     capabilities: new Set(['telemetry']),
     dependencies: ['logging'],
     init(context) {
+      const pools = Object.keys(context.options.databases ?? {});
       const telemetry = createTelemetry({
         ...options,
+        ...(pools.length
+          ? {
+              labelValues: {
+                ...options.labelValues,
+                pool: [...new Set([...(options.labelValues?.pool ?? []), ...pools])],
+              },
+            }
+          : {}),
         service: context.options.service,
         ...(context.options.telemetry ?? { mode: 'off' }),
       });

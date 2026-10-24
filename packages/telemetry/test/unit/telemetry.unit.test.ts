@@ -6,7 +6,7 @@ import { trace, metrics, context } from '@opentelemetry/api';
 import { KitError, createApplication, COMPONENTS } from '@arkenivajs/core';
 import type { Plugin, Logger } from '@arkenivajs/core';
 import { createTelemetry, telemetryPlugin, DURATION_BUCKETS_SECONDS } from '@arkenivajs/telemetry';
-import type { TelemetryOptions } from '@arkenivajs/telemetry';
+import type { TelemetryOptions, ManagedTelemetry } from '@arkenivajs/telemetry';
 
 const service = { name: 'telemetry-test', version: '1.0.0', environment: 'test' as const };
 const code = (expected: string) => (error: unknown) =>
@@ -456,5 +456,81 @@ test('EK-OTEL-001 reused plugin factories provide independent application instan
   } finally {
     await first.stop();
     await second.stop();
+  }
+});
+
+test('EK-DB-004 root database names permit bounded pool metrics and fixed SQL operation labels', async () => {
+  const target = await receiver();
+  const driver: Plugin = {
+    id: 'database-test-port',
+    version: '1.0.0',
+    capabilities: new Set(['database.postgresql']),
+    init() {},
+    close() {},
+  };
+  const app = await createApplication({
+    service,
+    telemetry: { mode: 'standard', samplingRatio: 1 },
+    databases: { main: { driver: 'postgresql' }, secondary: { driver: 'postgresql' } },
+    plugins: [
+      logging,
+      driver,
+      telemetryPlugin({
+        endpoint: target.endpoint,
+        allowInsecureLoopback: true,
+        exportTimeoutMs: 500,
+      }),
+    ],
+  });
+  try {
+    await app.start();
+    assert.equal(
+      await app.telemetry.withSpan('db.client.operation', () => 42, {
+        attributes: { 'db.system.name': 'postgresql', 'db.operation.name': 'query' },
+      }),
+      42,
+    );
+    app.telemetry.recordHistogram('db.client.operation.duration', 0.002, {
+      'db.system.name': 'postgresql',
+      'db.operation.name': 'execute',
+    });
+    app.telemetry.recordHistogram('arkenivajs.db.pool.acquire.duration', 0.001, {
+      pool: 'main',
+      driver: 'postgresql',
+    });
+    app.telemetry.setGauge('arkenivajs.db.pool.active', 1, { pool: 'main', driver: 'postgresql' });
+    app.telemetry.setGauge('arkenivajs.db.pool.idle', 0, {
+      pool: 'secondary',
+      driver: 'postgresql',
+    });
+    assert.throws(
+      () =>
+        app.telemetry.setGauge('arkenivajs.db.pool.active', 1, {
+          pool: 'request-controlled',
+          driver: 'postgresql',
+        }),
+      code('EK_CONFIG_INVALID'),
+    );
+    assert.throws(
+      () =>
+        app.telemetry.recordHistogram('db.client.operation.duration', 1, {
+          'db.operation.name': 'arbitrary SQL',
+        }),
+      code('EK_CONFIG_INVALID'),
+    );
+    await app.telemetry.flush();
+    const body = JSON.stringify(target.data);
+    for (const expected of [
+      'db.client.operation.duration',
+      'arkenivajs.db.pool.acquire.duration',
+      'arkenivajs.db.pool.active',
+      'arkenivajs.db.pool.idle',
+      '{connection}',
+    ])
+      assert.ok(body.includes(expected));
+    assert.equal((app.telemetry as ManagedTelemetry).stats().exportFailures, 0);
+  } finally {
+    await app.stop();
+    await target.close();
   }
 });
