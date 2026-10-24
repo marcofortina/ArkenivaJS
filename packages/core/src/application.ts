@@ -9,6 +9,7 @@ import type {
   ConfigService,
 } from './contracts.js';
 import { KitError } from './errors.js';
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from './defaults.js';
 import { ConfigStore, copyData, freezeData, within } from './support.js';
 import { APPLICATION_SCHEMA, SEMVER_PATTERN } from './application-schema.js';
 import { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN, SUPPORT_PLUGINS } from './composition.js';
@@ -34,8 +35,6 @@ export const COMPONENTS = Object.freeze({
 });
 /** Cooperative startup cancellation is available through the kernel context. */
 export const APPLICATION_SIGNAL = Symbol('arkenivajs.signal');
-/** Stable default shutdown deadline in integer milliseconds. */
-export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 
 function readonlyCapabilities(input: ReadonlySet<string>): ReadonlySet<string> {
   const set = new Set(input);

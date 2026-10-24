@@ -1,4 +1,4 @@
-import { KitError } from '@arkenivajs/core';
+import { KitError, METER_EVENT_SCHEMA_VERSION } from '@arkenivajs/core';
 import type { Environment, OperationOptions, MeteringEvent } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
 import { createHttpClient } from '@arkenivajs/http';
@@ -94,9 +94,9 @@ export function createHttpMeterExporter(options: HttpMeterExporterOptions): Mete
           headers: {
             authorization: credential,
             'content-type': 'application/json',
-            'x-arkenivajs-metering-version': '1.0.0',
+            'x-arkenivajs-metering-version': METER_EVENT_SCHEMA_VERSION,
           },
-          body: JSON.stringify({ schemaVersion: '1.0.0', events: batch }),
+          body: JSON.stringify({ schemaVersion: METER_EVENT_SCHEMA_VERSION, events: batch }),
           ...bounded,
         });
         if (response.status !== 202)

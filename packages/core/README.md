@@ -2,6 +2,12 @@
 
 Typed foundations for modular ESM applications. `KitError` preserves the developer message and original `cause` internally. Call `toSafeJSON()` at external boundaries; it returns a stable error code and a fixed safe message. JSON serialization uses the same safe envelope. Stack traces, raw messages and details never enter that envelope.
 
+Public defaults are shared literal constants: `DEFAULT_SHUTDOWN_TIMEOUT_MS=30000`,
+`DEFAULT_HTTP_TIMEOUT_MS=10000`, `DEFAULT_SQL_TIMEOUT_MS=15000`,
+`DEFAULT_POOL_ACQUIRE_TIMEOUT_MS=5000`, `DEFAULT_METER_QUEUE_CAPACITY=10000`, and
+`METER_EVENT_SCHEMA_VERSION='1.0.0'`. Adapter entry points also expose their relevant
+constants. Changing a default requires an explicit compatibility review.
+
 ```ts
 import { KitError } from '@arkenivajs/core';
 

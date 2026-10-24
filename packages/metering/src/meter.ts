@@ -2,7 +2,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
-import { KitError } from '@arkenivajs/core';
+import {
+  KitError,
+  DEFAULT_METER_QUEUE_CAPACITY,
+  METER_EVENT_SCHEMA_VERSION,
+} from '@arkenivajs/core';
 import type {
   ApplicationOptions,
   OperationOptions,
@@ -128,7 +132,7 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
   const options = { ...input, service: freezeData(copyData(input.service)) };
   const verifyTenant = options.auth.isVerifiedTenant.bind(options.auth);
   const service = options.service;
-  const capacity = options.queueCapacity ?? 10_000;
+  const capacity = options.queueCapacity ?? DEFAULT_METER_QUEUE_CAPACITY;
   const byteCapacity = options.queueByteCapacity ?? 16_777_216;
   const maxActive = options.maxActiveSessions ?? 10_000;
   const batchSize = options.batchSize ?? 100;
@@ -445,7 +449,7 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
           if (!enabled) return rejected('disabled');
           if (lost) state.missing.add('exporter_unavailable');
           const event: MeteringEvent = freezeData({
-            schemaVersion: '1.0.0',
+            schemaVersion: METER_EVENT_SCHEMA_VERSION,
             eventId,
             tenantId: state.tenant.tenantId,
             operationId: state.operationId,

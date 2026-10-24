@@ -4,7 +4,12 @@ import type { LookupFunction } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Agent, fetch as send } from 'undici';
-import { KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
+import {
+  KitError,
+  COMPONENTS,
+  APPLICATION_SIGNAL,
+  DEFAULT_HTTP_TIMEOUT_MS,
+} from '@arkenivajs/core';
 import type {
   OutboundHttpClient,
   OperationOptions,
@@ -16,8 +21,7 @@ import type {
 import { copyData, within, instrumentOperation } from '@arkenivajs/core/support';
 
 export type { OutboundHttpClient } from '@arkenivajs/core';
-/** Default deadline covers connection, headers and bounded response consumption. */
-export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
+export { DEFAULT_HTTP_TIMEOUT_MS } from '@arkenivajs/core';
 /** Safe operation metadata excludes URLs, headers, credentials and payloads. */
 export interface HttpObservation {
   readonly method: string;

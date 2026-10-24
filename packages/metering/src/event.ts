@@ -1,4 +1,4 @@
-import { KitError } from '@arkenivajs/core';
+import { KitError, METER_EVENT_SCHEMA_VERSION } from '@arkenivajs/core';
 import type { MeteringEvent } from '@arkenivajs/core';
 import { compileSchema, copyData, freezeData, SEMVER_PATTERN } from '@arkenivajs/core/support';
 
@@ -14,7 +14,7 @@ const timestamp = {
   pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3,9}Z$',
 };
 const properties = {
-  schemaVersion: { const: '1.0.0' },
+  schemaVersion: { const: METER_EVENT_SCHEMA_VERSION },
   eventId: {
     type: 'string',
     pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',

@@ -48,9 +48,12 @@ export type {
   DatabaseDefinition,
   DatabaseDriver,
 } from './contracts.js';
+export { createApplication, COMPONENTS, APPLICATION_SIGNAL } from './application.js';
 export {
-  createApplication,
-  COMPONENTS,
-  APPLICATION_SIGNAL,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
-} from './application.js';
+  DEFAULT_HTTP_TIMEOUT_MS,
+  DEFAULT_SQL_TIMEOUT_MS,
+  DEFAULT_POOL_ACQUIRE_TIMEOUT_MS,
+  DEFAULT_METER_QUEUE_CAPACITY,
+  METER_EVENT_SCHEMA_VERSION,
+} from './defaults.js';
