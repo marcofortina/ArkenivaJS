@@ -13,6 +13,7 @@ import type {
   ApplicationOptions,
   Logger,
   OperationOptions,
+  Telemetry,
 } from '@arkenivajs/core';
 import {
   copyData,
@@ -23,6 +24,7 @@ import {
   ACTIVATE_PLUGIN,
   DRAIN_PLUGIN,
   SEMVER_PATTERN,
+  instrumentOperation,
 } from '@arkenivajs/core/support';
 import type { ComposablePlugin } from '@arkenivajs/core/support';
 
@@ -51,6 +53,7 @@ export interface ApiOptions {
   readonly validateResponses?: boolean;
   readonly logger?: Logger;
   readonly auth?: NonNullable<Application['auth']>;
+  readonly telemetry?: Telemetry;
   readonly isReady?: () => boolean;
   readonly onObservation?: (event: ApiObservation) => void;
   readonly tls?: { readonly key: string; readonly cert: string };
@@ -70,7 +73,16 @@ export interface ManagedApiServer extends ApiServer {
 }
 type Auth = NonNullable<Application['auth']>;
 const SERVICES = Symbol('api.services');
-type InternalApi = ManagedApiServer & { [SERVICES](logger: Logger, auth?: Auth): void };
+type InternalApi = ManagedApiServer & {
+  [SERVICES](logger: Logger, auth?: Auth, telemetry?: Telemetry): void;
+};
+type ContextualTelemetry = Telemetry & {
+  withRemoteContext?: <T>(
+    headers: Readonly<Record<string, string | undefined>>,
+    work: () => T,
+  ) => T;
+  currentTraceId?: () => string | undefined;
+};
 const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', message });
 const statusFor = (error: KitError): number => {
   switch (error.code) {
@@ -170,14 +182,22 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   });
   let logger = options.logger,
     auth = options.auth;
+  let telemetry = options.telemetry;
   let state: 'created' | 'starting' | 'ready' | 'closing' | 'closed' = 'created';
   let starting: Promise<void> | undefined, closing: Promise<void> | undefined;
   let document: Readonly<Record<string, unknown>> | undefined;
   const counters = { completed: 0, failed: 0, observerFailures: 0 };
   const active = new Set<AbortController>();
+  const activeRoutes = new Map<string, number>();
   const entries = new WeakMap<
     FastifyRequest,
-    { controller: AbortController; began: number; clean: () => void; responseBytes?: number }
+    {
+      controller: AbortController;
+      began: number;
+      clean: () => void;
+      responseBytes?: number;
+      traceId?: string;
+    }
   >();
   const middleware: Record<'postAuthentication' | 'preHandler', ApiMiddleware[]> = {
     postAuthentication: [],
@@ -241,7 +261,33 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   server.addHook('onRequest', async (request, reply) => {
     const controller = new AbortController();
     active.add(controller);
+    const route = request.routeOptions.url ?? 'unmatched';
+    const key = request.method + ':' + route;
+    const track = (delta: number) => {
+      if (
+        !telemetry ||
+        ['/livez', '/readyz'].includes(route) ||
+        !['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(request.method)
+      )
+        return;
+      const count = (activeRoutes.get(key) ?? 0) + delta;
+      if (count === 0) activeRoutes.delete(key);
+      else activeRoutes.set(key, count);
+      try {
+        telemetry?.setGauge('http.server.active_requests', count, {
+          route,
+          method: request.method,
+        });
+      } catch {
+        counters.observerFailures++;
+      }
+    };
+    track(1);
+    let released = false;
     const release = () => {
+      if (released) return;
+      released = true;
+      track(-1);
       request.raw.off('aborted', disconnected);
       reply.raw.off('close', responseClosed);
       active.delete(controller);
@@ -290,6 +336,22 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       durationMs: performance.now() - entry.began,
       ...(entry.responseBytes === undefined ? {} : { responseBytes: entry.responseBytes }),
     });
+    if (telemetry && !['/livez', '/readyz'].includes(route)) {
+      try {
+        telemetry.recordHistogram('http.server.request.duration', event.durationMs / 1000, {
+          route,
+          method: request.method,
+          status_code: reply.statusCode,
+        });
+        if (entry.responseBytes !== undefined)
+          telemetry.recordHistogram('arkenivajs.http.body.bytes', entry.responseBytes, {
+            route,
+            direction: 'server.response',
+          });
+      } catch {
+        counters.observerFailures++;
+      }
+    }
     try {
       options.onObservation?.(event);
     } catch {
@@ -301,6 +363,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       route,
       status: reply.statusCode,
       durationMs: event.durationMs,
+      ...(entry.traceId ? { traceId: entry.traceId } : {}),
     });
   });
   server.setErrorHandler((error, request, reply) => {
@@ -432,10 +495,11 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         });
       return document;
     },
-    [SERVICES](nextLogger, nextAuth) {
+    [SERVICES](nextLogger, nextAuth, nextTelemetry) {
       registering();
       logger = nextLogger;
       auth = nextAuth;
+      telemetry = nextTelemetry;
     },
     start(operation: OperationOptions = {}) {
       try {
@@ -573,7 +637,54 @@ export function createApi(options: ApiOptions): ManagedApiServer {
                     run?: <T>(fields: Readonly<Record<string, unknown>>, work: () => T) => T;
                   })
                 | undefined;
-              return contextual?.run ? contextual.run({ requestId: request.id }, invoke) : invoke();
+              const traced = telemetry as ContextualTelemetry | undefined;
+              const work = () =>
+                instrumentOperation(
+                  telemetry,
+                  'http.server.request',
+                  { route: path, method: request.method },
+                  () => {
+                    let traceId: string | undefined;
+                    try {
+                      traceId = traced?.currentTraceId?.();
+                    } catch {
+                      counters.observerFailures++;
+                    }
+                    if (traceId) entry.traceId = traceId;
+                    return contextual?.run
+                      ? contextual.run(
+                          { requestId: request.id, ...(traceId ? { traceId } : {}) },
+                          invoke,
+                        )
+                      : invoke();
+                  },
+                  () => {
+                    counters.observerFailures++;
+                  },
+                );
+              if (traced?.withRemoteContext) {
+                let invoked = false;
+                try {
+                  const result = await traced.withRemoteContext(
+                    Object.fromEntries(
+                      Object.entries(request.headers).map(([name, value]) => [
+                        name,
+                        Array.isArray(value) ? value.join(',') : value,
+                      ]),
+                    ),
+                    () => {
+                      invoked = true;
+                      return work();
+                    },
+                  );
+                  if (invoked) return result;
+                  counters.observerFailures++;
+                } catch (error) {
+                  if (invoked) throw error;
+                  counters.observerFailures++;
+                }
+              }
+              return work();
             },
           });
         }
@@ -639,7 +750,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
 /** Explicit plugin dependencies authorize access to authentication and future integrations. */
 export interface ApiPluginOptions extends Omit<
   ApiOptions,
-  'service' | 'host' | 'port' | 'requestTimeoutMs' | 'logger' | 'auth'
+  'service' | 'host' | 'port' | 'requestTimeoutMs' | 'logger' | 'auth' | 'telemetry'
 > {
   readonly dependencies?: readonly string[];
 }
@@ -668,6 +779,7 @@ export function apiPlugin(options: ApiPluginOptions = {}): ComposablePlugin {
       api[SERVICES](
         context.logger,
         context.options.security ? context.require<Auth>(COMPONENTS.auth) : undefined,
+        context.options.telemetry ? context.require<Telemetry>(COMPONENTS.telemetry) : undefined,
       );
     },
     async [ACTIVATE_PLUGIN](context) {

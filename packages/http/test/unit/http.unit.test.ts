@@ -378,3 +378,36 @@ test('EK-HTTP-002 close aborts active work and one factory keeps applications is
     await server.close();
   }
 });
+
+test('EK-HTTP-002 diagnostic header callback failures do not replay or fail completed transport work', async () => {
+  let calls = 0;
+  const server = await endpoint((_request, reply) => {
+    calls++;
+    reply.end('ok');
+  });
+  try {
+    for (const traceHeaders of [
+      () => {
+        throw new Error('fake-diagnostic-secret');
+      },
+      () => ({ traceparent: 'bad' }),
+      () => ({ tracestate: 'bad\nheader' }),
+    ]) {
+      const client = createHttpClient({
+        allowedOrigins: [server.origin],
+        allowPrivateNetwork: true,
+        traceHeaders,
+      });
+      try {
+        assert.equal(await (await client.get(server.origin)).text(), 'ok');
+        assert.equal(client.stats().observerFailures, 1);
+        assert.equal(client.stats().completed, 1);
+      } finally {
+        await client.close();
+      }
+    }
+    assert.equal(calls, 3);
+  } finally {
+    await server.close();
+  }
+});

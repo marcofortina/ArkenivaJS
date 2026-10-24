@@ -5,6 +5,7 @@ import {
   context as globalContext,
   trace,
   SpanStatusCode,
+  SpanKind,
   defaultTextMapGetter,
   defaultTextMapSetter,
   ROOT_CONTEXT,
@@ -108,7 +109,7 @@ const labels = new Set([
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  direction: ['inbound', 'outbound'],
+  direction: ['server.response', 'client.response'],
   'db.system.name': ['postgresql', 'mysql', 'mariadb', 'oracle', 'redis', 'etcd', 'mongodb'],
   driver: ['postgresql', 'mysql', 'mariadb', 'oracle', 'redis', 'etcd', 'mongodb'],
   state: ['user', 'system'],
@@ -116,6 +117,7 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'http.server.active_requests': '{request}',
   'http.server.request.duration': 's',
   'http.client.request.duration': 's',
   'db.client.operation.duration': 's',
@@ -358,6 +360,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       kind: 'counter' | 'histogram' | 'gauge';
       value: Counter | Histogram | Gauge;
       series: Set<string>;
+      lastValues: Map<string, number>;
     }
   >();
   const operations = new Set<string>();
@@ -403,14 +406,18 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       throw invalid('Telemetry cardinality limit reached');
     if (!entry) {
       if (instruments.size >= maxInstruments) throw invalid('Telemetry instrument limit reached');
-      const config = { unit: units[name] ?? (kind === 'counter' ? '{operation}' : '1') };
+      const config = {
+        unit: Object.hasOwn(units, name) ? units[name]! : kind === 'counter' ? '{operation}' : '1',
+      };
       const value =
         kind === 'counter'
           ? meter!.createCounter(name, config)
           : kind === 'histogram'
             ? meter!.createHistogram(name, config)
-            : meter!.createGauge(name, config);
-      entry = { kind, value, series: new Set() };
+            : name === 'http.server.active_requests'
+              ? meter!.createUpDownCounter(name, config)
+              : meter!.createGauge(name, config);
+      entry = { kind, value, series: new Set(), lastValues: new Map() };
       instruments.set(name, entry);
     }
     entry.series.add(key);
@@ -424,11 +431,22 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
   ) => {
     open();
     if (!meter) return;
-    if (!Number.isFinite(value) || (kind === 'counter' && value < 0))
+    if (name === 'http.server.active_requests' && kind !== 'gauge')
+      throw invalid('Active request state requires setGauge');
+    if (
+      !Number.isFinite(value) ||
+      ((kind === 'counter' || name === 'http.server.active_requests') && value < 0)
+    )
       throw invalid('Invalid telemetry sample');
     const fields = attrs(attributes),
       entry = instrument(kind, name, fields);
-    if (kind === 'counter') (entry.value as Counter).add(value, fields);
+    if (kind === 'gauge' && name === 'http.server.active_requests') {
+      const key = JSON.stringify(
+        Object.entries(fields).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+      );
+      (entry.value as Counter).add(value - (entry.lastValues.get(key) ?? 0), fields);
+      entry.lastValues.set(key, value);
+    } else if (kind === 'counter') (entry.value as Counter).add(value, fields);
     else (entry.value as Histogram | Gauge).record(value, fields);
   };
   const span = async <T>(
@@ -447,7 +465,13 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       return work();
     }
     const parent = storage.getStore() ?? globalContext.active();
-    const current = tracer.startSpan(name, { attributes: fields }, parent);
+    const kind =
+      name === 'http.server.request'
+        ? SpanKind.SERVER
+        : ['http.client.request', 'db.client.operation'].includes(name)
+          ? SpanKind.CLIENT
+          : SpanKind.INTERNAL;
+    const current = tracer.startSpan(name, { attributes: fields, kind }, parent);
     active.add(current);
     counters.spansStarted++;
     return storage.run(trace.setSpan(parent, current), async () => {

@@ -36,5 +36,10 @@
     "@opentelemetry/core": "3.0.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.300.0",
     "@opentelemetry/exporter-metrics-otlp-http": "0.300.0"
+  },
+  "devDependencies": {
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/http": "workspace:*",
+    "@arkenivajs/logging": "workspace:*"
   }
 }
