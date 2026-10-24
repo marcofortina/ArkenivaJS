@@ -599,3 +599,5 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
 }
 
 export { parseMeteringEvent } from './event.js';
+export { createJsonlExporter } from './jsonl.js';
+export type { JsonlExporterOptions } from './jsonl.js';
