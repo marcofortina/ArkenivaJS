@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ConfigStore, copyData, mergeData, compileSchema, within } from '@arkenivajs/core/support';
+import { spawnSync } from 'node:child_process';
 import { KitError } from '@arkenivajs/core';
 
 const schema = {
@@ -19,6 +20,28 @@ const schema = {
 };
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
+
+test('Configuration diagnostics survive a failed sink and use only safe fallback metadata', () => {
+  const entry = new URL('../../../dist/support.js', import.meta.url).href;
+  const script = `import { reportConfigurationDiagnostic } from ${JSON.stringify(entry)};
+    reportConfigurationDiagnostic({event:'configuration.reload.applied',source:'reload',keyCount:1}, () => { throw new Error('fake-private-sink'); });`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, '');
+  assert.deepEqual(JSON.parse(result.stderr), {
+    event: 'configuration.reload.applied',
+    source: 'reload',
+    keyCount: 1,
+  });
+  assert.ok(!result.stderr.includes('fake-private'));
+  assert.throws(
+    () => new ConfigStore({ count: 1 }, { schema, onDiagnostic: 1 as never }),
+    code('EK_CONFIG_INVALID'),
+  );
+});
 
 test('Configuration getters distinguish missing, null and immutable values', () => {
   const store = new ConfigStore<Record<string, unknown>>(

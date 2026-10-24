@@ -108,6 +108,38 @@ export function compileSchema(schema: object): (input: unknown) => boolean {
   }
 }
 
+/** Bounded audit metadata excludes configuration paths, values and native errors. */
+export interface ConfigurationDiagnostic {
+  readonly event: 'configuration.override.applied' | 'configuration.reload.applied';
+  readonly source: 'yaml' | 'environment' | 'runtime' | 'reload';
+  readonly keyCount: number;
+}
+
+/** Emit bounded metadata only; a failing custom sink falls back to standard error. */
+export function reportConfigurationDiagnostic(
+  event: ConfigurationDiagnostic,
+  sink?: (event: ConfigurationDiagnostic) => void,
+): void {
+  const safe = Object.freeze({
+    event: event.event,
+    source: event.source,
+    keyCount: event.keyCount,
+  });
+  if (sink) {
+    try {
+      sink(safe);
+      return;
+    } catch {
+      // Preserve the configuration outcome and exclude the sink's error from logs.
+    }
+  }
+  try {
+    process.stderr.write(JSON.stringify(safe) + '\n');
+  } catch {
+    // A closed fallback stream cannot roll back an already committed generation.
+  }
+}
+
 /** Options for the configuration store shared by core and its config adapter. */
 export interface StoreOptions<T extends Record<string, unknown>> {
   schema: object;
@@ -115,6 +147,7 @@ export interface StoreOptions<T extends Record<string, unknown>> {
   secretPaths?: readonly string[];
   preflightTimeoutMs?: number;
   preflight?: (next: Readonly<T>, previous: Readonly<T>) => Promise<void> | void;
+  onDiagnostic?: (event: ConfigurationDiagnostic) => void;
 }
 
 /** EK-CONF-001: immutable generations with serialized, preflighted atomic reload. */
@@ -126,6 +159,11 @@ export class ConfigStore<T extends Record<string, unknown>> implements ConfigSer
   private pending: Promise<unknown> = Promise.resolve();
 
   constructor(initial: T, options: StoreOptions<T>) {
+    if (options.onDiagnostic !== undefined && typeof options.onDiagnostic !== 'function')
+      throw new KitError({
+        code: 'EK_CONFIG_INVALID',
+        message: 'Invalid configuration diagnostic sink',
+      });
     if (
       options.preflightTimeoutMs !== undefined &&
       (!Number.isSafeInteger(options.preflightTimeoutMs) || options.preflightTimeoutMs <= 0)
@@ -266,6 +304,14 @@ export class ConfigStore<T extends Record<string, unknown>> implements ConfigSer
         const view = freezeData(redactData(next, this.options.secretPaths));
         this.current = next;
         this.view = view;
+        reportConfigurationDiagnostic(
+          {
+            event: 'configuration.reload.applied',
+            source: 'reload',
+            keyCount: Object.keys(captured).length,
+          },
+          this.options.onDiagnostic,
+        );
         return view;
       } catch (cause) {
         throw new KitError({

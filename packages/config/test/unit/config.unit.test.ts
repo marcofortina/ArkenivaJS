@@ -26,6 +26,50 @@ const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
 const setup = { schema, workspace: process.cwd(), environment: {} };
 
+test('EK-CONF-001 committed overrides and reloads emit metadata without keys or values', async () => {
+  const events: unknown[] = [];
+  const config = await createConfig<{ count: number; custom: string }>({
+    ...setup,
+    defaults: { count: 1, custom: 'fake-private-default' },
+    yamlText: 'count: 2\ncustom: fake-private-yaml',
+    environment: { ARKENIVAJS_COUNT: '3' },
+    environmentFields: { ARKENIVAJS_COUNT: { path: 'count', type: 'integer' } },
+    runtime: { count: 4 },
+    dynamicPaths: ['count'],
+    onDiagnostic(event) {
+      assert.ok(Object.isFrozen(event));
+      events.push(event);
+    },
+  });
+  assert.deepEqual(events, [
+    { event: 'configuration.override.applied', source: 'yaml', keyCount: 2 },
+    { event: 'configuration.override.applied', source: 'environment', keyCount: 1 },
+    { event: 'configuration.override.applied', source: 'runtime', keyCount: 1 },
+  ]);
+  await config.reload({ count: 5 });
+  assert.deepEqual(events.at(-1), {
+    event: 'configuration.reload.applied',
+    source: 'reload',
+    keyCount: 1,
+  });
+  const count = events.length;
+  await assert.rejects(config.reload({ count: -1 }), code('EK_CONFIG_RELOAD_REJECTED'));
+  await assert.rejects(
+    createConfig({
+      ...setup,
+      defaults: { count: 1 },
+      runtime: { count: -1 },
+      onDiagnostic(event) {
+        events.push(event);
+      },
+    }),
+    code('EK_CONFIG_INVALID'),
+  );
+  assert.equal(events.length, count);
+  assert.ok(!JSON.stringify(events).includes('fake-private'));
+  assert.ok(!JSON.stringify(events).includes('custom'));
+});
+
 test('EK-CONF-001 precedence is defaults then YAML then explicit env then runtime', async () => {
   const c = await createConfig<Record<string, unknown>>({
     ...setup,

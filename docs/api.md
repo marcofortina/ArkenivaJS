@@ -30,6 +30,8 @@ A core-only application exposes validated configuration and lifecycle. Required 
 
 Reload permits only `dynamicPaths`. Credentials, secret paths, database definitions and security policy require reconstruction. Side-effect-free `preflight(next, previous)` validation is bounded by `preflightTimeoutMs` (default 30,000 ms). Failed or timed-out validation returns `EK_CONFIG_RELOAD_REJECTED`, retains earlier generations and releases the reload queue. `configPlugin(service)` installs a validated service into an application.
 
+Optional synchronous `onDiagnostic(event)` routes safe override/reload audit metadata into a caller-owned sink. The default is JSON on standard error; a throwing sink falls back there. Only fixed event/source names and top-level key counts are emitted after validation/commit, excluding paths and values. Rejected changes have no applied event. The support entry point exports `ConfigurationDiagnostic` and `reportConfigurationDiagnostic` for adapters using this same convention.
+
 ## Adapter support entry point
 
 `@arkenivajs/core/support` supplies `ConfigStore<T>`, `StoreOptions<T>`, strict `compileSchema`, safe `copyData`/`freezeData`/`mergeData`/`redactData`, and `within(work, options)`. These shared primitives preserve one error identity without package dependency cycles. Data copying rejects cycles, accessors, unsafe prototype keys, unsupported values and excessive nesting. Merge replaces arrays and explicit null rather than interpreting null as deletion. `within` defaults to 30,000 ms, requires positive integer milliseconds, and removes its timer and abort listener on every outcome.

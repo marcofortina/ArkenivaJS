@@ -35,6 +35,7 @@ test('EK-CONF-001 concurrent reload generations preserve atomic order', async ()
     fc.asyncProperty(
       fc.array(fc.integer({ min: 0, max: 100 }), { minLength: 1, maxLength: 25 }),
       async (counts) => {
+        const events: unknown[] = [];
         const config = await createConfig<{ count: number }>({
           workspace: process.cwd(),
           schema: {
@@ -46,11 +47,15 @@ test('EK-CONF-001 concurrent reload generations preserve atomic order', async ()
           runtime: { count: 0 },
           dynamicPaths: ['count'],
           environment: {},
+          onDiagnostic(event) {
+            events.push(event);
+          },
         });
         const before = config.snapshot();
         await Promise.all(counts.map((count) => config.reload({ count })));
         assert.equal(config.require('count'), counts.at(-1));
         assert.equal(before.count, 0);
+        assert.equal(events.length, counts.length);
       },
     ),
     { seed: 2404, numRuns: 100 },
