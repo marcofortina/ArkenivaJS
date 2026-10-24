@@ -185,6 +185,8 @@ tables in the restricted fixture database and clean up their own resources.
 | mysql2 3.24.6 | MySQL 9.7.4 LTS | 22.23.4, 24.22.1, 26.12.1 | Linux x86-64, QEMU/KVM | 2026-10-25             |
 
 Other server/runtime versions require their own live evidence.
+The [runnable orders example](../../examples/mysql/README.md) builds as a separate
+consumer and verifies real writes, duplicates, exact values and rollback.
 Upstream references: [mysql2 documentation](https://sidorares.github.io/node-mysql2/docs),
 [prepared statements](https://sidorares.github.io/node-mysql2/docs/documentation/prepared-statements),
 [official MySQL image](https://hub.docker.com/_/mysql), and

@@ -25,3 +25,6 @@ Run the [typed HTTP example](examples/hello-http/README.md) for a Fastify servic
 
 Run the [PostgreSQL orders example](examples/postgres/README.md) against a disposable
 TLS server for exact numeric values, named binds, transactions and rollback.
+
+The [MySQL orders example](examples/mysql/README.md) verifies the same business
+operations with InnoDB, exact values and explicit handling of DDL commit semantics.
