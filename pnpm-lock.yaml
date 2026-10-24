@@ -190,6 +190,9 @@ importers:
       typescript-eslint:
         specifier: 8.72.0
         version: 8.72.0(eslint@10.13.0)(typescript@6.0.3)
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   examples/configuration:
     dependencies:
