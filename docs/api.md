@@ -52,4 +52,4 @@ See the [configuration example](../examples/configuration/README.md) for complet
 
 ## HTTP server
 
-`@arkenivajs/api` exports the typed route contracts, `createApi(options)` and `apiPlugin(options?)`. Registration precedes startup, and activation follows resource initialization. Schemas are mandatory, middleware stages preserve authentication, OpenAPI is deterministic 3.1, and shutdown drains inbound work before downstream resources close. See the [server reference](../packages/api/README.md).
+`@arkenivajs/api` exports the typed route contracts, `createApi(options)` and `apiPlugin(options?)`. Registration precedes startup, and activation follows resource initialization. Schemas are mandatory, middleware stages preserve authentication, OpenAPI is deterministic 3.1, and shutdown drains inbound work before downstream resources close. See the [server reference](../packages/api/README.md) and [runnable HTTP guide](../examples/hello-http/README.md).
