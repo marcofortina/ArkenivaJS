@@ -571,10 +571,12 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
         (operation.timeoutMs ?? timeout * attempts + retryDelay * (attempts - 1) + 1000);
       closing = (async () => {
         let primary: unknown;
+        let failed = false;
         try {
           await api.flush(operation);
         } catch (error) {
           primary = error;
+          failed = true;
         } finally {
           closed = true;
           controller.abort();
@@ -587,10 +589,18 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
               { timeoutMs: Math.max(1, Math.ceil(deadline - performance.now())) },
             );
           } catch (error) {
-            primary ??= error;
+            if (!failed) primary = error;
+            failed = true;
           }
         }
-        if (primary) throw primary;
+        if (failed) {
+          if (primary instanceof KitError) throw primary;
+          throw new KitError({
+            code: 'EK_METER_EXPORT',
+            message: 'Meter exporter cleanup failed',
+            cause: primary,
+          });
+        }
       })();
       return closing;
     },

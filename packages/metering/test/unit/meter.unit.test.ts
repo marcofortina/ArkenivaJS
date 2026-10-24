@@ -639,3 +639,30 @@ test('EK-METER-001 live parent reports rejected children while late child creati
     await meter.close();
   }
 });
+
+test('EK-METER-001 cleanup reports every thrown value as a typed failure and closes owned exporters once', async () => {
+  const f = fixture();
+  for (const primary of [undefined, false, 0, '', new Error('fake-private-cleanup')]) {
+    let calls = 0;
+    const meter = createMeter({
+      ...f.options,
+      exporter: {
+        kind: 'jsonl',
+        async export() {},
+        async close() {
+          calls++;
+          throw primary;
+        },
+      },
+    });
+    await assert.rejects(meter.close(), (error) => {
+      assert.ok(error instanceof KitError);
+      assert.equal(error.code, 'EK_METER_EXPORT');
+      assert.equal(error.cause, primary);
+      assert.ok(!JSON.stringify(error).includes('fake-private'));
+      return true;
+    });
+    await assert.rejects(meter.close(), code('EK_METER_EXPORT'));
+    assert.equal(calls, 1);
+  }
+});
