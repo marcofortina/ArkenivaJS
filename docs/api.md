@@ -35,3 +35,7 @@ Reload permits only `dynamicPaths`. Credentials, secret paths, database definiti
 `@arkenivajs/core/support` supplies `ConfigStore<T>`, `StoreOptions<T>`, strict `compileSchema`, safe `copyData`/`freezeData`/`mergeData`/`redactData`, and `within(work, options)`. These shared primitives preserve one error identity without package dependency cycles. Data copying rejects cycles, accessors, unsafe prototype keys, unsupported values and excessive nesting. Merge replaces arrays and explicit null rather than interpreting null as deletion. `within` defaults to 30,000 ms, requires positive integer milliseconds, and removes its timer and abort listener on every outcome.
 
 See the [configuration example](../examples/configuration/README.md) for complete commands, expected output, errors and cleanup.
+
+## Structured logging
+
+`@arkenivajs/logging` exports the `Logger`, `LogLevel` and `LogFields` contracts, `createLogger(options)` and `loggingPlugin(options?)`. The factory returns `ManagedLogger`: the six severity methods, `child`, `setLevel`, `flush`, an isolated asynchronous `run` scope, immutable `stats` and idempotent `close`. See the [logging reference and runnable sequence](../packages/logging/README.md) for default limits, redaction controls, write acknowledgement and transport ownership.

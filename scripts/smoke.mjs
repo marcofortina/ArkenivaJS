@@ -49,3 +49,20 @@ const loaded = await createConfig({
 });
 assert.equal(loaded.require('enabled'), true);
 console.log('Layered configuration smoke passed');
+const { Writable } = await import('node:stream');
+const { createLogger } = await import('../packages/logging/dist/index.js');
+const lines = [];
+const log = createLogger({
+  service: { name: 'smoke-log', version: '1.0.0', environment: 'test' },
+  destination: new Writable({
+    write(chunk, encoding, callback) {
+      lines.push(String(chunk));
+      callback();
+    },
+  }),
+});
+log.info('logging smoke', { password: 'fake-private-value' });
+await log.flush();
+assert.equal(JSON.parse(lines[0]).password, '[REDACTED]');
+await log.close();
+console.log('Pino logging smoke passed');
