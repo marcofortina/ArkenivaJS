@@ -437,6 +437,9 @@ importers:
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@arkenivajs/metering':
+        specifier: workspace:*
+        version: link:../../packages/metering
       pino:
         specifier: 10.4.0
         version: 10.4.0
