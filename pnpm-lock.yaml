@@ -245,6 +245,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/logging
 
+  examples/mariadb:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-mariadb':
+        specifier: workspace:*
+        version: link:../../packages/database-mariadb
+
   examples/metering:
     dependencies:
       '@arkenivajs/api':

@@ -186,6 +186,8 @@ infrastructure fails rather than skipping tests. Unit/contract tests need no ser
 | mariadb 3.5.4 | MariaDB 12.3.3 LTS | 22.23.4, 24.22.1, 26.12.1 | Linux x86-64, QEMU/KVM | 2026-10-25             |
 
 Other versions/platforms need independent live evidence. The separately installed
+connector is exercised by the [runnable orders consumer](../../examples/mariadb/README.md),
+including explicit bigint-to-JSON conversion and real rollback. The upstream
 connector declares **LGPL-2.1-or-later**; its lru-cache 11.5.3 dependency declares
 [BlueOak-1.0.0](https://blueoakcouncil.org/license/1.0.0). Product release licensing,
 notices and redistribution review remain separate from private development checks.

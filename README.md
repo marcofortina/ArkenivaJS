@@ -28,3 +28,6 @@ TLS server for exact numeric values, named binds, transactions and rollback.
 
 The [MySQL orders example](examples/mysql/README.md) verifies the same business
 operations with InnoDB, exact values and explicit handling of DDL commit semantics.
+
+Use the [MariaDB orders example](examples/mariadb/README.md) for its independent
+native driver, bigint result values and explicit JSON transport conversion.
