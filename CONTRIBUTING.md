@@ -15,3 +15,5 @@ Mermaid diagrams are optional. If a diagram is added, include a pinned renderer 
 `pnpm test` and coverage select unit, contract and property suites. Integration suites are separate mandatory jobs with disposable external services; `pnpm test:integration:telemetry` requires the real collector and an external evidence path. Missing infrastructure fails the suite instead of skipping it. See the [telemetry reference](packages/telemetry/README.md).
 
 TLS rejection tests require the OpenSSL CLI already present on the supported Ubuntu CI image. They create private keys only in protected temporary directories, trust the test CA only in a short-lived child process, and remove all certificate material after the test. No private certificate/key is versioned.
+
+POSIX JSONL resource-failure tests use the Ubuntu Bash builtin file-size limit and the preinstalled `prlimit` utility in a short-lived child process. They handle `SIGXFSZ` only in that child, verify an actual failed write and rollback of partial data, and restore that child's original limit before V8 emits coverage. The parent and system limits remain unaffected.
