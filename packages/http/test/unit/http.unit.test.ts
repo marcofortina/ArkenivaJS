@@ -120,7 +120,13 @@ test('EK-HTTP-002 deadlines cover headers and body, signals cancel actual transp
   });
   try {
     for (const path of ['', '/body'])
-      await assert.rejects(client.get(server.origin + path), code('EK_TIMEOUT'));
+      await assert.rejects(
+        client.get(server.origin + path),
+        (error) =>
+          error instanceof KitError &&
+          error.code === 'EK_TIMEOUT' &&
+          error.details.upstream === true,
+      );
     await assert.rejects(
       client.get(server.origin, { signal: AbortSignal.abort() }),
       code('EK_ABORTED'),
@@ -237,6 +243,9 @@ test('EK-HTTP-002 destination policy rejects alternate IP spellings and metadata
     'https://0177.0.0.1',
     'https://[::1]',
     'https://[::ffff:127.0.0.1]',
+    'https://[64:ff9b::7f00:1]',
+    'https://[2002:7f00:1::]',
+    'https://[2001::1]',
     'https://169.254.169.254',
     'https://10.0.0.1',
     'https://192.168.1.2',
@@ -265,6 +274,7 @@ test('EK-HTTP-002 destination policy rejects alternate IP spellings and metadata
 test('EK-HTTP-002 connection-time DNS guard rejects rebinding, empty answers and resolver errors', async () => {
   for (const resolve of [
     async () => [{ address: '127.0.0.1', family: 4 as const }],
+    async () => [{ address: '8.8.8.8', family: 6 as const }],
     async () => [],
     async () => undefined as never,
     () => {

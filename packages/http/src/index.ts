@@ -67,13 +67,21 @@ for (const [network, bits] of [
   ['fe80::', 10],
   ['ff00::', 8],
   ['2001:db8::', 32],
+  ['2001::', 23],
+  ['2002::', 16],
 ] as const)
   privateNetworks.addSubnet(network, bits, 'ipv6');
+const globalIpv6 = new BlockList();
+globalIpv6.addSubnet('2000::', 3, 'ipv6');
 const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', message });
 const positive = (value: number) => Number.isSafeInteger(value) && value > 0;
 const publicAddress = (address: string): boolean => {
   const family = isIP(address);
-  return family !== 0 && !privateNetworks.check(address, family === 4 ? 'ipv4' : 'ipv6');
+  return (
+    family !== 0 &&
+    (family !== 6 || globalIpv6.check(address, 'ipv6')) &&
+    !privateNetworks.check(address, family === 4 ? 'ipv4' : 'ipv6')
+  );
 };
 
 /** EK-HTTP-002: bounded Undici client with connection-time DNS and origin enforcement. */
@@ -152,7 +160,7 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
             (row) =>
               !row ||
               ![4, 6].includes(row.family) ||
-              !isIP(row.address) ||
+              isIP(row.address) !== row.family ||
               (!options.allowPrivateNetwork && !publicAddress(row.address)),
           )
         ) {
@@ -327,6 +335,13 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
       return result;
     } catch (cause) {
       counters.failed++;
+      if (cause instanceof KitError && cause.code === 'EK_TIMEOUT')
+        throw new KitError({
+          code: 'EK_TIMEOUT',
+          message: 'Upstream HTTP deadline exceeded',
+          details: { upstream: true },
+          cause,
+        });
       if (cause instanceof KitError) throw cause;
       if (controller.signal.aborted)
         throw new KitError({ code: 'EK_ABORTED', message: 'HTTP request aborted', cause });
