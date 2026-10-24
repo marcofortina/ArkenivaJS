@@ -10,7 +10,7 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint .",
+    "lint": "eslint . && node scripts/check.mjs",
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json --noEmit",
     "build": "node scripts/build.mjs",
     "test:unit": "node scripts/test.mjs unit",
