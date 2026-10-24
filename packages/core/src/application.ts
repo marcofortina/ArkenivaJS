@@ -11,6 +11,8 @@ import type {
 import { KitError } from './errors.js';
 import { ConfigStore, copyData, freezeData, within } from './support.js';
 import { APPLICATION_SCHEMA, SEMVER_PATTERN } from './application-schema.js';
+import { PREPARE_PLUGIN, ACTIVATE_PLUGIN } from './composition.js';
+import type { ComposablePlugin } from './composition.js';
 
 /** EK-CORE-002: explicit capability keys; no optional adapters load implicitly. */
 export const COMPONENTS = Object.freeze({
@@ -57,9 +59,10 @@ function readonlyCapabilities(input: ReadonlySet<string>): ReadonlySet<string> {
   return view;
 }
 
-function ordered(plugins: readonly Plugin[]): Plugin[] {
-  const map = new Map<string, Plugin>();
+function ordered(plugins: readonly Plugin[]): ComposablePlugin[] {
+  const map = new Map<string, ComposablePlugin>();
   for (const plugin of plugins) {
+    const composition = plugin as ComposablePlugin;
     if (
       !plugin ||
       typeof plugin.id !== 'string' ||
@@ -69,6 +72,10 @@ function ordered(plugins: readonly Plugin[]): Plugin[] {
       !new RegExp(SEMVER_PATTERN).test(plugin.version) ||
       typeof plugin.init !== 'function' ||
       typeof plugin.close !== 'function' ||
+      (composition[PREPARE_PLUGIN] !== undefined &&
+        typeof composition[PREPARE_PLUGIN] !== 'function') ||
+      (composition[ACTIVATE_PLUGIN] !== undefined &&
+        typeof composition[ACTIVATE_PLUGIN] !== 'function') ||
       !plugin.capabilities ||
       typeof plugin.capabilities.has !== 'function' ||
       typeof plugin.capabilities[Symbol.iterator] !== 'function' ||
@@ -87,12 +94,18 @@ function ordered(plugins: readonly Plugin[]): Plugin[] {
         version: plugin.version,
         init: plugin.init.bind(plugin),
         close: plugin.close.bind(plugin),
+        ...(composition[PREPARE_PLUGIN]
+          ? { [PREPARE_PLUGIN]: composition[PREPARE_PLUGIN].bind(plugin) }
+          : {}),
+        ...(composition[ACTIVATE_PLUGIN]
+          ? { [ACTIVATE_PLUGIN]: composition[ACTIVATE_PLUGIN].bind(plugin) }
+          : {}),
         dependencies: Object.freeze([...(plugin.dependencies ?? [])]),
         capabilities: readonlyCapabilities(plugin.capabilities),
       }),
     );
   }
-  const result: Plugin[] = [],
+  const result: ComposablePlugin[] = [],
     visiting = new Set<string>(),
     visited = new Set<string>();
   const visit = (id: string): void => {
@@ -190,7 +203,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
   let starting: Promise<void> | undefined, stopping: Promise<void> | undefined;
   let shutdownDeadline: number | undefined;
   let startupCleanupErrors: readonly unknown[] = [];
-  const started: { plugin: Plugin; context: PluginContext }[] = [];
+  const started: { plugin: ComposablePlugin; context: PluginContext }[] = [];
   const component = <T>(key: symbol): T => {
     if (!values.has(key))
       throw new KitError({
@@ -199,6 +212,31 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
       });
     return values.get(key)!.value as T;
   };
+  for (const plugin of plugins) {
+    const bindings = plugin[PREPARE_PLUGIN]?.(
+      Object.freeze({ options: immutableOptions, state: () => state }),
+    );
+    if (bindings === undefined) continue;
+    if (!bindings || typeof bindings[Symbol.iterator] !== 'function')
+      throw new KitError({
+        code: 'EK_CONFIG_INVALID',
+        message: 'Prepared bindings must be iterable',
+      });
+    for (const [key, value] of bindings) {
+      const capability = Object.entries(COMPONENTS).find(([, symbol]) => symbol === key)?.[0];
+      if (!capability || !plugin.capabilities.has(capability) || value == null)
+        throw new KitError({
+          code: 'EK_PLUGIN_DEPENDENCY',
+          message: 'Prepared binding requires its declared capability',
+        });
+      if (values.has(key))
+        throw new KitError({
+          code: 'EK_PLUGIN_DUPLICATE',
+          message: 'Prepared capability already provided',
+        });
+      values.set(key, { owner: plugin.id, value });
+    }
+  }
   const cleanup = async (deadline: number): Promise<unknown[]> => {
     const errors: unknown[] = [];
     for (const { plugin, context } of started.splice(0).reverse()) {
@@ -297,6 +335,16 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
             } finally {
               initializing = false;
             }
+          }
+          // Resource initialization and route registration finish before listeners bind.
+          const activationOrder = [...started].sort(
+            (left, right) =>
+              Number(left.plugin.capabilities.has('api')) -
+              Number(right.plugin.capabilities.has('api')),
+          );
+          for (const { plugin, context } of activationOrder) {
+            const activate = plugin[ACTIVATE_PLUGIN];
+            if (activate) await within(() => activate(context), { signal: controller.signal });
           }
           state = 'READY';
         } catch (cause) {
