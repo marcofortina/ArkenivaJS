@@ -293,7 +293,10 @@ export function createLogger(options: LoggerOptions): ManagedLogger {
         throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Log fields must be an object' });
       if (!logger.isLevelEnabled(severity)) return;
       const scoped = merge(bound, context.getStore() ?? EMPTY_FIELDS);
-      logger[severity](merge(scoped, fields(data)), text(message));
+      const emitted = merge(scoped, fields(data));
+      // Pino already emits these immutable base bindings in its own JSON prefix.
+      for (const key of Object.keys(base)) delete emitted[key];
+      logger[severity](emitted, text(message));
     };
     return Object.freeze({
       trace: (message: string, data?: LogFields) => emit('trace', message, data),
@@ -305,7 +308,7 @@ export function createLogger(options: LoggerOptions): ManagedLogger {
       child(data: LogFields): ManagedLogger {
         open();
         const child = freezeData(merge(bound, fields(data)));
-        return make(logger.child(child), child);
+        return make(logger.child({}), child);
       },
       setLevel(next: LogLevel): void {
         open();
