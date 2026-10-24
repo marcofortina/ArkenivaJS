@@ -13,3 +13,5 @@ Use focused commits and keep main reproducibly buildable. Each commit should des
 Mermaid diagrams are optional. If a diagram is added, include a pinned renderer and a successful rendering check; the documentation gate rejects unconfigured Mermaid blocks. Keep a complete textual explanation alongside a diagram.
 
 `pnpm test` and coverage select unit, contract and property suites. Integration suites are separate mandatory jobs with disposable external services; `pnpm test:integration:telemetry` requires the real collector and an external evidence path. Missing infrastructure fails the suite instead of skipping it. See the [telemetry reference](packages/telemetry/README.md).
+
+TLS rejection tests require the OpenSSL CLI already present on the supported Ubuntu CI image. They create private keys only in protected temporary directories, trust the test CA only in a short-lived child process, and remove all certificate material after the test. No private certificate/key is versioned.
