@@ -1,4 +1,7 @@
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import { KitError } from '@arkenivajs/core';
 import { records } from '../fixtures/events.js';
@@ -173,6 +176,59 @@ test('EK-METER-001 file ownership loss and cancellation poison the writer instea
     assert.equal(await readFile(join(workspace, 'cancelled'), 'utf8'), '');
   } finally {
     await exporter.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('EK-METER-001 actual file-size exhaustion rejects acknowledgment and truncates the incomplete record', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'arkeniva-file-exhaustion-'));
+  const original = (await records())[0]!;
+  const event = {
+    ...original,
+    counters: Object.fromEntries(
+      Array.from({ length: 32 }, (_, index) => [
+        'resource.' + index,
+        { unit: 'items', source: 'observed', value: 1 },
+      ]),
+    ),
+  };
+  const script = fileURLToPath(
+    new URL('../../../test/fixtures/file-exhaustion.mjs', import.meta.url),
+  );
+  try {
+    const result = await promisify(execFile)(
+      'bash',
+      [
+        '--noprofile',
+        '--norc',
+        '-c',
+        'original_limit=$(prlimit --pid $$ --fsize --noheadings --raw --output SOFT,HARD); ulimit -S -f 1; exec "$@" "$original_limit"',
+        'meter-file-limit',
+        process.execPath,
+        script,
+        workspace,
+        JSON.stringify(event),
+      ],
+      { timeout: 10_000 },
+    );
+    assert.match(result.stdout, /incomplete data was rolled back/);
+    assert.equal(result.stderr, '');
+    await assert.rejects(stat(join(workspace, 'limited.jsonl.lock')));
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('EK-METER-001 cleanup refuses to delete a replaced file lock and still closes its own resources', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'arkeniva-lock-replacement-'));
+  const exporter = await createJsonlExporter({ workspace, path: 'events.jsonl' });
+  try {
+    await unlink(join(workspace, 'events.jsonl.lock'));
+    await writeFile(join(workspace, 'events.jsonl.lock'), 'replacement', { mode: 0o600 });
+    await assert.rejects(exporter.close(), code('EK_METER_EXPORT'));
+    assert.equal(await readFile(join(workspace, 'events.jsonl.lock'), 'utf8'), 'replacement');
+  } finally {
+    await exporter.close().catch(() => undefined);
     await rm(workspace, { recursive: true, force: true });
   }
 });
