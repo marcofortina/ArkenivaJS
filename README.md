@@ -22,3 +22,6 @@ The [observability example](examples/observability/README.md) demonstrates conte
 Use the [foundation measurement tool](tools/benchmark/README.md) to repeat exploratory local component benchmarks and inspect their measurement limits.
 
 Run the [typed HTTP example](examples/hello-http/README.md) for a Fastify service with OpenAPI, a bounded outbound client and a real curl/SIGTERM check.
+
+Run the [PostgreSQL orders example](examples/postgres/README.md) against a disposable
+TLS server for exact numeric values, named binds, transactions and rollback.

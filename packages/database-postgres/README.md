@@ -154,10 +154,20 @@ Unit/contract tests run without a database. Live tests require
 `ARKENIVA_POSTGRES_WRONG_SAN_URL`; missing infrastructure fails explicitly.
 Set `ARKENIVA_POSTGRES_DISPOSABLE=1` only for a disposable test server; the suite
 deliberately creates schemas and terminates its own transaction backend.
-Run `node scripts/test.mjs database-postgres-integration` from the workspace root.
+Run `pnpm test:integration:postgres` from the workspace root.
 Tests isolate their own schemas and clean up their pools. They verify real rows,
 constraints, rollback, pinned connections, mutable-value capture, TLS and
 cancellation, plus distinct commit-acknowledgment fault scenarios.
+
+The [disposable TLS fixture](test/fixtures/README.md) reproduces the server setup
+and negative certificate endpoint in an isolated VM or CI runner. CI executes
+the combined 95% line/branch coverage gate on all three supported Node versions.
+The [orders example](../../examples/postgres/README.md) builds against the actual
+packages and verifies exact values, duplicate rejection and rollback on that server.
+
+| Driver                      | Server          | Node                      | Platform               | Live verification date |
+| --------------------------- | --------------- | ------------------------- | ---------------------- | ---------------------- |
+| pg 8.23.1, pg-cursor 2.22.1 | PostgreSQL 18.6 | 22.23.4, 24.22.1, 26.12.1 | Linux x86-64, QEMU/KVM | 2026-10-24             |
 
 Upstream references: [pool lifecycle](https://node-postgres.com/apis/pool),
 [cursors](https://node-postgres.com/apis/cursor),

@@ -15,6 +15,7 @@ docker compose -f packages/database-postgres/test/fixtures/compose.yaml up -d --
 pnpm install --frozen-lockfile
 pnpm build
 python3 packages/database-postgres/test/fixtures/run.py "$PG_FIXTURE_DIRECTORY/environment.json" pnpm coverage:postgres
+python3 packages/database-postgres/test/fixtures/run.py "$PG_FIXTURE_DIRECTORY/environment.json" pnpm --filter @arkenivajs/example-postgres test:integration
 docker compose -f packages/database-postgres/test/fixtures/compose.yaml down
 ```
 

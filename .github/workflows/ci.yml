@@ -105,6 +105,7 @@ jobs:
       - name: Start verified PostgreSQL and the negative certificate fixture
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:postgres
+      - run: pnpm --filter @arkenivajs/example-postgres test:integration
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
