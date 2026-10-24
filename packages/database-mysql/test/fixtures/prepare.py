@@ -38,6 +38,8 @@ def prepare(directory, github_environment=None):
         run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3",
             "-subj", "/CN=ArkenivaJS disposable MySQL CA",
             "-keyout", str(directory / "ca.key"), "-out", str(directory / "ca.crt"))
+        # Separate public CA copies let both the invoking client user and mysql uid read their own files.
+        private_file(directory / "server-ca.crt", (directory / "ca.crt").read_text(encoding="utf-8"))
         for name, identities in (
             ("server", "DNS:localhost,IP:127.0.0.1"),
             ("wrong-san", "DNS:wrong.invalid"),
@@ -53,7 +55,7 @@ def prepare(directory, github_environment=None):
                 "-extfile", str(directory / (name + ".ext")),
                 "-out", str(directory / (name + ".crt")))
         owned = [directory / name for name in (
-            "server.key", "server.crt", "wrong-san.key", "wrong-san.crt", "ca.crt",
+            "server.key", "server.crt", "wrong-san.key", "wrong-san.crt", "server-ca.crt",
             "admin-password", "init.sql",
         )]
         for name in ("data-server", "data-wrong-san"):

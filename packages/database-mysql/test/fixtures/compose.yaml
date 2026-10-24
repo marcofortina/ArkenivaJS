@@ -36,7 +36,7 @@ services:
       - '${MYSQL_FIXTURE_DIRECTORY:?Prepare private MySQL fixtures}/data-server:/var/lib/mysql'
       - '${MYSQL_FIXTURE_DIRECTORY}/server.crt:/fixture/server.crt:ro'
       - '${MYSQL_FIXTURE_DIRECTORY}/server.key:/fixture/server.key:ro'
-      - '${MYSQL_FIXTURE_DIRECTORY}/ca.crt:/fixture/ca.crt:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/server-ca.crt:/fixture/ca.crt:ro'
       - '${MYSQL_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
       - '${MYSQL_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'
   wrong-san:
@@ -47,6 +47,6 @@ services:
       - '${MYSQL_FIXTURE_DIRECTORY:?Prepare private MySQL fixtures}/data-wrong-san:/var/lib/mysql'
       - '${MYSQL_FIXTURE_DIRECTORY}/wrong-san.crt:/fixture/server.crt:ro'
       - '${MYSQL_FIXTURE_DIRECTORY}/wrong-san.key:/fixture/server.key:ro'
-      - '${MYSQL_FIXTURE_DIRECTORY}/ca.crt:/fixture/ca.crt:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/server-ca.crt:/fixture/ca.crt:ro'
       - '${MYSQL_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
       - '${MYSQL_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'

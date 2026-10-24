@@ -11,9 +11,13 @@ passwordless `sudo chown`, prepare a **new directory outside every Git checkout*
 ```sh
 python3 packages/database-mysql/test/fixtures/prepare.py /tmp/arkeniva-mysql-private
 python3 packages/database-mysql/test/fixtures/run.py /tmp/arkeniva-mysql-private/environment.json docker compose -f packages/database-mysql/test/fixtures/compose.yaml up -d --wait
+python3 packages/database-mysql/test/fixtures/run.py /tmp/arkeniva-mysql-private/environment.json pnpm coverage:mysql
 ```
 
-Keep the directory, keys and environment JSON private. Preparation rejects an
+Keep the directory, keys and environment JSON private. The invoking user owns the
+client CA copy; mysql uid 999 owns a separate server CA copy. Both files have mode
+0600, so a non-root test process can read its trust anchor without exposing keys.
+Preparation rejects an
 existing directory and never prints credentials except a GitHub Actions masking
 directive when explicitly asked to append to `GITHUB_ENV`. The runner checks file
 permissions before reading variables. `mysqladmin ping` detects a ready server;
@@ -28,3 +32,7 @@ private fixtures into the product checkout.
 
 Use the same private runner and Compose file with `down` to stop these services.
 Private bind directories deliberately remain for inspection and separate cleanup.
+
+CI runs combined unit/contract/live tests with a 95% line/branch floor, and the
+built orders consumer, on each supported Node version. The same commands work
+with the prepared environment; no test credentials are embedded in the workflow.

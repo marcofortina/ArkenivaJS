@@ -110,3 +110,32 @@ jobs:
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml down
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.4', '24.22.1', '26.12.1']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare private MySQL credentials and verified DNS TLS fixtures
+        run: python3 packages/database-mysql/test/fixtures/prepare.py "$RUNNER_TEMP/mysql-fixture" --github-env "$GITHUB_ENV"
+      - name: Start restricted MySQL and its negative certificate endpoint
+        run: docker compose -f packages/database-mysql/test/fixtures/compose.yaml up -d --wait --wait-timeout 180
+      - run: pnpm coverage:mysql
+      - run: pnpm --filter @arkenivajs/example-mysql test:integration
+      - if: always() && env.MYSQL_FIXTURE_DIRECTORY != ''
+        run: docker compose -f packages/database-mysql/test/fixtures/compose.yaml logs --no-color
+      - if: always() && env.MYSQL_FIXTURE_DIRECTORY != ''
+        run: docker compose -f packages/database-mysql/test/fixtures/compose.yaml down

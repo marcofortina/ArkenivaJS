@@ -179,6 +179,9 @@ Unit and contract tests run without a server. Live tests require
 Use the [disposable TLS fixtures](test/fixtures/README.md) in a VM or CI runner;
 all private credentials remain outside the checkout. Tests create uniquely named
 tables in the restricted fixture database and clean up their own resources.
+From the workspace, run `pnpm test:integration:mysql` or `pnpm coverage:mysql` with
+the private fixture variables. CI enforces combined 95% line/branch coverage and
+the built orders example on all three supported Node versions.
 
 | Driver        | Server          | Node                      | Platform               | Live verification date |
 | ------------- | --------------- | ------------------------- | ---------------------- | ---------------------- |
