@@ -2,10 +2,10 @@ import type { OperationOptions, Environment } from './contracts.js';
 
 /** Type-only component ports; runtime implementations belong to independent adapters. */
 
-/** TenantId shape used by the application facade. */
+/** Compile-time tenant brand; runtime verification must come from the authentication provider. */
 export type TenantId = string & { readonly __brand: 'VerifiedTenantId' };
 
-/** Identity shape used by the application facade. */
+/** Immutable issuer/audience-verified identity; claims may contain sensitive application data. */
 export interface Identity {
   readonly subject: string;
   readonly issuer: string;
@@ -14,7 +14,7 @@ export interface Identity {
   readonly claims: Readonly<Record<string, unknown>>;
 }
 
-/** VerifiedTenantContext shape used by the application facade. */
+/** Authorized single-tenant context. Serialization and object cloning do not preserve provenance. */
 export interface VerifiedTenantContext {
   readonly tenantId: TenantId;
   readonly identity: Identity;
@@ -22,13 +22,22 @@ export interface VerifiedTenantContext {
   readonly source: 'oidc' | 'service-identity';
 }
 
-/** AuthService shape used by the application facade. */
+/** Resource-server authentication and exact scope/tenant authorization. */
 export interface AuthService {
+  /**
+   * Verify one bearer assertion against configured issuer, audience, signature and time policy.
+   * @param authorizationHeader Single Authorization header; absence requires authentication.
+   * @param options Cooperative cancellation and caller deadline, in milliseconds.
+   * @returns A provider-owned immutable identity; no diagnostic header grants trust.
+   * @throws KitError with EK_AUTH_REQUIRED, EK_AUTH_INVALID, EK_TIMEOUT or EK_ABORTED.
+   */
   verifyBearer(
     authorizationHeader: string | undefined,
     options?: OperationOptions,
   ): Promise<Identity>;
+  /** Require exact scope membership on a current verified identity; otherwise EK_AUTH_FORBIDDEN. */
   requireScope(identity: Identity, scope: string): void;
+  /** Derive one authorized tenant from verified claims; ambiguous/foreign values use EK_TENANT_UNVERIFIED. */
   tenantFrom(identity: Identity): VerifiedTenantContext;
 }
 
