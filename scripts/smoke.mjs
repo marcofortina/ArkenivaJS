@@ -10,3 +10,19 @@ assert.equal(
   'EK_INTERNAL',
 );
 console.log('Core error ESM smoke passed');
+const { ConfigStore } = await import('../packages/core/dist/support.js');
+const config = new ConfigStore(
+  { count: 1 },
+  {
+    schema: {
+      type: 'object',
+      properties: { count: { type: 'integer' } },
+      additionalProperties: false,
+    },
+    dynamicPaths: ['count'],
+  },
+);
+await config.reload({ count: 2 });
+assert.equal(config.require('count'), 2);
+assert.ok(Object.isFrozen(config.snapshot()));
+console.log('Configuration store smoke passed');
