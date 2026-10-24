@@ -11,8 +11,8 @@ import type {
 import { KitError } from './errors.js';
 import { ConfigStore, copyData, freezeData, within } from './support.js';
 import { APPLICATION_SCHEMA, SEMVER_PATTERN } from './application-schema.js';
-import { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN } from './composition.js';
-import type { ComposablePlugin } from './composition.js';
+import { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN, SUPPORT_PLUGINS } from './composition.js';
+import type { ComposablePlugin, SupportPluginFactory } from './composition.js';
 
 /** EK-CORE-002: explicit capability keys; no optional adapters load implicitly. */
 export const COMPONENTS = Object.freeze({
@@ -59,57 +59,117 @@ function readonlyCapabilities(input: ReadonlySet<string>): ReadonlySet<string> {
   return view;
 }
 
-function ordered(plugins: readonly Plugin[]): ComposablePlugin[] {
-  const map = new Map<string, ComposablePlugin>();
-  for (const plugin of plugins) {
-    const composition = plugin as ComposablePlugin;
-    if (
-      !plugin ||
-      typeof plugin.id !== 'string' ||
-      !/^[a-z][a-z0-9.-]{0,79}$/.test(plugin.id) ||
-      plugin.id.includes('\n') ||
-      typeof plugin.version !== 'string' ||
-      !new RegExp(SEMVER_PATTERN).test(plugin.version) ||
-      typeof plugin.init !== 'function' ||
-      typeof plugin.close !== 'function' ||
-      (composition[PREPARE_PLUGIN] !== undefined &&
-        typeof composition[PREPARE_PLUGIN] !== 'function') ||
-      (composition[ACTIVATE_PLUGIN] !== undefined &&
-        typeof composition[ACTIVATE_PLUGIN] !== 'function') ||
-      (composition[DRAIN_PLUGIN] !== undefined &&
-        typeof composition[DRAIN_PLUGIN] !== 'function') ||
-      !plugin.capabilities ||
-      typeof plugin.capabilities.has !== 'function' ||
-      typeof plugin.capabilities[Symbol.iterator] !== 'function' ||
-      (plugin.dependencies !== undefined &&
-        (!Array.isArray(plugin.dependencies) ||
-          !plugin.dependencies.every((d) => typeof d === 'string')))
-    ) {
-      throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid plugin definition' });
+function capturePlugin(plugin: Plugin): ComposablePlugin {
+  const composition = plugin as ComposablePlugin;
+  if (
+    !plugin ||
+    typeof plugin.id !== 'string' ||
+    !/^[a-z][a-z0-9.-]{0,79}(?![\s\S])/.test(plugin.id) ||
+    typeof plugin.version !== 'string' ||
+    !new RegExp(SEMVER_PATTERN).test(plugin.version) ||
+    typeof plugin.init !== 'function' ||
+    typeof plugin.close !== 'function' ||
+    (composition[PREPARE_PLUGIN] !== undefined &&
+      typeof composition[PREPARE_PLUGIN] !== 'function') ||
+    (composition[ACTIVATE_PLUGIN] !== undefined &&
+      typeof composition[ACTIVATE_PLUGIN] !== 'function') ||
+    (composition[DRAIN_PLUGIN] !== undefined && typeof composition[DRAIN_PLUGIN] !== 'function') ||
+    (composition[SUPPORT_PLUGINS] !== undefined &&
+      (!Array.isArray(composition[SUPPORT_PLUGINS]) ||
+        composition[SUPPORT_PLUGINS].length > 64 ||
+        composition[SUPPORT_PLUGINS].some((factory) => typeof factory !== 'function'))) ||
+    !plugin.capabilities ||
+    typeof plugin.capabilities.has !== 'function' ||
+    typeof plugin.capabilities[Symbol.iterator] !== 'function' ||
+    (plugin.dependencies !== undefined &&
+      (!Array.isArray(plugin.dependencies) ||
+        !plugin.dependencies.every((d) => typeof d === 'string')))
+  ) {
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid plugin definition' });
+  }
+  return Object.freeze({
+    id: plugin.id,
+    version: plugin.version,
+    init: plugin.init.bind(plugin),
+    close: plugin.close.bind(plugin),
+    ...(composition[PREPARE_PLUGIN]
+      ? { [PREPARE_PLUGIN]: composition[PREPARE_PLUGIN].bind(plugin) }
+      : {}),
+    ...(composition[ACTIVATE_PLUGIN]
+      ? { [ACTIVATE_PLUGIN]: composition[ACTIVATE_PLUGIN].bind(plugin) }
+      : {}),
+    ...(composition[DRAIN_PLUGIN]
+      ? { [DRAIN_PLUGIN]: composition[DRAIN_PLUGIN].bind(plugin) }
+      : {}),
+    ...(composition[SUPPORT_PLUGINS]
+      ? { [SUPPORT_PLUGINS]: Object.freeze([...composition[SUPPORT_PLUGINS]]) }
+      : {}),
+    dependencies: Object.freeze([...(plugin.dependencies ?? [])]),
+    capabilities: readonlyCapabilities(plugin.capabilities),
+  });
+}
+
+function expandSupport(
+  roots: readonly ComposablePlugin[],
+  options: ApplicationOptions,
+): ComposablePlugin[] {
+  const plugins = [...roots];
+  const factories = new Map<SupportPluginFactory, ComposablePlugin>();
+  const knownIds = new Set(roots.map((plugin) => plugin.id));
+  for (let index = 0; index < plugins.length; index++) {
+    const owner = plugins[index]!;
+    for (const factory of owner[SUPPORT_PLUGINS] ?? []) {
+      let support = factories.get(factory);
+      if (!support) {
+        if (plugins.length >= 256 || factories.size >= 256)
+          throw new KitError({
+            code: 'EK_CONFIG_INVALID',
+            message: 'Support plugin expansion limit reached',
+          });
+        let definition: Plugin;
+        try {
+          definition = factory(options);
+          if ((definition as unknown) instanceof Promise) {
+            void (definition as unknown as Promise<unknown>).catch(() => undefined);
+            throw new Error('Support plugin factories must be synchronous');
+          }
+          support = capturePlugin(definition);
+        } catch (cause) {
+          if (cause instanceof KitError) throw cause;
+          throw new KitError({
+            code: 'EK_CONFIG_INVALID',
+            message: 'Support plugin factory failed',
+            cause,
+          });
+        }
+        if (knownIds.has(support.id))
+          throw new KitError({
+            code: 'EK_PLUGIN_DUPLICATE',
+            message: 'Support plugin id conflicts with another definition',
+          });
+        knownIds.add(support.id);
+        factories.set(factory, support);
+        plugins.push(support);
+      }
+      if (!owner.dependencies?.includes(support.id))
+        throw new KitError({
+          code: 'EK_PLUGIN_DEPENDENCY',
+          message: 'Support plugin requires an explicit dependency',
+        });
     }
+  }
+  return plugins;
+}
+
+function ordered(input: readonly Plugin[]): ComposablePlugin[] {
+  const map = new Map<string, ComposablePlugin>();
+  for (const definition of input) {
+    const plugin = capturePlugin(definition);
     if (map.has(plugin.id))
       throw new KitError({ code: 'EK_PLUGIN_DUPLICATE', message: 'Duplicate plugin id' });
-    map.set(
-      plugin.id,
-      Object.freeze({
-        id: plugin.id,
-        version: plugin.version,
-        init: plugin.init.bind(plugin),
-        close: plugin.close.bind(plugin),
-        ...(composition[PREPARE_PLUGIN]
-          ? { [PREPARE_PLUGIN]: composition[PREPARE_PLUGIN].bind(plugin) }
-          : {}),
-        ...(composition[ACTIVATE_PLUGIN]
-          ? { [ACTIVATE_PLUGIN]: composition[ACTIVATE_PLUGIN].bind(plugin) }
-          : {}),
-        ...(composition[DRAIN_PLUGIN]
-          ? { [DRAIN_PLUGIN]: composition[DRAIN_PLUGIN].bind(plugin) }
-          : {}),
-        dependencies: Object.freeze([...(plugin.dependencies ?? [])]),
-        capabilities: readonlyCapabilities(plugin.capabilities),
-      }),
-    );
+    map.set(plugin.id, plugin);
   }
+
   const result: ComposablePlugin[] = [],
     visiting = new Set<string>(),
     visited = new Set<string>();
@@ -167,7 +227,26 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
   }
   if (!Array.isArray(requested))
     throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Plugins must be an array' });
-  const plugins = ordered(requested);
+  const initialConfig = new ConfigStore(copyData(data) as Record<string, unknown>, {
+    schema: APPLICATION_SCHEMA,
+  });
+  const roots = requested.map(capturePlugin);
+  if (new Set(roots.map((plugin) => plugin.id)).size !== roots.length)
+    throw new KitError({ code: 'EK_PLUGIN_DUPLICATE', message: 'Duplicate plugin id' });
+  const wiring = Object.freeze({
+    ...freezeData(copyData(data)),
+    ...(assuranceResolver
+      ? {
+          security: Object.freeze({
+            ...(initialConfig.get('security') as NonNullable<ApplicationOptions['security']>),
+            assuranceResolver,
+          }),
+        }
+      : {}),
+  });
+  const plugins = ordered(
+    expandSupport(roots, Object.freeze({ ...wiring, plugins: Object.freeze(roots) })),
+  );
   for (const capability of Object.keys(COMPONENTS)) {
     if (plugins.filter((plugin) => plugin.capabilities.has(capability)).length > 1)
       throw new KitError({
@@ -175,9 +254,6 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
         message: 'Duplicate singleton capability',
       });
   }
-  const initialConfig = new ConfigStore(copyData(data) as Record<string, unknown>, {
-    schema: APPLICATION_SCHEMA,
-  });
   const configured = initialConfig.get('databases') as ApplicationOptions['databases'];
   const nonSql = new Set<string>();
   for (const definition of Object.values(configured ?? {})) {
@@ -213,18 +289,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
         message: 'Configured capability has no plugin',
       });
   }
-  const immutableOptions = Object.freeze({
-    ...freezeData(copyData(data)),
-    ...(assuranceResolver
-      ? {
-          security: Object.freeze({
-            ...(initialConfig.get('security') as NonNullable<ApplicationOptions['security']>),
-            assuranceResolver,
-          }),
-        }
-      : {}),
-    plugins: Object.freeze(plugins),
-  });
+  const immutableOptions = Object.freeze({ ...wiring, plugins: Object.freeze(plugins) });
   const values = new Map<symbol, { owner: string; value: unknown }>();
   const controller = new AbortController();
   let state: LifecycleState = 'CREATED';

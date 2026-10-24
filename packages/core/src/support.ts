@@ -5,8 +5,8 @@ import { performance } from 'node:perf_hooks';
 import { KitError } from './errors.js';
 import type { ConfigService, OperationOptions } from './contracts.js';
 import type { Telemetry } from './ports.js';
-export { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN } from './composition.js';
-export type { ComposablePlugin, PreparationContext } from './composition.js';
+export { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN, SUPPORT_PLUGINS } from './composition.js';
+export type { ComposablePlugin, PreparationContext, SupportPluginFactory } from './composition.js';
 export { SEMVER_PATTERN } from './application-schema.js';
 
 /**
