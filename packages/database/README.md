@@ -80,6 +80,8 @@ context. Nested provider transactions and pool reentry from a transaction reject
 with `EK_DATABASE_TRANSACTION`; use the callback's handle for its statements.
 Handles cannot be borrowed by another request or retained after callback completion.
 The coordinator never retries a callback and rejects a driver's attempted replay.
+Adapter authors can use `captureSqlStatement` to copy mutable caller values before
+queueing; final bind compilation still uses the native session's actual lexical mode.
 Native adapters implement connection pinning, begin/commit/rollback, query
 cancellation, bounded cursor fetches and exactly-once release. A coordinator unit
 test with a fake adapter establishes routing and context ownership; only a real

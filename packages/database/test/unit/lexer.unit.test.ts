@@ -4,10 +4,35 @@ import { KitError } from '@arkenivajs/core';
 import type { SqlStatement, SqlValue } from '@arkenivajs/core';
 import { compileSql, SQL_LIMITS } from '@arkenivajs/database';
 import type { SqlDialect } from '@arkenivajs/database';
+import { captureSqlStatement } from '@arkenivajs/database/support';
 
 const dialects: readonly SqlDialect[] = ['postgres', 'mysql', 'mariadb', 'oracle'];
 const invalid = (error: unknown): boolean =>
   error instanceof KitError && error.code === 'EK_CONFIG_INVALID';
+
+test('EK-DB-001 queued statement capture preserves values before the actual session mode is known', () => {
+  const date = new Date('2026-10-24T00:00:00Z');
+  const binary = new Uint8Array([1, 2]);
+  const input = { text: "SELECT 'escape\\' :hidden', :date, :binary", bindings: { date, binary } };
+  const captured = captureSqlStatement(input);
+  input.text = 'changed';
+  date.setTime(0);
+  binary[0] = 9;
+  assert.ok(Object.isFrozen(captured));
+  assert.ok(Object.isFrozen(captured.bindings));
+  assert.equal(Object.getPrototypeOf(captured.bindings), null);
+  assert.equal((captured.bindings!.date as Date).toISOString(), '2026-10-24T00:00:00.000Z');
+  assert.deepEqual(captured.bindings!.binary, new Uint8Array([1, 2]));
+  assert.deepEqual(compileSql(captured, 'postgres', { standardConformingStrings: false }).names, [
+    'date',
+    'binary',
+  ]);
+  assert.throws(() => captureSqlStatement({ text: '' }), invalid);
+  assert.throws(
+    () => captureSqlStatement({ text: 'SELECT :a', bindings: { a: {} as never } }),
+    invalid,
+  );
+});
 
 test('EK-DB-001 compiles exact named binds with dialect-specific repeated parameters', () => {
   for (const dialect of dialects) {
