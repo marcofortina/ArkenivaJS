@@ -118,6 +118,11 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
 };
 const units: Record<string, string> = {
   'http.server.active_requests': '{request}',
+  'arkenivajs.meter.events.enqueued': '{event}',
+  'arkenivajs.meter.events.exported': '{event}',
+  'arkenivajs.meter.events.dropped': '{event}',
+  'arkenivajs.meter.export.failures': '{failure}',
+  'arkenivajs.meter.queue.depth': '{event}',
   'http.server.request.duration': 's',
   'http.client.request.duration': 's',
   'db.client.operation.duration': 's',
