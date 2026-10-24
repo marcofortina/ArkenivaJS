@@ -35,3 +35,17 @@ assert.equal(application.state, 'READY');
 await application.stop();
 assert.equal(application.state, 'CLOSED');
 console.log('Application lifecycle smoke passed');
+const { createConfig } = await import('../packages/config/dist/index.js');
+const loaded = await createConfig({
+  workspace: process.cwd(),
+  schema: {
+    type: 'object',
+    properties: { enabled: { type: 'boolean' } },
+    additionalProperties: false,
+  },
+  yamlText: 'enabled: false',
+  environment: {},
+  runtime: { enabled: true },
+});
+assert.equal(loaded.require('enabled'), true);
+console.log('Layered configuration smoke passed');
