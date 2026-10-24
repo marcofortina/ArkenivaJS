@@ -5,8 +5,8 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Agent, fetch as send } from 'undici';
 import { KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
-import type { OutboundHttpClient, OperationOptions, Plugin } from '@arkenivajs/core';
-import { copyData, within } from '@arkenivajs/core/support';
+import type { OutboundHttpClient, OperationOptions, Plugin, Telemetry } from '@arkenivajs/core';
+import { copyData, within, instrumentOperation } from '@arkenivajs/core/support';
 
 export type { OutboundHttpClient } from '@arkenivajs/core';
 /** Default deadline covers connection, headers and bounded response consumption. */
@@ -31,6 +31,7 @@ export interface HttpClientOptions {
   readonly traceHeaders?: () => Readonly<{ traceparent?: string; tracestate?: string }>;
   readonly serviceToken?: (origin: string, signal: AbortSignal) => Promise<string>;
   readonly onObservation?: (event: HttpObservation) => void;
+  readonly telemetry?: Telemetry;
 }
 /** A standalone client owns its connection agent and must be closed. */
 export interface ManagedHttpClient extends OutboundHttpClient {
@@ -193,7 +194,7 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
   let closed = false,
     closing: Promise<void> | undefined;
 
-  const request: OutboundHttpClient['request'] = async (input, init) => {
+  const perform: OutboundHttpClient['request'] = async (input, init) => {
     if (closed)
       throw new KitError({ code: 'EK_RESOURCE_CLOSED', message: 'HTTP client is closed' });
     const began = performance.now();
@@ -239,16 +240,22 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
         'content-length',
       ])
         headers.delete(name);
-      const correlation = options.traceHeaders?.();
-      if (correlation?.traceparent) headers.set('traceparent', correlation.traceparent);
-      if (correlation?.tracestate) headers.set('tracestate', correlation.tracestate);
+      const validParent = (value: string) =>
+        /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/.test(value) &&
+        !/^00-0{32}-|^00-[0-9a-f]{32}-0{16}-/.test(value);
       const traceparent = headers.get('traceparent');
-      if (
-        traceparent &&
-        (!/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/.test(traceparent) ||
-          /^00-0{32}-|^00-[0-9a-f]{32}-0{16}-/.test(traceparent))
-      )
-        throw invalid('Invalid outbound trace context');
+      if (traceparent && !validParent(traceparent)) throw invalid('Invalid outbound trace context');
+      try {
+        const correlation = options.traceHeaders?.();
+        if (correlation?.traceparent && !validParent(correlation.traceparent))
+          throw invalid('Invalid diagnostic trace context');
+        const carrier = new Headers();
+        if (correlation?.traceparent) carrier.set('traceparent', correlation.traceparent);
+        if (correlation?.tracestate) carrier.set('tracestate', correlation.tracestate);
+        for (const [name, value] of carrier) headers.set(name, value);
+      } catch {
+        counters.observerFailures++;
+      }
       if (init.idempotencyKey !== undefined) {
         if (!/^[a-zA-Z0-9_.:-]{1,200}$/.test(init.idempotencyKey))
           throw invalid('Invalid idempotency key');
@@ -350,6 +357,24 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
       controller.abort();
       init?.signal?.removeEventListener('abort', abort);
       active.delete(controller);
+      if (options.telemetry) {
+        try {
+          options.telemetry.recordHistogram(
+            'http.client.request.duration',
+            (performance.now() - began) / 1000,
+            {
+              method,
+              ...(status === undefined ? {} : { status_code: status }),
+            },
+          );
+          if (responseBytes !== undefined)
+            options.telemetry.recordHistogram('arkenivajs.http.body.bytes', responseBytes, {
+              direction: 'client.response',
+            });
+        } catch {
+          counters.observerFailures++;
+        }
+      }
       try {
         options.onObservation?.(
           Object.freeze({
@@ -365,6 +390,16 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
       }
     }
   };
+  const request: OutboundHttpClient['request'] = (input, init) =>
+    instrumentOperation(
+      options.telemetry,
+      'http.client.request',
+      {},
+      () => perform(input, init),
+      () => {
+        counters.observerFailures++;
+      },
+    );
   return Object.freeze({
     request,
     get: (url: string, operation: OperationOptions = {}) =>
@@ -399,14 +434,38 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
   });
 }
 
-/** Install an isolated outbound agent; destination policy is explicit at composition. */
-export function httpPlugin(options: HttpClientOptions): Plugin {
+/** Plugin composition additionally declares explicit capability dependencies. */
+export interface HttpPluginOptions extends HttpClientOptions {
+  readonly dependencies?: readonly string[];
+}
+/** Explicit dependency access wires telemetry without importing a concrete SDK. */
+export function httpPlugin(options: HttpPluginOptions): Plugin {
   return {
     id: 'http',
     version: '0.1.0',
     capabilities: new Set(['http']),
+    dependencies: options.dependencies ?? [],
     init(context) {
-      context.provide(COMPONENTS.http, createHttpClient(options));
+      const telemetry = context.options.telemetry
+        ? context.require<Telemetry>(COMPONENTS.telemetry)
+        : options.telemetry;
+      const contextual = telemetry as
+        | (Telemetry & {
+            traceHeaders?: () => Readonly<{ traceparent?: string; tracestate?: string }>;
+          })
+        | undefined;
+      context.provide(
+        COMPONENTS.http,
+        createHttpClient({
+          ...options,
+          ...(telemetry ? { telemetry } : {}),
+          ...(options.traceHeaders
+            ? {}
+            : typeof contextual?.traceHeaders === 'function'
+              ? { traceHeaders: () => contextual.traceHeaders!() }
+              : {}),
+        }),
+      );
     },
     async close(context) {
       await context

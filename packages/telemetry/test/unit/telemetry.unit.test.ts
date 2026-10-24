@@ -99,6 +99,17 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
       route: '/orders/:id',
       status_code: 200,
     });
+    assert.throws(
+      () => telemetry.addCounter('http.server.active_requests', 1),
+      code('EK_CONFIG_INVALID'),
+    );
+    telemetry.recordHistogram('constructor', 1);
+    telemetry.setGauge('http.server.active_requests', 1, { route: '/orders/:id', method: 'GET' });
+    telemetry.setGauge('http.server.active_requests', 0, { route: '/orders/:id', method: 'GET' });
+    assert.throws(
+      () => telemetry.setGauge('http.server.active_requests', -1),
+      code('EK_CONFIG_INVALID'),
+    );
     telemetry.setGauge('arkenivajs.process.memory.rss', process.memoryUsage().rss, {
       service: service.name,
     });
@@ -113,6 +124,7 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
     assert.equal(inner.parentSpanId, outer.spanId);
     assert.equal(inner.traceId, outer.traceId);
     const wire = JSON.stringify(target.data);
+    assert.ok(wire.includes('http.server.active_requests') && wire.includes('"isMonotonic":false'));
     for (const value of [
       'example-pod',
       'example-node',
