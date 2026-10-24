@@ -45,7 +45,8 @@ Missing endpoint variables fail the live suite. The explicit disposable marker i
 mandatory: tests create owned schemas and terminate their own backend during a
 deferred commit. They never auto-retry a transaction. Unit and contract tests run
 without a server. Combined unit/contract/live coverage enforces 95% lines and
-branches on the adapter's production `dist` modules, without coverage exclusions.
+branches on the adapter's production `dist` modules and its shared SQL deadline
+implementation, without coverage exclusions.
 
 `down` removes only this Compose project's containers and network. Private bind
 directories deliberately remain for inspection; remove them separately after

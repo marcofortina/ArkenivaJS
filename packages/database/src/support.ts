@@ -17,6 +17,7 @@ import type {
 import { PREPARE_PLUGIN, ACTIVATE_PLUGIN } from '@arkenivajs/core/support';
 import type { ComposablePlugin, SupportPluginFactory } from '@arkenivajs/core/support';
 export { captureSqlStatement } from './lexer.js';
+export { SqlDeadline } from './deadline.js';
 
 /** Internal adapter registry; consumers use app.sql rather than registering pools. */
 export const SQL_DRIVER_REGISTRY = Symbol('arkenivajs.sql.drivers');

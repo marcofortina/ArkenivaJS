@@ -15,9 +15,8 @@ import type {
 import { instrumentOperation } from '@arkenivajs/core/support';
 import { compileSql } from '@arkenivajs/database';
 import type { CompiledSql } from '@arkenivajs/database';
-import { captureSqlStatement } from '@arkenivajs/database/support';
+import { captureSqlStatement, SqlDeadline } from '@arkenivajs/database/support';
 import type { SqlConnectionAdapter, SqlObservationPorts } from '@arkenivajs/database/support';
-import { SqlDeadline } from './deadline.js';
 import { postgresError, postgresCommitError } from './errors.js';
 
 interface SessionState {
