@@ -302,6 +302,15 @@ importers:
         specifier: 6.2.13
         version: 6.2.13
 
+  examples/postgres:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-postgres':
+        specifier: workspace:*
+        version: link:../../packages/database-postgres
+
   packages/api:
     dependencies:
       '@arkenivajs/core':

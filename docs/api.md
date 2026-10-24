@@ -63,3 +63,13 @@ See the [configuration example](../examples/configuration/README.md) for complet
 `@arkenivajs/telemetry` exports `createTelemetry`, `telemetryPlugin`, `DURATION_BUCKETS_SECONDS` and the public telemetry port. Providers and W3C async context are instance-owned; no process-global SDK is replaced. Metric labels and series, span queues and exporter deadlines are bounded. See the [telemetry reference](../packages/telemetry/README.md) for modes, units, sampling, resource metadata and actual collector integration. The [distributed guide](../examples/distributed-tracing/README.md) runs two HTTP hops with correlated logs and measured process quantities.
 
 The [metering reference](../packages/metering/README.md) and [verified tenant metering example](../examples/metering/README.md) cover independent events, failure/pressure semantics and automatic request scopes.
+
+## SQL and PostgreSQL
+
+`@arkenivajs/database` provides the bounded named-bind compiler and application-owned
+SQL coordination. Install `postgresPlugin()` from `@arkenivajs/database-postgres`
+and configure named root database definitions to use `app.sql` queries and pinned
+transactions. See the [SQL reference](../packages/database/README.md),
+[PostgreSQL reference](../packages/database-postgres/README.md) and
+[executable orders guide](../examples/postgres/README.md) for limits, precision,
+TLS, cancellation, unknown commit outcomes and native instrumentation coverage.
