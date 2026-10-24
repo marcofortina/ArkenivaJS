@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as pause } from 'node:timers/promises';
 import { getEventListeners } from 'node:events';
 import { KitError, DEFAULT_SQL_TIMEOUT_MS } from '@arkenivajs/core';
-import { SqlDeadline } from '../../dist/deadline.js';
+import { SqlDeadline } from '@arkenivajs/database/support';
 
 const code =
   (expected: string) =>

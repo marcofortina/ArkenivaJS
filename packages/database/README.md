@@ -1,5 +1,11 @@
 # @arkenivajs/database
 
+The adapter SPI at `@arkenivajs/database/support` includes `SqlDeadline` for owned
+SQL operation budgets. It shares the 15-second default, observes late native
+settlements without replay, and removes listeners/timers on close. Native adapters
+remain responsible for discarding a connection when the deadline cancels its I/O.
+The helper creates resources only when constructed, never at module import.
+
 Portable SQL contracts and a dialect-aware named binding compiler. This package
 does not import a native database client or create a connection pool.
 
