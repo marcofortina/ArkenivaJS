@@ -11,3 +11,5 @@ A public behavior change includes its meaningful positive, negative, failure and
 Use focused commits and keep main reproducibly buildable. Each commit should describe one logical behavior and include the tests that make it reviewable. Verify dependency release sources, licenses and compatibility before changing exact pins. GitHub Actions must use full immutable commit references and read-only permissions for pull request jobs. Run `pnpm audit --audit-level=high` after dependency changes.
 
 Mermaid diagrams are optional. If a diagram is added, include a pinned renderer and a successful rendering check; the documentation gate rejects unconfigured Mermaid blocks. Keep a complete textual explanation alongside a diagram.
+
+`pnpm test` and coverage select unit, contract and property suites. Integration suites are separate mandatory jobs with disposable external services; `pnpm test:integration:telemetry` requires the real collector and an external evidence path. Missing infrastructure fails the suite instead of skipping it. See the [telemetry reference](packages/telemetry/README.md).

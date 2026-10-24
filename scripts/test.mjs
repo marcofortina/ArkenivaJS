@@ -9,7 +9,14 @@ function walk(path) {
   );
 }
 const files = [...walk('.build/test'), ...walk('packages').filter((p) => p.includes('/dist-test/'))]
-  .filter((p) => p.endsWith('.test.js') && (kind === 'all' || p.includes(`.${kind}.test.js`)))
+  .filter((p) => {
+    if (!p.endsWith('.test.js')) return false;
+    if (kind === 'all')
+      return ['unit', 'contract', 'property'].some((suite) => p.endsWith(`.${suite}.test.js`));
+    if (kind.endsWith('-integration'))
+      return p.startsWith(`packages/${kind.slice(0, -12)}/`) && p.endsWith('.integration.test.js');
+    return p.endsWith(`.${kind}.test.js`);
+  })
   .sort();
 if (files.length === 0) throw new Error(`No tests for ${kind}`);
 const flags = coverage

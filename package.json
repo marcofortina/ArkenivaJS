@@ -21,7 +21,9 @@
     "smoke": "node scripts/smoke.mjs",
     "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm coverage && pnpm test:docs && pnpm docs:build && pnpm smoke",
     "test:docs": "pnpm --filter './examples/*' test",
-    "docs:build": "typedoc --options typedoc.json && node scripts/check-docs.mjs"
+    "docs:build": "typedoc --options typedoc.json && node scripts/check-docs.mjs",
+    "test:integration": "node scripts/test.mjs integration",
+    "test:integration:telemetry": "node scripts/test.mjs telemetry-integration"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
