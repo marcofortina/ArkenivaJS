@@ -255,3 +255,115 @@ test('EK-CORE-001 cancellation reports a failed native release without an uncaug
     await fixture.connection.close();
   }
 });
+
+test('EK-DB-001 ping distinguishes unavailable pools from structural and credential failures', async () => {
+  for (const [failure, unavailable] of [
+    [Object.assign(new Error('offline'), { code: 'ECONNREFUSED' }), true],
+    [new Error('timeout exceeded when trying to connect'), true],
+    [Object.assign(new Error('credentials rejected'), { code: '28P01' }), false],
+    [new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid native configuration' }), false],
+  ] as const) {
+    const fixture = nativeDouble();
+    fixture.failAcquisition(failure);
+    try {
+      if (unavailable) assert.equal(await fixture.connection.ping(), false);
+      else
+        await assert.rejects(
+          fixture.connection.ping(),
+          (error: unknown) => error instanceof KitError,
+        );
+      assert.equal(fixture.connection.stats().pendingAcquires, 0);
+      assert.equal(fixture.submissions.length, 0);
+    } finally {
+      await fixture.connection.close();
+    }
+  }
+});
+
+test('EK-CORE-001 acquisition capacity is bounded and shutdown owns every late native lease', async () => {
+  const fixture = nativeDouble();
+  let release!: () => void;
+  fixture.gate(
+    new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
+  const pending = Promise.allSettled(
+    Array.from({ length: 128 }, () => fixture.connection.query(sql)),
+  );
+  try {
+    await assert.rejects(fixture.connection.query(sql), code('EK_DATABASE_POOL_TIMEOUT'));
+    assert.equal(fixture.connection.stats().pendingAcquires, 128);
+    const closing = fixture.connection.close();
+    release();
+    await closing;
+    const outcomes = await pending;
+    assert.ok(outcomes.every((outcome) => outcome.status === 'rejected'));
+    assert.equal(fixture.releases.length, 128);
+    assert.ok(fixture.releases.every(Boolean));
+    assert.equal(fixture.submissions.length, 0);
+  } finally {
+    release();
+    await fixture.connection.close();
+  }
+});
+
+test('EK-DB-001 a successful cursor with failed cleanup is rejected and its connection discarded', async () => {
+  const fixture = nativeDouble();
+  const cleanup = new Error('cursor cleanup failed');
+  fixture.plans.push({ rows: [{ id: 1 }], closeFails: true, closeError: cleanup });
+  try {
+    await assert.rejects(fixture.connection.query(sql), (error: unknown) => {
+      assert.ok(error instanceof KitError);
+      assert.equal(error.code, 'EK_DATABASE_QUERY');
+      assert.equal(error.cause, cleanup);
+      return true;
+    });
+    assert.deepEqual(fixture.releases, [true]);
+  } finally {
+    await fixture.connection.close();
+  }
+});
+
+test('EK-DB-004 broken native clients abort active work while diagnostic faults remain isolated', async () => {
+  const fixture = nativeDouble({
+    logger: {
+      warn() {
+        throw new Error('Diagnostic sink failed');
+      },
+    } as never,
+  });
+  fixture.plans.push({ hold: true });
+  try {
+    const query = fixture.connection.query(sql);
+    const rejected = assert.rejects(query, code('EK_DATABASE_UNAVAILABLE'));
+    while (!fixture.submissions.length) await pause(1);
+    fixture.pool.emit('error', new Error('Idle client failed'));
+    fixture.clients[0]!.emit(
+      'error',
+      Object.assign(new Error('Active socket failed'), { code: 'ECONNRESET' }),
+    );
+    await rejected;
+    assert.deepEqual(fixture.releases, [true]);
+    assert.ok(fixture.connection.stats().observerFailures! > 0);
+  } finally {
+    await fixture.connection.close();
+  }
+});
+
+test('EK-CORE-001 a transaction statement deadline cancels the pinned lease and cannot commit', async () => {
+  const fixture = nativeDouble();
+  fixture.plans.push({ hold: true });
+  try {
+    await assert.rejects(
+      fixture.connection.transaction(async (tx) => {
+        await tx.query(sql, { timeoutMs: 5 });
+      }),
+      code('EK_TIMEOUT'),
+    );
+    assert.equal(fixture.controls.includes('COMMIT'), false);
+    assert.deepEqual(fixture.releases, [true]);
+  } finally {
+    await fixture.connection.close();
+  }
+});

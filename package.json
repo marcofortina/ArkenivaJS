@@ -24,7 +24,9 @@
     "docs:build": "typedoc --options typedoc.json && node scripts/check-docs.mjs",
     "test:integration": "node scripts/test.mjs integration",
     "test:integration:telemetry": "node scripts/test.mjs telemetry-integration",
-    "test:integration:metering": "node scripts/test.mjs metering-integration"
+    "test:integration:metering": "node scripts/test.mjs metering-integration",
+    "test:integration:postgres": "node scripts/test.mjs database-postgres-integration",
+    "coverage:postgres": "pnpm --filter @arkenivajs/database-postgres coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
