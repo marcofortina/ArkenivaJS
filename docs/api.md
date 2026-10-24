@@ -39,3 +39,7 @@ See the [configuration example](../examples/configuration/README.md) for complet
 ## Structured logging
 
 `@arkenivajs/logging` exports the `Logger`, `LogLevel` and `LogFields` contracts, `createLogger(options)` and `loggingPlugin(options?)`. The factory returns `ManagedLogger`: the six severity methods, `child`, `setLevel`, `flush`, an isolated asynchronous `run` scope, immutable `stats` and idempotent `close`. See the [logging reference and runnable sequence](../packages/logging/README.md) for default limits, redaction controls, write acknowledgement and transport ownership.
+
+## Process diagnostics
+
+`@arkenivajs/diagnostics` exports `Diagnostics`, `ProcessSnapshot`, `createDiagnostics(options?)`, `diagnosticsPlugin(options?)` and immutable `DIAGNOSTIC_SOURCES`. The managed collector adds idempotent `close()` to the normative snapshot interface. Measurements are native process CPU/memory and optional event-loop observations; absent samples stay omitted. See the [diagnostics reference](../packages/diagnostics/README.md) for units, source, interval, defaults and cleanup.
