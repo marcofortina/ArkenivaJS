@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Export the shared literal timeout, metering capacity and event-version constants.
+
 - Add typed errors with immutable metadata and safe external serialization.
 - Add validated application composition, dependency ordering and bounded lifecycle cleanup.
 - Add immutable configuration generations with protected dynamic reloads.

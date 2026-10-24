@@ -1,4 +1,5 @@
 export { createMeter } from './meter.js';
+export { DEFAULT_METER_QUEUE_CAPACITY, METER_EVENT_SCHEMA_VERSION } from '@arkenivajs/core';
 export type {
   MeteringGap,
   MeterExporter,
