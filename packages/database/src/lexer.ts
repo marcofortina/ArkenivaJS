@@ -61,11 +61,33 @@ function record(value: unknown): value is Record<string, unknown> {
   );
 }
 
-function dataValue(input: Record<string, unknown>, key: string): unknown {
+function dataValue(input: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(input, key);
   if (!descriptor) return undefined;
   if (!('value' in descriptor)) invalid('SQL inputs must not contain accessors');
   return descriptor.value;
+}
+
+function statementText(statement: SqlStatement): string {
+  if (!record(statement)) invalid('SQL statement must be a plain record');
+  const text = dataValue(statement, 'text');
+  if (
+    typeof text !== 'string' ||
+    text.trim().length === 0 ||
+    text.includes('\0') ||
+    Buffer.byteLength(text) > SQL_LIMITS.statementBytes
+  )
+    invalid('SQL text must be nonempty, NUL-free and within the byte limit');
+  return text;
+}
+
+/** Capture caller values before queued execution; lexical compilation still uses the actual session mode. */
+export function captureSqlStatement(statement: SqlStatement): Readonly<SqlStatement> {
+  const text = statementText(statement);
+  const captured = bindings(dataValue(statement, 'bindings')).values;
+  const named = Object.create(null) as Record<string, SqlValue>;
+  for (const [name, value] of captured) named[name] = value;
+  return Object.freeze({ text, bindings: Object.freeze(named) });
 }
 
 /** Capture mutable portable values before any asynchronous pool operation. */
@@ -199,15 +221,7 @@ export function compileSql(
   options: SqlLexicalOptions = {},
 ): CompiledSql {
   if (!['postgres', 'mysql', 'mariadb', 'oracle'].includes(dialect)) invalid('Unknown SQL dialect');
-  if (!record(statement)) invalid('SQL statement must be a plain record');
-  const text = dataValue(statement, 'text');
-  if (
-    typeof text !== 'string' ||
-    text.trim().length === 0 ||
-    text.includes('\0') ||
-    Buffer.byteLength(text) > SQL_LIMITS.statementBytes
-  )
-    invalid('SQL text must be nonempty, NUL-free and within the byte limit');
+  const text = statementText(statement);
   if (!record(options) || Object.getOwnPropertySymbols(options).length)
     invalid('SQL lexical options must be a plain record');
   for (const key of Object.getOwnPropertyNames(options)) {
