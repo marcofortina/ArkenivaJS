@@ -3,7 +3,6 @@
   "tsconfig": "tsconfig.json",
   "intentionallyNotExported": [
     "ApiServer",
-    "OutboundHttpClient",
     "AuthService",
     "CacheProvider",
     "MessageBus",
