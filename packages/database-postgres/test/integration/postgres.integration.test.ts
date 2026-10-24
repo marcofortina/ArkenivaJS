@@ -446,10 +446,14 @@ test('EK-DB-001 a native acknowledgment fault after a real commit reports unknow
   }
 });
 
-test('EK-DB-001 native named statements remain usable after a portable checkout resets session state', async () => {
+test('EK-DB-001 native binary queries and named statements remain usable across portable session resets', async () => {
   const app = await started(endpoint!, 1);
   try {
     const pool = app.sql.native('main') as Pool;
+    // pg supports this native option even though its QueryConfig declaration omits the key.
+    const binaryQuery = { text: 'SELECT $1::int AS value', values: [7], binary: true };
+    const binary = await pool.query(binaryQuery);
+    assert.deepEqual(binary.rows, [{ value: 7 }]);
     const prepared = { name: 'integration-named-statement', text: 'SELECT $1::int AS value' };
     assert.deepEqual((await pool.query({ ...prepared, values: [1] })).rows, [{ value: 1 }]);
     await app.sql.query('main', { text: 'SELECT 1' });
