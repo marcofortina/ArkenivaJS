@@ -26,3 +26,12 @@ await config.reload({ count: 2 });
 assert.equal(config.require('count'), 2);
 assert.ok(Object.isFrozen(config.snapshot()));
 console.log('Configuration store smoke passed');
+const { createApplication } = await import('../packages/core/dist/index.js');
+const application = await createApplication({
+  service: { name: 'smoke', version: '1.0.0', environment: 'test' },
+});
+await application.start();
+assert.equal(application.state, 'READY');
+await application.stop();
+assert.equal(application.state, 'CLOSED');
+console.log('Application lifecycle smoke passed');
