@@ -42,3 +42,18 @@ export interface KitErrorOptions {
   retryable?: boolean;
   details?: Readonly<Record<string, string | number | boolean | null>>;
 }
+
+/** Cancellation and integer millisecond deadlines for asynchronous operations. */
+export interface OperationOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/** Typed top-level access and immutable atomic configuration generations. */
+export interface ConfigService<T extends Record<string, unknown> = Record<string, unknown>> {
+  get<K extends keyof T>(key: K): T[K] | undefined;
+  require<K extends keyof T>(key: K): NonNullable<T[K]>;
+  has<K extends keyof T>(key: K): boolean;
+  snapshot(): Readonly<T>;
+  reload(updates: Partial<T>): Promise<Readonly<T>>;
+}

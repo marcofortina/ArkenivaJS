@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./support": {
+      "types": "./dist/support.d.ts",
+      "import": "./dist/support.js"
     }
   },
   "files": [
@@ -26,5 +30,8 @@
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node --test dist-test/test/unit/*.test.js",
     "test:contract": "node --test dist-test/test/contract/*.test.js"
+  },
+  "dependencies": {
+    "ajv": "8.20.0"
   }
 }
