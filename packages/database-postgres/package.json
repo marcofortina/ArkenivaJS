@@ -1,0 +1,47 @@
+{
+  "name": "@arkenivajs/database-postgres",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "format:check": "prettier --check src test",
+    "lint": "eslint src test",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "node --test dist-test/unit/*.test.js dist-test/contract/*.test.js",
+    "test:unit": "node --test dist-test/unit/*.test.js",
+    "test:contract": "node --test dist-test/contract/*.test.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/database": "workspace:*",
+    "pg": "8.23.1",
+    "pg-cursor": "2.22.1",
+    "pg-connection-string": "2.14.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "@types/pg-cursor": "2.7.2",
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "@arkenivajs/metering": "workspace:*",
+    "jose": "6.2.13"
+  }
+}
