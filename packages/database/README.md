@@ -55,3 +55,32 @@ modes, malformed input, resource limits, and three reproducible property suites
 with 1,000 cases each plus 2,000 arbitrary UTF-16 fuzz cases across all dialects.
 These are compiler tests; live database conformance belongs
 to each native adapter's integration suite.
+
+## Adapter composition
+
+The `@arkenivajs/database/support` entry provides the common SQL coordinator for
+adapter authors. Each native SQL plugin declares `sqlSupportPlugin` under the
+core composition symbol `SUPPORT_PLUGINS` and explicitly depends on
+`SQL_SUPPORT_ID`. The application resolves that same pure factory once, so several
+drivers and named pools share one `app.sql` without an extra application plugin.
+The coordinator prepares the facade without opening connections, then publishes
+`SQL_DRIVER_REGISTRY` during initialization. Drivers register only names whose
+root database definition matches their relational driver identity.
+
+The coordinator verifies all relational names at activation, rejects duplicate or
+late registration and captures adapter methods once. Each driver retains pool
+ownership and closes its resources before the coordinator clears its registry.
+Prepared facades reject calls before activation; retained facades reject after
+shutdown. Applications remain independent even when the same native plugin
+definition is reused. Diagnostic ports are optional abstract dependencies captured
+from the application's explicit logger, telemetry and meter providers.
+
+Transaction callbacks receive immutable handles bound to their active asynchronous
+context. Nested provider transactions and pool reentry from a transaction reject
+with `EK_DATABASE_TRANSACTION`; use the callback's handle for its statements.
+Handles cannot be borrowed by another request or retained after callback completion.
+The coordinator never retries a callback and rejects a driver's attempted replay.
+Native adapters implement connection pinning, begin/commit/rollback, query
+cancellation, bounded cursor fetches and exactly-once release. A coordinator unit
+test with a fake adapter establishes routing and context ownership; only a real
+adapter integration test establishes database transaction behavior.
