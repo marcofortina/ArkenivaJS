@@ -151,6 +151,17 @@ test('Bounded operations preserve values and reject failure, abort and timeout',
   await assert.rejects(work, code('EK_ABORTED'));
 });
 
+test('Long deadlines retain their duration without overflowing native Node timers', async () => {
+  for (const timeoutMs of [2_147_483_648, Number.MAX_SAFE_INTEGER]) {
+    assert.equal(
+      await within(() => new Promise<number>((resolve) => setTimeout(() => resolve(42), 10)), {
+        timeoutMs,
+      }),
+      42,
+    );
+  }
+});
+
 test('Dynamic parent paths cannot bypass redaction or sensitive reload restrictions', async () => {
   const store = new ConfigStore<Record<string, unknown>>(
     { nested: { password: 'fake-password' } },

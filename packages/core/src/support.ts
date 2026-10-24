@@ -1,6 +1,7 @@
 import { Ajv } from 'ajv';
 import type { AnySchema } from 'ajv';
 import { isDeepStrictEqual } from 'node:util';
+import { performance } from 'node:perf_hooks';
 import { KitError } from './errors.js';
 import type { ConfigService, OperationOptions } from './contracts.js';
 
@@ -347,10 +348,17 @@ export async function within<T>(
   let aborted: (() => void) | undefined;
   try {
     const limit = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new KitError({ code: 'EK_TIMEOUT', message: 'Operation timed out' })),
-        timeoutMs,
-      );
+      const deadline = performance.now() + timeoutMs;
+      const schedule = (): void => {
+        const remaining = Math.ceil(deadline - performance.now());
+        if (remaining <= 0) {
+          reject(new KitError({ code: 'EK_TIMEOUT', message: 'Operation timed out' }));
+          return;
+        }
+        // Node reduces overflowing timer delays to one millisecond; rearm bounded chunks.
+        timer = setTimeout(schedule, Math.min(remaining, 2_147_483_647));
+      };
+      schedule();
       aborted = () =>
         reject(
           new KitError({
