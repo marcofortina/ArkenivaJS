@@ -11,3 +11,5 @@ Unknown keys and environment mappings, duplicate YAML keys, aliases, unsafe obje
 Run the workspace `pnpm verify` command to build and exercise the unit, contract and seeded property suites. The configuration tests require no external service.
 
 Optional `secrets` maps configuration paths to provider reference names. `secretProvider(reference, options)` resolves them before the service is returned. Explicit environment values take precedence over provider resolution, and every provider path is automatically redacted and protected from dynamic reload. Configure `signal` and `timeoutMs` to bound loading and provider work; timeout defaults to 30,000 ms. Providers should honor the supplied signal. `EK_CONFIG_MISSING` identifies an empty provider response; abort and deadline failures use `EK_ABORTED` and `EK_TIMEOUT`.
+
+Set `preflightTimeoutMs` to bound dynamic reload validation. A timed-out preflight cannot commit later; the prior immutable generation remains active.

@@ -26,3 +26,5 @@ The documented `@arkenivajs/core/support` integration entry point provides `Conf
 Use `COMPONENTS` with plugin `provide` and `require` to install explicit services. Duplicate registrations fail; a consumer must declare the provider's plugin id in `dependencies`. The registry freezes after initialization. `APPLICATION_SIGNAL` provides cooperative startup cancellation. Hooks must release partially acquired resources on rejection; late successful hooks are closed even after cancellation. JavaScript cannot forcibly terminate arbitrary uncooperative code.
 
 A core-only application has lifecycle and validated configuration. Required accessors for absent adapters throw `EK_UNSUPPORTED_CAPABILITY`, while optional accessors return undefined. HTTP, database, security, telemetry, health and metering implementations are separate integrations. The type-only ports describe their application-facing contracts and do not open or simulate those services.
+
+Reload preflight is bounded by `preflightTimeoutMs` (default 30,000 ms). A hung or failed preflight leaves the active generation unchanged and releases the serialized reload queue; late preflight completion cannot commit.
