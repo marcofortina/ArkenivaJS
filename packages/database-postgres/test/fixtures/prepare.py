@@ -81,6 +81,8 @@ def prepare(directory, github_environment=None):
             return f"postgres://arkeniva_app:{password}@127.0.0.1:{port}/arkeniva_test?{query}"
         environment = {
             "PG_FIXTURE_DIRECTORY": str(directory),
+            "ARKENIVA_POSTGRES_IMAGE": "postgres:18.6-bookworm@sha256:6b38fe68f2c02cafffbbce7496f76d110d8a947c039bd22c067e9a43c2250240",
+            "ARKENIVA_POSTGRES_CONTAINER_LIMITS": "memory=768MiB;cpus=1;pids=128;per-container",
             "ARKENIVA_POSTGRES_DISPOSABLE": "1",
             "ARKENIVA_POSTGRES_URL": endpoint(15432),
             "ARKENIVA_POSTGRES_WRONG_SAN_URL": endpoint(15433),
