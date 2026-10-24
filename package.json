@@ -19,7 +19,8 @@
     "test": "node scripts/test.mjs all",
     "coverage": "node scripts/test.mjs all --coverage",
     "smoke": "node scripts/smoke.mjs",
-    "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm coverage && pnpm smoke"
+    "verify": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm coverage && pnpm test:docs && pnpm smoke",
+    "test:docs": "pnpm --filter @arkenivajs/example-configuration test"
   },
   "devDependencies": {
     "typescript": "6.0.3",

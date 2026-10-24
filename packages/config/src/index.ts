@@ -127,7 +127,11 @@ export async function createConfig<T extends Record<string, unknown>>(
       const secretReferences = record(options.secrets);
       const protectedPaths = [...(options.secretPaths ?? []), ...Object.keys(secretReferences)];
       for (const layer of [defaults, yaml, runtime]) noSecrets(layer, protectedPaths);
-      const environment = record(options.environment ?? { ...process.env });
+      const environment = record(
+        options.environment === process.env
+          ? { ...process.env }
+          : (options.environment ?? { ...process.env }),
+      );
       const fields = options.environmentFields ?? {};
       const envData: Record<string, unknown> = {};
       for (const [name, value] of Object.entries(environment)) {
