@@ -17,7 +17,8 @@ x-mysql: &mysql
     - --socket=/tmp/mysql.sock
     - --pid-file=/tmp/mysql.pid
   healthcheck:
-    test: [CMD, mysqladmin, ping, --socket=/tmp/mysql.sock, --silent]
+    # The entrypoint's temporary initialization server has only a Unix socket.
+    test: [CMD, mysqladmin, ping, --protocol=tcp, --host=127.0.0.1, --port=3306, --silent]
     interval: 2s
     timeout: 2s
     retries: 60

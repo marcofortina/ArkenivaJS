@@ -20,7 +20,8 @@ client CA copy; mysql uid 999 owns a separate server CA copy. Both files have mo
 Preparation rejects an
 existing directory and never prints credentials except a GitHub Actions masking
 directive when explicitly asked to append to `GITHUB_ENV`. The runner checks file
-permissions before reading variables. `mysqladmin ping` detects a ready server;
+permissions before reading variables. `mysqladmin ping` requires the final TCP
+listener, excluding the entrypoint's socket-only temporary initialization server;
 the adapter's startup query additionally authenticates the restricted account.
 
 The second endpoint presents a certificate from the same trusted CA with an
