@@ -150,6 +150,21 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
   if (Object.values(descriptors).some((d) => !('value' in d)))
     throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Options must be data properties' });
   const { plugins: requested = [], ...data } = options;
+  // Executable trust policy is captured separately from reloadable configuration data.
+  let assuranceResolver: NonNullable<ApplicationOptions['security']>['assuranceResolver'];
+  if (data.security && typeof data.security === 'object') {
+    const securityDescriptors = Object.getOwnPropertyDescriptors(data.security);
+    const resolver = securityDescriptors.assuranceResolver;
+    if (resolver) {
+      if (!('value' in resolver) || typeof resolver.value !== 'function')
+        throw new KitError({ code: 'EK_MFA_POLICY', message: 'Invalid assurance resolver' });
+      assuranceResolver = resolver.value as NonNullable<
+        ApplicationOptions['security']
+      >['assuranceResolver'];
+      delete securityDescriptors.assuranceResolver;
+      data.security = Object.create(Object.getPrototypeOf(data.security), securityDescriptors);
+    }
+  }
   if (!Array.isArray(requested))
     throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Plugins must be an array' });
   const plugins = ordered(requested);
@@ -200,6 +215,14 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
   }
   const immutableOptions = Object.freeze({
     ...freezeData(copyData(data)),
+    ...(assuranceResolver
+      ? {
+          security: Object.freeze({
+            ...(initialConfig.get('security') as NonNullable<ApplicationOptions['security']>),
+            assuranceResolver,
+          }),
+        }
+      : {}),
     plugins: Object.freeze(plugins),
   });
   const values = new Map<symbol, { owner: string; value: unknown }>();
@@ -362,8 +385,8 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
           state = 'CLOSED';
           const failure = new KitError({
             code:
-              cause instanceof KitError && cause.code === 'EK_ABORTED'
-                ? 'EK_ABORTED'
+              cause instanceof KitError && ['EK_ABORTED', 'EK_MFA_POLICY'].includes(cause.code)
+                ? cause.code
                 : 'EK_PLUGIN_FAILED',
             message: 'Application startup failed',
             cause,

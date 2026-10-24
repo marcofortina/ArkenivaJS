@@ -78,20 +78,33 @@ const statusFor = (error: KitError): number => {
       return 400;
     case 'EK_AUTH_REQUIRED':
     case 'EK_AUTH_INVALID':
+    case 'EK_MFA_INVALID':
       return 401;
     case 'EK_AUTH_FORBIDDEN':
     case 'EK_TENANT_UNVERIFIED':
+    case 'EK_MFA_ASSURANCE_REQUIRED':
       return 403;
     case 'EK_HTTP_NOT_FOUND':
       return 404;
     case 'EK_HTTP_RATE_LIMIT':
+    case 'EK_MFA_RATE_LIMIT':
       return 429;
+    case 'EK_MFA_REPLAY':
+    case 'EK_MFA_ALREADY_ENROLLED':
+    case 'EK_MFA_CREDENTIAL_CONFLICT':
+    case 'EK_MFA_COUNTER_REGRESSION':
+      return 409;
+    case 'EK_MFA_EXPIRED':
+    case 'EK_MFA_ENROLLMENT_EXPIRED':
+    case 'EK_MFA_CHALLENGE_EXPIRED':
+      return 410;
     case 'EK_TIMEOUT':
       return error.details.upstream === true ? 504 : 408;
     case 'EK_ABORTED':
       return 408;
     case 'EK_BACKEND_UNAVAILABLE':
     case 'EK_HEALTH_NOT_READY':
+    case 'EK_MFA_STORAGE':
       return 503;
     default:
       return 500;
@@ -307,6 +320,16 @@ export function createApi(options: ApiOptions): ManagedApiServer {
             cause: error,
           });
     const status = statusFor(failure);
+    if (failure.code === 'EK_MFA_RATE_LIMIT') {
+      const retryAfterMs = failure.details.retryAfterMs;
+      if (
+        typeof retryAfterMs === 'number' &&
+        Number.isSafeInteger(retryAfterMs) &&
+        retryAfterMs > 0 &&
+        retryAfterMs <= 86_400_000
+      )
+        reply.header('retry-after', String(Math.ceil(retryAfterMs / 1000)));
+    }
     logger?.error('HTTP request failed', {
       requestId: request.id,
       status,
@@ -346,6 +369,16 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       throw invalid('Invalid API route definition');
     if (Object.keys(definition).some((key) => !['schema', 'auth', 'handler'].includes(key)))
       throw invalid('Unknown API route field');
+    if (
+      Object.keys(definition.auth).some((key) => !['required', 'scopes', 'assurance'].includes(key))
+    )
+      throw invalid('Unknown API authorization field');
+    if (
+      definition.auth.assurance !== undefined &&
+      (!definition.auth.required ||
+        !['single-factor', 'mfa', 'phishing-resistant'].includes(definition.auth.assurance))
+    )
+      throw new KitError({ code: 'EK_MFA_POLICY', message: 'Invalid route assurance policy' });
     if (
       routes.some(
         (route) =>
@@ -411,6 +444,24 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         return Promise.reject(error);
       }
       if (starting) return starting;
+      if (routes.some((route) => route.spec.auth.assurance !== undefined)) {
+        let configured = false;
+        try {
+          configured =
+            (
+              auth as (Auth & { hasAssurancePolicy?: () => boolean }) | undefined
+            )?.hasAssurancePolicy?.() === true && typeof auth?.requireAssurance === 'function';
+        } catch {
+          /* A failed provider capability check cannot permit an assurance-protected listener. */
+        }
+        if (!configured)
+          return Promise.reject(
+            new KitError({
+              code: 'EK_MFA_POLICY',
+              message: 'Assurance-protected routes require a trusted resolver',
+            }),
+          );
+      }
       if (routes.some((route) => route.spec.auth.required) && !auth)
         return Promise.reject(
           new KitError({
@@ -442,6 +493,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
               ...(spec.schema.body ? { body: spec.schema.body } : {}),
               response: { 200: spec.schema.response },
               security: spec.auth.required ? [{ bearerAuth: [] }] : [],
+              ...(spec.auth.assurance ? { 'x-arkenivajs-assurance': spec.auth.assurance } : {}),
             },
             async handler(request) {
               const entry = entries.get(request)!;
@@ -457,6 +509,8 @@ export function createApi(options: ApiOptions): ManagedApiServer {
                         });
                         for (const scope of spec.auth.scopes ?? [])
                           auth!.requireScope(identity, scope);
+                        if (spec.auth.assurance !== undefined)
+                          auth!.requireAssurance(identity, spec.auth.assurance);
                         tenant = auth!.tenantFrom(identity);
                       }
                       const headers = Object.fromEntries(

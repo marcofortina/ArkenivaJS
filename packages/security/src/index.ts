@@ -8,11 +8,18 @@ import type {
   OperationOptions,
   Environment,
   Plugin,
+  MfaAssurance,
 } from '@arkenivajs/core';
 import { copyData, freezeData, within } from '@arkenivajs/core/support';
 import { createHttpClient } from '@arkenivajs/http';
 
-export type { AuthService, Identity, TenantId, VerifiedTenantContext } from '@arkenivajs/core';
+export type {
+  AuthService,
+  Identity,
+  TenantId,
+  VerifiedTenantContext,
+  MfaAssurance,
+} from '@arkenivajs/core';
 /** Trust policy is captured at construction and is never inferred from a request. */
 export interface AuthOptions {
   readonly issuer: string;
@@ -28,6 +35,7 @@ export interface AuthOptions {
   readonly jwksCooldownMs?: number;
   readonly jwksCacheMaxAgeMs?: number;
   readonly authorizeTenant?: (identity: Identity, tenantId: string) => boolean;
+  readonly assuranceResolver?: (identity: Identity) => MfaAssurance;
   readonly onObservation?: (event: AuthObservation) => void;
 }
 /** Authentication observations contain no token, claims, subject or tenant. */
@@ -37,11 +45,16 @@ export interface AuthObservation {
 }
 /** Runtime provenance is local to this verifier, independent of TypeScript brands. */
 export interface ManagedAuthService extends AuthService {
+  /** Startup capability check; presence never grants assurance to a request. */
+  hasAssurancePolicy(): boolean;
   isVerifiedTenant(value: unknown): value is VerifiedTenantContext;
   close(options?: OperationOptions): Promise<void>;
   stats(): Readonly<{ verified: number; rejected: number; observerFailures: number }>;
 }
 const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', message });
+const assuranceLevels: readonly MfaAssurance[] = ['single-factor', 'mfa', 'phishing-resistant'];
+const policyError = (message: string, cause?: unknown) =>
+  new KitError({ code: 'EK_MFA_POLICY', message, cause });
 const supported = new Set([
   'RS256',
   'RS384',
@@ -79,6 +92,23 @@ export async function createAuthService(
   )
     throw invalid('Invalid authentication options');
   const options = { ...input };
+  if (options.assuranceResolver !== undefined && typeof options.assuranceResolver !== 'function')
+    throw policyError('Assurance resolver must be a synchronous trusted function');
+  const resolveAssurance = (identity: Identity): MfaAssurance => {
+    if (!options.assuranceResolver) throw policyError('A trusted assurance resolver is required');
+    try {
+      const assurance = options.assuranceResolver(identity);
+      if (!assuranceLevels.includes(assurance)) {
+        // A mistakenly asynchronous policy cannot leave a rejected promise unobserved.
+        if ((assurance as unknown) instanceof Promise)
+          void (assurance as unknown as Promise<unknown>).catch(() => undefined);
+        throw new Error('Assurance resolver returned an invalid decision');
+      }
+      return assurance;
+    } catch (cause) {
+      throw policyError('Trusted assurance resolution failed', cause);
+    }
+  };
   const algorithms = [...(options.algorithms ?? ['RS256'])];
   const skew = options.clockToleranceSeconds ?? 5;
   const cooldown = options.jwksCooldownMs ?? 30_000;
@@ -255,13 +285,16 @@ export async function createAuthService(
           const scopes = claims.scope ?? claims.scp ?? '';
           if (typeof scopes !== 'string' || scopes.length > 4096 || hasControls(scopes))
             throw new KitError({ code: 'EK_AUTH_INVALID', message: 'Invalid scope claim' });
-          const identity: Identity = freezeData({
+          const verifiedIdentity: Identity = freezeData({
             subject: claims.sub,
             issuer: options.issuer,
             audience: typeof claims.aud === 'string' ? [claims.aud] : [...claims.aud!],
             scopes: [...new Set(scopes.split(' ').filter(Boolean))],
             claims: copyData(claims),
           });
+          const identity: Identity = options.assuranceResolver
+            ? Object.freeze({ ...verifiedIdentity, assurance: resolveAssurance(verifiedIdentity) })
+            : verifiedIdentity;
           identities.add(identity);
           counters.verified++;
           observe({ outcome: 'verified' });
@@ -276,6 +309,7 @@ export async function createAuthService(
               'EK_ABORTED',
               'EK_TIMEOUT',
               'EK_RESOURCE_CLOSED',
+              'EK_MFA_POLICY',
             ].includes(cause.code)
               ? cause
               : new KitError({
@@ -293,6 +327,29 @@ export async function createAuthService(
           throw new KitError({
             code: 'EK_AUTH_FORBIDDEN',
             message: 'Required scope is not granted',
+          });
+      },
+      hasAssurancePolicy: () => !closed && options.assuranceResolver !== undefined,
+      requireAssurance(identity: Identity, requirement: MfaAssurance): void {
+        open();
+        if (!assuranceLevels.includes(requirement))
+          throw policyError('Unknown assurance requirement');
+        if (!verified(identity) || identity.assurance === undefined)
+          throw new KitError({
+            code: 'EK_MFA_ASSURANCE_REQUIRED',
+            message: 'Verified authentication assurance is insufficient',
+          });
+        // Reevaluate issuer freshness at authorization time without upgrading an older decision.
+        const currentAssurance = resolveAssurance(identity);
+        if (
+          Math.min(
+            assuranceLevels.indexOf(identity.assurance),
+            assuranceLevels.indexOf(currentAssurance),
+          ) < assuranceLevels.indexOf(requirement)
+        )
+          throw new KitError({
+            code: 'EK_MFA_ASSURANCE_REQUIRED',
+            message: 'Verified authentication assurance is insufficient',
           });
       },
       tenantFrom(identity: Identity): VerifiedTenantContext {
