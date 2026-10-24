@@ -20,4 +20,16 @@ Resource metadata includes service name/version, `deployment.environment.name`, 
 
 `flush(options?)` waits for SDK buffers and in-flight exporter work within the caller deadline. Abort/timeout uses `EK_ABORTED`/`EK_TIMEOUT`; exporter rejection uses `EK_BACKEND_UNAVAILABLE`. `close(options?)` ends active diagnostic spans, stops periodic export and closes providers once; concurrent closes share completion. All new work after close uses `EK_RESOURCE_CLOSED`. A callback already running remains application-owned. `stats()` exposes local start/end, active/pending, export failure, dropped metric/span and instrument/series counts; it is not historical storage. `native()` returns the owned vendor providers and permits extensions outside adapter cardinality/redaction guarantees.
 
-Tests use actual SDK HTTP exports to disposable receivers, test W3C parents across concurrent asynchronous scopes, resource metadata, histogram buckets, queue pressure, exporter failure and cleanup.
+Tests use actual SDK HTTP exports to disposable receivers, test W3C parents across concurrent asynchronous scopes, resource metadata, histogram buckets, queue pressure, exporter failure and cleanup. The integration fixture runs a real digest-pinned collector with bounded resources. Receiver acknowledgments mean collector acceptance, not durable long-term storage.
+
+Run the actual collector integration on a disposable Docker host (or inside a dedicated VM):
+
+```sh
+docker compose -f packages/telemetry/test/fixtures/compose.yaml up -d
+pnpm build
+ARKENIVAJS_OTLP_ENDPOINT=http://127.0.0.1:4318 ARKENIVAJS_OTLP_EVIDENCE_PATH=/tmp/collector-evidence.json pnpm test:integration:telemetry
+node scripts/check-collector.mjs /tmp/collector-evidence.json --docker
+docker compose -f packages/telemetry/test/fixtures/compose.yaml down
+```
+
+For a remote VM, forward its collector port to loopback, select that endpoint and retain the evidence outside the checkout. Capture `docker logs` inside the VM to an external file, then pass that file instead of `--docker` to the checker. The checker requires the exact emitted trace id, instance id, operation, metric and resource keys in the collector's output; it fails if any are missing. Debug output is for disposable fixtures only, with no real credentials or tenant data. Shut down the fixture even after a failed test.

@@ -1,0 +1,14 @@
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+    command: ['--config=/etc/collector.yaml']
+    ports:
+      - '127.0.0.1:4318:4318'
+    volumes:
+      - './collector.yaml:/etc/collector.yaml:ro'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 128
