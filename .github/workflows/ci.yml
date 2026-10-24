@@ -46,6 +46,9 @@ jobs:
           ARKENIVAJS_OTLP_ENDPOINT: http://127.0.0.1:4318
           ARKENIVAJS_OTLP_EVIDENCE_PATH: ${{ runner.temp }}/collector-evidence.json
       - run: node scripts/check-collector.mjs "$RUNNER_TEMP/collector-evidence.json" --docker
+      - run: pnpm --filter @arkenivajs/example-distributed-tracing start
+        env:
+          ARKENIVAJS_OTLP_ENDPOINT: http://127.0.0.1:4318
       - if: always()
         run: docker compose -f packages/telemetry/test/fixtures/compose.yaml logs --no-color
       - if: always()

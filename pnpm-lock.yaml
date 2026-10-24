@@ -203,6 +203,30 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
 
+  examples/distributed-tracing:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/diagnostics':
+        specifier: workspace:*
+        version: link:../../packages/diagnostics
+      '@arkenivajs/http':
+        specifier: workspace:*
+        version: link:../../packages/http
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+
   examples/hello-http:
     dependencies:
       '@arkenivajs/api':
