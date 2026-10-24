@@ -64,7 +64,7 @@ See the [configuration example](../examples/configuration/README.md) for complet
 
 The [metering reference](../packages/metering/README.md) and [verified tenant metering example](../examples/metering/README.md) cover independent events, failure/pressure semantics and automatic request scopes.
 
-## SQL and PostgreSQL
+## SQL, PostgreSQL and MySQL
 
 `@arkenivajs/database` provides the bounded named-bind compiler and application-owned
 SQL coordination. Install `postgresPlugin()` from `@arkenivajs/database-postgres`
@@ -73,3 +73,10 @@ transactions. See the [SQL reference](../packages/database/README.md),
 [PostgreSQL reference](../packages/database-postgres/README.md) and
 [executable orders guide](../examples/postgres/README.md) for limits, precision,
 TLS, cancellation, unknown commit outcomes and native instrumentation coverage.
+
+Install `mysqlPlugin()` from `@arkenivajs/database-mysql` for root definitions with
+`driver: 'mysql'`. Its Promise pools use bounded prepared streams and verified DNS
+TLS, preserve bigint/decimal/temporal precision, and never replay statements or
+callbacks. MySQL DDL may implicitly commit: the adapter reports that outcome rather
+than promising rollback. See the [MySQL reference](../packages/database-mysql/README.md)
+and [runnable MySQL orders example](../examples/mysql/README.md).
