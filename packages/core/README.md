@@ -37,4 +37,6 @@ Adapters that expose configuration facades before startup may implement `Composa
 
 The optional `ACTIVATE_PLUGIN` hook runs after every ordinary `init` hook; inbound API adapters activate last so routes and resource checks finish before listener binding. Activation failures follow the same reverse cleanup as startup failure. Hooks must honor `APPLICATION_SIGNAL`. The normative `Plugin` init/close shape and explicit dependency access remain unchanged.
 
+`SEMVER_PATTERN` from the support entry point shares strict service/plugin version validation with adapters.
+
 Optional `DRAIN_PLUGIN` hooks stop inbound work before any downstream resource closes. They share the shutdown deadline; a failed drain is collected while reverse-order `close` still runs for every initialized plugin. Listener adapters use this phase to finish requests while database/client dependencies remain available.

@@ -1,0 +1,635 @@
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import Fastify from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import swagger from '@fastify/swagger';
+import { KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
+import type {
+  ApiServer,
+  RouteDefinition,
+  RouteContext,
+  ApiMiddleware,
+  Application,
+  ApplicationOptions,
+  Logger,
+  OperationOptions,
+} from '@arkenivajs/core';
+import {
+  copyData,
+  freezeData,
+  compileSchema,
+  within,
+  PREPARE_PLUGIN,
+  ACTIVATE_PLUGIN,
+  DRAIN_PLUGIN,
+  SEMVER_PATTERN,
+} from '@arkenivajs/core/support';
+import type { ComposablePlugin } from '@arkenivajs/core/support';
+
+export type {
+  ApiServer,
+  RouteDefinition,
+  RouteContext,
+  RouteHandler,
+  ApiMiddleware,
+} from '@arkenivajs/core';
+/** Safe request observations use route templates and measured serialized response bytes. */
+export interface ApiObservation {
+  readonly method: string;
+  readonly route: string;
+  readonly status: number;
+  readonly durationMs: number;
+  readonly responseBytes?: number;
+}
+/** Server policy is captured before registration; transport resources start explicitly. */
+export interface ApiOptions {
+  readonly service: ApplicationOptions['service'];
+  readonly host?: string;
+  readonly port?: number;
+  readonly requestTimeoutMs?: number;
+  readonly bodyLimitBytes?: number;
+  readonly validateResponses?: boolean;
+  readonly logger?: Logger;
+  readonly auth?: NonNullable<Application['auth']>;
+  readonly isReady?: () => boolean;
+  readonly onObservation?: (event: ApiObservation) => void;
+  readonly tls?: { readonly key: string; readonly cert: string };
+}
+/** Managed standalone servers expose their actual bound address and bounded cleanup. */
+export interface ManagedApiServer extends ApiServer {
+  start(options?: OperationOptions): Promise<void>;
+  close(options?: OperationOptions): Promise<void>;
+  address(): string | undefined;
+  stats(): Readonly<{
+    completed: number;
+    failed: number;
+    active: number;
+    observerFailures: number;
+  }>;
+  native(): FastifyInstance;
+}
+type Auth = NonNullable<Application['auth']>;
+const SERVICES = Symbol('api.services');
+type InternalApi = ManagedApiServer & { [SERVICES](logger: Logger, auth?: Auth): void };
+const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', message });
+const statusFor = (error: KitError): number => {
+  switch (error.code) {
+    case 'EK_HTTP_VALIDATION':
+      return 400;
+    case 'EK_AUTH_REQUIRED':
+    case 'EK_AUTH_INVALID':
+      return 401;
+    case 'EK_AUTH_FORBIDDEN':
+    case 'EK_TENANT_UNVERIFIED':
+      return 403;
+    case 'EK_HTTP_NOT_FOUND':
+      return 404;
+    case 'EK_HTTP_RATE_LIMIT':
+      return 429;
+    case 'EK_TIMEOUT':
+      return error.details.upstream === true ? 504 : 408;
+    case 'EK_ABORTED':
+      return 408;
+    case 'EK_BACKEND_UNAVAILABLE':
+    case 'EK_HEALTH_NOT_READY':
+      return 503;
+    default:
+      return 500;
+  }
+};
+const sorted = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sorted);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, entry]) => [key, sorted(entry)]),
+  );
+};
+// Fastify uses safe query/parameter prototypes; preserve own descriptors before strict copying.
+const routeBag = (value: unknown): unknown =>
+  copyData(
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.create(null, Object.getOwnPropertyDescriptors(value))
+      : value,
+  );
+
+/** EK-HTTP-001: Fastify routing with strict schemas and safe lifecycle/error boundaries. */
+export function createApi(options: ApiOptions): ManagedApiServer {
+  if (
+    !options ||
+    !options.service ||
+    typeof options.service.name !== 'string' ||
+    !/^[a-z][a-z0-9-]{0,62}(?![\s\S])/.test(options.service.name) ||
+    typeof options.service.version !== 'string' ||
+    !new RegExp(SEMVER_PATTERN).test(options.service.version) ||
+    !['development', 'test', 'production'].includes(options.service.environment)
+  )
+    throw invalid('Invalid API service metadata');
+  const host = options.host ?? '127.0.0.1',
+    port = options.port ?? 8080;
+  const timeout = options.requestTimeoutMs ?? 30_000,
+    bodyLimit = options.bodyLimitBytes ?? 1_048_576;
+  if (
+    typeof host !== 'string' ||
+    !host ||
+    host.length > 253 ||
+    /[\s/]/.test(host) ||
+    !Number.isSafeInteger(port) ||
+    port < 0 ||
+    port > 65535 ||
+    !Number.isSafeInteger(timeout) ||
+    timeout <= 0 ||
+    timeout > 2_147_483_647 ||
+    !Number.isSafeInteger(bodyLimit) ||
+    bodyLimit <= 0 ||
+    bodyLimit > 67_108_864 ||
+    (options.validateResponses !== undefined && typeof options.validateResponses !== 'boolean')
+  )
+    throw invalid('Invalid API transport policy');
+  for (const callback of [options.isReady, options.onObservation])
+    if (callback !== undefined && typeof callback !== 'function')
+      throw invalid('Invalid API callback');
+  options = Object.freeze({
+    ...options,
+    service: freezeData(copyData(options.service)),
+    ...(options.tls ? { tls: Object.freeze({ ...options.tls }) } : {}),
+  });
+  let logger = options.logger,
+    auth = options.auth;
+  let state: 'created' | 'starting' | 'ready' | 'closing' | 'closed' = 'created';
+  let starting: Promise<void> | undefined, closing: Promise<void> | undefined;
+  let document: Readonly<Record<string, unknown>> | undefined;
+  const counters = { completed: 0, failed: 0, observerFailures: 0 };
+  const active = new Set<AbortController>();
+  const entries = new WeakMap<
+    FastifyRequest,
+    { controller: AbortController; began: number; clean: () => void; responseBytes?: number }
+  >();
+  const middleware: Record<'postAuthentication' | 'preHandler', ApiMiddleware[]> = {
+    postAuthentication: [],
+    preHandler: [],
+  };
+  const routes: {
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    path: string;
+    spec: RouteDefinition<unknown, unknown, unknown, unknown>;
+  }[] = [];
+  let server: FastifyInstance;
+  try {
+    server = Fastify({
+      logger: false,
+      requestIdHeader: false,
+      genReqId: () => randomUUID(),
+      bodyLimit,
+      requestTimeout: timeout,
+      return503OnClosing: false,
+      onProtoPoisoning: 'error',
+      onConstructorPoisoning: 'error',
+      ...(options.tls
+        ? {
+            https: { key: options.tls.key, cert: options.tls.cert, minVersion: 'TLSv1.2' as const },
+          }
+        : {}),
+    });
+  } catch (cause) {
+    throw new KitError({
+      code: 'EK_CONFIG_INVALID',
+      message: 'Invalid API transport configuration',
+      cause,
+    });
+  }
+  const accepting = () => state === 'ready' && (options.isReady?.() ?? true);
+  const abortAll = () => {
+    for (const controller of active)
+      controller.abort(
+        new KitError({ code: 'EK_ABORTED', message: 'Server shutdown deadline reached' }),
+      );
+    server.server.closeAllConnections();
+  };
+  const open = () => {
+    if (state === 'closed' || state === 'closing')
+      throw new KitError({ code: 'EK_RESOURCE_CLOSED', message: 'API server is closed' });
+  };
+  const registering = () => {
+    open();
+    if (state !== 'created')
+      throw new KitError({ code: 'EK_LIFECYCLE_STATE', message: 'API registration is frozen' });
+  };
+  server.setValidatorCompiler(({ schema }) => {
+    const validate = compileSchema(schema as object);
+    return (data) =>
+      validate(data)
+        ? { value: data }
+        : {
+            error: new Error('Request schema validation failed'),
+          };
+  });
+  server.addHook('onRequest', async (request, reply) => {
+    const controller = new AbortController();
+    active.add(controller);
+    const release = () => {
+      request.raw.off('aborted', disconnected);
+      reply.raw.off('close', responseClosed);
+      active.delete(controller);
+      entries.delete(request);
+    };
+    const disconnected = () => {
+      if (!entries.has(request)) return;
+      controller.abort(new KitError({ code: 'EK_ABORTED', message: 'Client disconnected' }));
+      release();
+      counters.completed++;
+      counters.failed++;
+    };
+    const responseClosed = () => {
+      if (!reply.raw.writableEnded) disconnected();
+    };
+    request.raw.once('aborted', disconnected);
+    reply.raw.once('close', responseClosed);
+    entries.set(request, { controller, began: performance.now(), clean: release });
+    if (!['/livez', '/readyz'].includes(request.routeOptions.url ?? '') && !accepting())
+      throw new KitError({
+        code: 'EK_BACKEND_UNAVAILABLE',
+        message: 'Server is not accepting work',
+      });
+  });
+  server.addHook('onSend', async (request, reply, payload) => {
+    // Existing keep-alive requests finish their response, then relinquish the draining socket.
+    if (state === 'closing') reply.header('connection', 'close');
+    const entry = entries.get(request);
+    if (entry && (typeof payload === 'string' || Buffer.isBuffer(payload)))
+      entry.responseBytes = Buffer.byteLength(payload);
+    return payload;
+  });
+  server.addHook('onResponse', async (request, reply) => {
+    const entry = entries.get(request);
+    if (!entry) return;
+    entry.clean();
+    active.delete(entry.controller);
+    entries.delete(request);
+    counters.completed++;
+    if (reply.statusCode >= 400) counters.failed++;
+    const route = request.routeOptions.url ?? 'unmatched';
+    const event = Object.freeze({
+      method: request.method,
+      route,
+      status: reply.statusCode,
+      durationMs: performance.now() - entry.began,
+      ...(entry.responseBytes === undefined ? {} : { responseBytes: entry.responseBytes }),
+    });
+    try {
+      options.onObservation?.(event);
+    } catch {
+      counters.observerFailures++;
+    }
+    logger?.info('HTTP request completed', {
+      requestId: request.id,
+      method: request.method,
+      route,
+      status: reply.statusCode,
+      durationMs: event.durationMs,
+    });
+  });
+  server.setErrorHandler((error, request, reply) => {
+    const native =
+      error && typeof error === 'object' ? (error as { validation?: unknown; code?: unknown }) : {};
+    const failure =
+      error instanceof KitError
+        ? error
+        : new KitError({
+            code:
+              native.validation ||
+              (typeof native.code === 'string' &&
+                (native.code === 'FST_ERR_VALIDATION' || native.code.startsWith('FST_ERR_CTP_')))
+                ? 'EK_HTTP_VALIDATION'
+                : 'EK_INTERNAL',
+            message: 'HTTP request failed',
+            cause: error,
+          });
+    const status = statusFor(failure);
+    logger?.error('HTTP request failed', {
+      requestId: request.id,
+      status,
+      error: failure.toSafeJSON(),
+    });
+    void reply.code(status).send({ error: { ...failure.toSafeJSON(), requestId: request.id } });
+  });
+  server.setNotFoundHandler(() => {
+    throw new KitError({ code: 'EK_HTTP_NOT_FOUND', message: 'Route not found' });
+  });
+
+  const register = <P, Q, B, R>(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: string,
+    definition: RouteDefinition<P, Q, B, R>,
+  ): void => {
+    registering();
+    if (
+      typeof path !== 'string' ||
+      !path.startsWith('/') ||
+      path.length > 2048 ||
+      /[\r\n#]/.test(path) ||
+      ['/livez', '/readyz'].includes(path) ||
+      !definition ||
+      typeof definition.handler !== 'function' ||
+      !definition.schema?.response ||
+      typeof definition.schema.response !== 'object' ||
+      Array.isArray(definition.schema.response) ||
+      typeof definition.auth?.required !== 'boolean' ||
+      (definition.auth.scopes !== undefined &&
+        (!Array.isArray(definition.auth.scopes) ||
+          definition.auth.scopes.some(
+            (scope) => typeof scope !== 'string' || !scope || scope.length > 128,
+          ))) ||
+      (!definition.auth.required && !!definition.auth.scopes?.length)
+    )
+      throw invalid('Invalid API route definition');
+    if (Object.keys(definition).some((key) => !['schema', 'auth', 'handler'].includes(key)))
+      throw invalid('Unknown API route field');
+    if (
+      routes.some(
+        (route) =>
+          route.method === method &&
+          route.path.replace(/:[A-Za-z0-9_]+/g, ':parameter') ===
+            path.replace(/:[A-Za-z0-9_]+/g, ':parameter'),
+      )
+    )
+      throw invalid('Duplicate API route');
+    const schema = freezeData(copyData(definition.schema));
+    for (const value of Object.values(schema)) if (value !== undefined) compileSchema(value);
+    routes.push({
+      method,
+      path,
+      spec: {
+        schema,
+        auth: freezeData(copyData(definition.auth)),
+        handler: (context) => definition.handler(context as RouteContext<P, Q, B>),
+      },
+    });
+  };
+  const api: InternalApi = {
+    get: (path, spec) => register('GET', path, spec),
+    post: (path, spec) => register('POST', path, spec),
+    put: (path, spec) => register('PUT', path, spec),
+    patch: (path, spec) => register('PATCH', path, spec),
+    delete: (path, spec) => register('DELETE', path, spec),
+    registerMiddleware(stage, fn) {
+      registering();
+      if (!['postAuthentication', 'preHandler'].includes(stage) || typeof fn !== 'function')
+        throw invalid('Invalid API middleware');
+      middleware[stage].push(fn);
+    },
+    native() {
+      open();
+      return server;
+    },
+    address() {
+      const value = server.server.address();
+      return value && typeof value === 'object'
+        ? `${options.tls ? 'https' : 'http'}://${value.family === 'IPv6' ? '[' + value.address + ']' : value.address}:${value.port}`
+        : undefined;
+    },
+    stats: () => Object.freeze({ ...counters, active: active.size }),
+    openApiDocument() {
+      open();
+      if (!document)
+        throw new KitError({
+          code: 'EK_LIFECYCLE_STATE',
+          message: 'OpenAPI is available after startup',
+        });
+      return document;
+    },
+    [SERVICES](nextLogger, nextAuth) {
+      registering();
+      logger = nextLogger;
+      auth = nextAuth;
+    },
+    start(operation: OperationOptions = {}) {
+      try {
+        open();
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      if (starting) return starting;
+      if (routes.some((route) => route.spec.auth.required) && !auth)
+        return Promise.reject(
+          new KitError({
+            code: 'EK_PLUGIN_DEPENDENCY',
+            message: 'Protected routes require an authentication provider',
+          }),
+        );
+      state = 'starting';
+      starting = within(async () => {
+        await server.register(swagger, {
+          openapi: {
+            openapi: '3.1.0',
+            info: { title: options.service.name, version: options.service.version },
+            components: {
+              securitySchemes: {
+                bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+              },
+            },
+          },
+        });
+        for (const { method, path, spec } of routes) {
+          const validate = compileSchema(spec.schema.response);
+          server.route({
+            method,
+            url: path,
+            schema: {
+              ...(spec.schema.params ? { params: spec.schema.params } : {}),
+              ...(spec.schema.query ? { querystring: spec.schema.query } : {}),
+              ...(spec.schema.body ? { body: spec.schema.body } : {}),
+              response: { 200: spec.schema.response },
+              security: spec.auth.required ? [{ bearerAuth: [] }] : [],
+            },
+            async handler(request) {
+              const entry = entries.get(request)!;
+              const invoke = async () => {
+                try {
+                  return await within(
+                    async () => {
+                      let tenant;
+                      if (spec.auth.required) {
+                        const identity = await auth!.verifyBearer(request.headers.authorization, {
+                          signal: entry.controller.signal,
+                          timeoutMs: timeout,
+                        });
+                        for (const scope of spec.auth.scopes ?? [])
+                          auth!.requireScope(identity, scope);
+                        tenant = auth!.tenantFrom(identity);
+                      }
+                      const headers = Object.fromEntries(
+                        Object.entries(request.headers).map(([name, value]) => [
+                          name,
+                          Array.isArray(value) ? value.join(',') : value,
+                        ]),
+                      );
+                      const context: RouteContext<unknown, unknown, unknown> = Object.freeze({
+                        requestId: request.id,
+                        params: freezeData(routeBag(request.params)),
+                        query: freezeData(routeBag(request.query)),
+                        body: freezeData(copyData(request.body)),
+                        signal: entry.controller.signal,
+                        headers: Object.freeze(headers),
+                        ...(tenant ? { auth: tenant } : {}),
+                      });
+                      const chain = [...middleware.postAuthentication, ...middleware.preHandler];
+                      let last = -1;
+                      let result: unknown;
+                      const dispatch = async (index: number): Promise<void> => {
+                        if (index <= last)
+                          throw new KitError({
+                            code: 'EK_LIFECYCLE_STATE',
+                            message: 'Middleware next may run only once',
+                          });
+                        last = index;
+                        if (index === chain.length) {
+                          result = await spec.handler(context);
+                          return;
+                        }
+                        let continued = false;
+                        await chain[index]!(context as RouteContext, async () => {
+                          continued = true;
+                          await dispatch(index + 1);
+                        });
+                        if (!continued)
+                          throw new KitError({
+                            code: 'EK_LIFECYCLE_STATE',
+                            message: 'Middleware must continue or throw a typed error',
+                          });
+                      };
+                      await dispatch(0);
+                      if (options.validateResponses !== false && !validate(result))
+                        throw new KitError({
+                          code: 'EK_INTERNAL',
+                          message: 'Handler response schema validation failed',
+                        });
+                      return result;
+                    },
+                    { timeoutMs: timeout, signal: entry.controller.signal },
+                  );
+                } catch (error) {
+                  entry.controller.abort(error);
+                  throw error;
+                }
+              };
+              const contextual = logger as
+                | (Logger & {
+                    run?: <T>(fields: Readonly<Record<string, unknown>>, work: () => T) => T;
+                  })
+                | undefined;
+              return contextual?.run ? contextual.run({ requestId: request.id }, invoke) : invoke();
+            },
+          });
+        }
+        server.get('/livez', { schema: { hide: true } }, () => ({ status: 'live' }));
+        server.get('/readyz', { schema: { hide: true } }, async (_request, reply) => {
+          if (!accepting()) void reply.code(503);
+          return { status: accepting() ? 'ready' : 'not_ready' };
+        });
+        await server.ready();
+        document = freezeData(sorted(copyData(server.swagger())) as Record<string, unknown>);
+        const abort = () => {
+          abortAll();
+          void server.close().catch(() => undefined);
+        };
+        operation.signal?.addEventListener('abort', abort, { once: true });
+        try {
+          await server.listen({ host, port });
+          if (operation.signal?.aborted || state === 'closed' || state === 'closing') {
+            abort();
+            throw new KitError({ code: 'EK_ABORTED', message: 'API activation aborted' });
+          }
+          state = 'ready';
+        } finally {
+          operation.signal?.removeEventListener('abort', abort);
+        }
+      }, operation).catch((cause: unknown) => {
+        abortAll();
+        state = 'closed';
+        void server.close().catch(() => undefined);
+        if (cause instanceof KitError) throw cause;
+        throw new KitError({
+          code: 'EK_BACKEND_UNAVAILABLE',
+          message: 'API listener could not start',
+          cause,
+        });
+      });
+      return starting;
+    },
+    close(operation: OperationOptions = {}) {
+      if (closing) return closing;
+      if (state === 'closed') return Promise.resolve();
+      state = 'closing';
+      const abort = () => abortAll();
+      operation.signal?.addEventListener('abort', abort, { once: true });
+      if (operation.signal?.aborted) abort();
+      const nativeClose = server.close();
+      void nativeClose.catch(() => undefined);
+      closing = within(() => nativeClose, operation)
+        .catch((error: unknown) => {
+          abortAll();
+          throw error;
+        })
+        .finally(() => {
+          operation.signal?.removeEventListener('abort', abort);
+          state = 'closed';
+        });
+      return closing;
+    },
+  };
+  return Object.freeze(api);
+}
+
+/** Explicit plugin dependencies authorize access to authentication and future integrations. */
+export interface ApiPluginOptions extends Omit<
+  ApiOptions,
+  'service' | 'host' | 'port' | 'requestTimeoutMs' | 'logger' | 'auth'
+> {
+  readonly dependencies?: readonly string[];
+}
+/** Prepare route registration before start; activate the listener after every resource init. */
+export function apiPlugin(options: ApiPluginOptions = {}): ComposablePlugin {
+  return {
+    id: 'api',
+    version: '0.1.0',
+    capabilities: new Set(['api']),
+    dependencies: ['logging', ...(options.dependencies ?? [])],
+    [PREPARE_PLUGIN](context) {
+      return new Map([
+        [
+          COMPONENTS.api,
+          createApi({
+            ...options,
+            service: context.options.service,
+            ...(context.options.http ?? {}),
+            isReady: () => context.state() === 'READY' && (options.isReady?.() ?? true),
+          }),
+        ],
+      ]);
+    },
+    init(context) {
+      const api = context.require<InternalApi>(COMPONENTS.api);
+      api[SERVICES](
+        context.logger,
+        context.options.security ? context.require<Auth>(COMPONENTS.auth) : undefined,
+      );
+    },
+    async [ACTIVATE_PLUGIN](context) {
+      await context
+        .require<ManagedApiServer>(COMPONENTS.api)
+        .start({ signal: context.require<AbortSignal>(APPLICATION_SIGNAL) });
+    },
+    async close(context) {
+      await context
+        .require<ManagedApiServer>(COMPONENTS.api)
+        .close({ signal: context.require<AbortSignal>(APPLICATION_SIGNAL) });
+    },
+    async [DRAIN_PLUGIN](context) {
+      await context
+        .require<ManagedApiServer>(COMPONENTS.api)
+        .close({ signal: context.require<AbortSignal>(APPLICATION_SIGNAL) });
+    },
+  };
+}
