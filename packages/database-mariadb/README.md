@@ -180,6 +180,9 @@ server and restricted account; private credentials remain outside the checkout.
 Live tests require `ARKENIVA_MARIADB_URL`, a trusted-CA wrong-identity endpoint at
 `ARKENIVA_MARIADB_WRONG_SAN_URL` and `ARKENIVA_MARIADB_DISPOSABLE=1`. Missing
 infrastructure fails rather than skipping tests. Unit/contract tests need no server.
+Run `pnpm test:integration:mariadb` or `pnpm coverage:mariadb` with the private
+fixture variables. CI enforces combined 95% line/branch coverage and the consumer
+on each supported Node version.
 
 | Driver        | Server             | Node                      | Platform               | Live verification date |
 | ------------- | ------------------ | ------------------------- | ---------------------- | ---------------------- |

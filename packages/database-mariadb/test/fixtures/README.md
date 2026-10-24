@@ -12,7 +12,7 @@ On a disposable Linux machine with Docker Compose, Python, OpenSSL and passwordl
 ```sh
 python3 packages/database-mariadb/test/fixtures/prepare.py /tmp/arkeniva-mariadb-private
 python3 packages/database-mariadb/test/fixtures/run.py /tmp/arkeniva-mariadb-private/environment.json docker compose -f packages/database-mariadb/test/fixtures/compose.yaml up -d --wait --wait-timeout 180
-python3 packages/database-mariadb/test/fixtures/run.py /tmp/arkeniva-mariadb-private/environment.json node --test packages/database-mariadb/dist-test/integration/mariadb.integration.test.js
+python3 packages/database-mariadb/test/fixtures/run.py /tmp/arkeniva-mariadb-private/environment.json pnpm coverage:mariadb
 ```
 
 Build the workspace before running compiled tests. The generator refuses reused,
@@ -35,3 +35,7 @@ path, rather than a guest-only file location. Do not mount host data into the VM
 
 Stop this project with the same private runner/Compose file and `down`. Bind data
 and private credentials remain for inspection and separately controlled cleanup.
+
+CI runs the combined 95% line/branch gate and built orders consumer independently
+on Node 22, 24 and 26. No credentials or private certificate material are embedded
+in the workflow.
