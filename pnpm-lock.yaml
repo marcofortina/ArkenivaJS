@@ -245,6 +245,33 @@ importers:
         specifier: workspace:*
         version: link:../../packages/logging
 
+  examples/metering:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/http':
+        specifier: workspace:*
+        version: link:../../packages/http
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/metering':
+        specifier: workspace:*
+        version: link:../../packages/metering
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+
   examples/observability:
     dependencies:
       '@arkenivajs/core':
