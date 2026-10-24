@@ -113,6 +113,7 @@ export interface StoreOptions<T extends Record<string, unknown>> {
   schema: object;
   dynamicPaths?: readonly string[];
   secretPaths?: readonly string[];
+  preflightTimeoutMs?: number;
   preflight?: (next: Readonly<T>, previous: Readonly<T>) => Promise<void> | void;
 }
 
@@ -125,6 +126,14 @@ export class ConfigStore<T extends Record<string, unknown>> implements ConfigSer
   private pending: Promise<unknown> = Promise.resolve();
 
   constructor(initial: T, options: StoreOptions<T>) {
+    if (
+      options.preflightTimeoutMs !== undefined &&
+      (!Number.isSafeInteger(options.preflightTimeoutMs) || options.preflightTimeoutMs <= 0)
+    )
+      throw new KitError({
+        code: 'EK_CONFIG_INVALID',
+        message: 'Preflight timeout must be a positive integer',
+      });
     this.options = {
       ...options,
       dynamicPaths: [...(options.dynamicPaths ?? [])],
@@ -246,7 +255,14 @@ export class ConfigStore<T extends Record<string, unknown>> implements ConfigSer
           });
         };
         compare(this.current, next, '');
-        await this.options.preflight?.(next, this.current);
+        if (this.options.preflight) {
+          await within(
+            () => this.options.preflight!(next, this.current),
+            this.options.preflightTimeoutMs === undefined
+              ? {}
+              : { timeoutMs: this.options.preflightTimeoutMs },
+          );
+        }
         const view = freezeData(redactData(next, this.options.secretPaths));
         this.current = next;
         this.view = view;

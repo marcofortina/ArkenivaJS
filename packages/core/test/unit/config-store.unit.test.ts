@@ -143,3 +143,26 @@ test('Dynamic parent paths cannot bypass redaction or sensitive reload restricti
   );
   await assert.rejects(custom.reload({ nested: { value: 2 } }), code('EK_CONFIG_RELOAD_REJECTED'));
 });
+
+test('Hung reload preflight preserves the active generation and releases the queue', async () => {
+  const store = new ConfigStore(
+    { count: 1 },
+    {
+      schema,
+      dynamicPaths: ['count'],
+      preflightTimeoutMs: 5,
+      preflight(next) {
+        if (next.count === 2) return new Promise<void>(() => {});
+      },
+    },
+  );
+  const before = store.snapshot();
+  await assert.rejects(store.reload({ count: 2 }), code('EK_CONFIG_RELOAD_REJECTED'));
+  assert.equal(store.snapshot(), before);
+  await store.reload({ count: 3 });
+  assert.equal(store.get('count'), 3);
+  assert.throws(
+    () => new ConfigStore({ count: 1 }, { schema, preflightTimeoutMs: 0 }),
+    code('EK_CONFIG_INVALID'),
+  );
+});
