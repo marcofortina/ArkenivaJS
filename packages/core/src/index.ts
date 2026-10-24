@@ -12,6 +12,15 @@ export type {
 } from './ports.js';
 export type { OutboundHttpClient } from './ports.js';
 export type {
+  SqlValue,
+  SqlBindings,
+  SqlStatement,
+  SqlQueryOptions,
+  SqlResult,
+  SqlTransaction,
+  SqlProvider,
+} from './ports.js';
+export type {
   AuthService,
   Identity,
   TenantId,

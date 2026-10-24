@@ -4,7 +4,6 @@
   "intentionallyNotExported": [
     "CacheProvider",
     "MessageBus",
-    "SqlProvider",
     "RedisProvider",
     "EtcdProvider",
     "DocumentProvider",
