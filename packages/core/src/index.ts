@@ -2,6 +2,14 @@ export { KitError } from './errors.js';
 export type { ErrorCode, KitErrorOptions } from './contracts.js';
 export type { ConfigService, OperationOptions } from './contracts.js';
 export type { Telemetry, MeasureOptions } from './ports.js';
+export type {
+  UsageMeter,
+  MeterSession,
+  MeteringEvent,
+  MeterEndReceipt,
+  MeterResultStatus,
+  UsageQuantity,
+} from './ports.js';
 export type { OutboundHttpClient } from './ports.js';
 export type {
   AuthService,
