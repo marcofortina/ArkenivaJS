@@ -115,6 +115,30 @@ between portable calls. Use the transaction handle for transaction-local state.
 Acquisitions and queued transaction statements have an outstanding-work bound of
 at least 128 per pool, or the larger explicitly configured pool maximum.
 
+## Error classification
+
+Native causes remain internal. Safe details retain only a bounded SQLSTATE when
+available; default logs omit statements, bindings and vendor detail messages.
+
+| Condition                                                 | Framework code                                    |
+| --------------------------------------------------------- | ------------------------------------------------- |
+| Missing environment definition/value                      | `EK_CONFIG_MISSING`                               |
+| Invalid connection/TLS, bindings, limits or encoding      | `EK_CONFIG_INVALID`                               |
+| Pool capacity or acquisition deadline exhausted           | `EK_DATABASE_POOL_TIMEOUT`                        |
+| Failed acquisition or unavailable active connection       | `EK_DATABASE_CONNECT` / `EK_DATABASE_UNAVAILABLE` |
+| SQLSTATE class 23, including duplicate key 23505          | `EK_DATABASE_CONSTRAINT`                          |
+| Serialization failure 40001 or deadlock 40P01             | `EK_DATABASE_CONFLICT`                            |
+| Deadline or server cancellation 57014                     | `EK_TIMEOUT`                                      |
+| Caller/application cancellation                           | `EK_ABORTED`                                      |
+| Invalid transaction ownership/control or uncertain commit | `EK_DATABASE_TRANSACTION`                         |
+| Other execution/cleanup failure                           | `EK_DATABASE_QUERY`                               |
+| Use after pool closure                                    | `EK_RESOURCE_CLOSED`                              |
+
+Conflict classification can set `retryable=true`, but never replays a callback.
+The live suite races two serializable writers and verifies one committed update,
+one actual SQLSTATE 40001 and exactly one invocation of each callback. It also
+checks acquisition deadlines while a native borrower holds the only pool slot.
+
 ## Native API and observation
 
 `app.sql.native(name)` returns the actual `pg.Pool`. Borrowed native clients must

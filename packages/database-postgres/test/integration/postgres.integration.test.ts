@@ -333,6 +333,7 @@ test('EK-CORE-001 live pool cancellation releases late acquisitions without exec
   const pool = app.sql.native('main') as Pool;
   const held = await pool.connect();
   const controller = new AbortController();
+  let released = false;
   try {
     const before = app.sql.stats('main').operations;
     const query = app.sql.query('main', { text: 'SELECT 1' }, { signal: controller.signal });
@@ -340,11 +341,91 @@ test('EK-CORE-001 live pool cancellation releases late acquisitions without exec
     controller.abort();
     await assert.rejects(query, code('EK_ABORTED'));
     held.release();
+    released = true;
     await eventually(() => app.sql.stats('main').pendingAcquires === 0);
     assert.equal(app.sql.stats('main').operations, before);
     assert.equal(await app.sql.ping('main'), true);
   } finally {
-    if (!controller.signal.aborted) held.release();
+    if (!released) held.release();
+    await app.stop();
+  }
+});
+
+test('EK-DB-001 live serializable write conflicts preserve SQLSTATE 40001 without replaying callbacks', async () => {
+  const fixture = await schemaFixture();
+  const { app, schema } = fixture;
+  let releaseReads!: () => void;
+  const bothRead = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+  let reads = 0;
+  const callbacks = [0, 0];
+  try {
+    await app.sql.execute('main', {
+      text: `CREATE TABLE ${schema}.balances(id INTEGER PRIMARY KEY, balance INTEGER NOT NULL)`,
+    });
+    await app.sql.execute('main', { text: `INSERT INTO ${schema}.balances VALUES (1,0)` });
+    const attempts = [0, 1].map((index) =>
+      app.sql
+        .transaction(
+          'main',
+          async (tx) => {
+            callbacks[index] = callbacks[index]! + 1;
+            await tx.execute({ text: 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE' });
+            const result = await tx.query<{ balance: number }>({
+              text: `SELECT balance FROM ${schema}.balances WHERE id=1`,
+            });
+            assert.equal(result.rows[0]!.balance, 0);
+            if (++reads === 2) releaseReads();
+            await bothRead;
+            await tx.execute({
+              text: `UPDATE ${schema}.balances SET balance=balance+1 WHERE id=1`,
+            });
+          },
+          { timeoutMs: 10000 },
+        )
+        .catch((error: unknown) => {
+          // A setup failure must also release the peer's barrier so cleanup cannot hang.
+          releaseReads();
+          throw error;
+        }),
+    );
+    const outcomes = await Promise.allSettled(attempts);
+    assert.deepEqual(callbacks, [1, 1]);
+    assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
+    const rejected = outcomes.find((result) => result.status === 'rejected');
+    assert.ok(rejected && rejected.reason instanceof KitError);
+    assert.equal(rejected.reason.code, 'EK_DATABASE_CONFLICT');
+    assert.equal(rejected.reason.retryable, true);
+    assert.equal(rejected.reason.details.sqlState, '40001');
+    assert.deepEqual(
+      await app.sql.queryOne('main', { text: `SELECT balance FROM ${schema}.balances WHERE id=1` }),
+      { balance: 1 },
+    );
+  } finally {
+    releaseReads();
+    await fixture.close();
+  }
+});
+
+test('EK-CORE-001 live pool deadlines reject before SQL and release the eventual acquisition', async () => {
+  const app = await started(endpoint!, 1);
+  const pool = app.sql.native('main') as Pool;
+  const held = await pool.connect();
+  let released = false;
+  try {
+    const before = app.sql.stats('main').operations;
+    await assert.rejects(
+      app.sql.query('main', { text: 'SELECT 1' }, { timeoutMs: 50 }),
+      code('EK_DATABASE_POOL_TIMEOUT'),
+    );
+    assert.equal(app.sql.stats('main').operations, before);
+    held.release();
+    released = true;
+    await eventually(() => app.sql.stats('main').pendingAcquires === 0);
+    assert.equal(await app.sql.ping('main'), true);
+  } finally {
+    if (!released) held.release();
     await app.stop();
   }
 });
