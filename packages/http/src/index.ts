@@ -5,7 +5,14 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Agent, fetch as send } from 'undici';
 import { KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
-import type { OutboundHttpClient, OperationOptions, Plugin, Telemetry } from '@arkenivajs/core';
+import type {
+  OutboundHttpClient,
+  OperationOptions,
+  Plugin,
+  Telemetry,
+  UsageMeter,
+  MeterSession,
+} from '@arkenivajs/core';
 import { copyData, within, instrumentOperation } from '@arkenivajs/core/support';
 
 export type { OutboundHttpClient } from '@arkenivajs/core';
@@ -32,6 +39,7 @@ export interface HttpClientOptions {
   readonly serviceToken?: (origin: string, signal: AbortSignal) => Promise<string>;
   readonly onObservation?: (event: HttpObservation) => void;
   readonly telemetry?: Telemetry;
+  readonly meter?: UsageMeter;
 }
 /** A standalone client owns its connection agent and must be closed. */
 export interface ManagedHttpClient extends OutboundHttpClient {
@@ -206,6 +214,27 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
     const abort = () => controller.abort(init?.signal?.reason);
     init?.signal?.addEventListener('abort', abort, { once: true });
     let outcome: 'ok' | 'error' = 'error';
+    let meterSession: MeterSession | undefined;
+    try {
+      meterSession = options.meter?.current();
+    } catch {
+      counters.observerFailures++;
+    }
+    const markGap = (reason: 'driver_bytes_unavailable' | 'downstream_unobserved') => {
+      if (!meterSession) return;
+      try {
+        const scoped = options.meter as UsageMeter & {
+          markMissing?: (
+            session: MeterSession,
+            reason: 'driver_bytes_unavailable' | 'downstream_unobserved',
+          ) => void;
+        };
+        if (typeof scoped.markMissing !== 'function') counters.observerFailures++;
+        else scoped.markMissing(meterSession, reason);
+      } catch {
+        counters.observerFailures++;
+      }
+    };
     try {
       if (!init || typeof init !== 'object') throw invalid('HTTP request options are required');
       let url: URL;
@@ -255,6 +284,7 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
         for (const [name, value] of carrier) headers.set(name, value);
       } catch {
         counters.observerFailures++;
+        markGap('downstream_unobserved');
       }
       if (init.idempotencyKey !== undefined) {
         if (!/^[a-zA-Z0-9_.:-]{1,200}$/.test(init.idempotencyKey))
@@ -357,6 +387,25 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
       controller.abort();
       init?.signal?.removeEventListener('abort', abort);
       active.delete(controller);
+      if (meterSession) {
+        try {
+          meterSession.recordOperation('http.client.requests');
+          meterSession.recordUsage('http.client.elapsed', {
+            unit: 'milliseconds',
+            source: 'observed',
+            value: performance.now() - began,
+          });
+          if (responseBytes !== undefined)
+            meterSession.recordUsage('http.client.response.bytes', {
+              unit: 'bytes',
+              source: 'observed',
+              value: responseBytes,
+            });
+          else markGap('driver_bytes_unavailable');
+        } catch {
+          counters.observerFailures++;
+        }
+      }
       if (options.telemetry) {
         try {
           options.telemetry.recordHistogram(
@@ -449,6 +498,9 @@ export function httpPlugin(options: HttpPluginOptions): Plugin {
       const telemetry = context.options.telemetry
         ? context.require<Telemetry>(COMPONENTS.telemetry)
         : options.telemetry;
+      const meter = context.options.metering?.enabled
+        ? context.require<UsageMeter>(COMPONENTS.meter)
+        : options.meter;
       const contextual = telemetry as
         | (Telemetry & {
             traceHeaders?: () => Readonly<{ traceparent?: string; tracestate?: string }>;
@@ -459,6 +511,7 @@ export function httpPlugin(options: HttpPluginOptions): Plugin {
         createHttpClient({
           ...options,
           ...(telemetry ? { telemetry } : {}),
+          ...(meter ? { meter } : {}),
           ...(options.traceHeaders
             ? {}
             : typeof contextual?.traceHeaders === 'function'

@@ -14,6 +14,9 @@ import type {
   Logger,
   OperationOptions,
   Telemetry,
+  UsageMeter,
+  MeterSession,
+  MeterResultStatus,
 } from '@arkenivajs/core';
 import {
   copyData,
@@ -54,6 +57,7 @@ export interface ApiOptions {
   readonly logger?: Logger;
   readonly auth?: NonNullable<Application['auth']>;
   readonly telemetry?: Telemetry;
+  readonly meter?: UsageMeter;
   readonly isReady?: () => boolean;
   readonly onObservation?: (event: ApiObservation) => void;
   readonly tls?: { readonly key: string; readonly cert: string };
@@ -74,7 +78,14 @@ export interface ManagedApiServer extends ApiServer {
 type Auth = NonNullable<Application['auth']>;
 const SERVICES = Symbol('api.services');
 type InternalApi = ManagedApiServer & {
-  [SERVICES](logger: Logger, auth?: Auth, telemetry?: Telemetry): void;
+  [SERVICES](logger: Logger, auth?: Auth, telemetry?: Telemetry, meter?: UsageMeter): void;
+};
+type ScopedMeter = UsageMeter & {
+  run<T>(session: MeterSession, work: () => T): T;
+  markMissing(
+    session: MeterSession,
+    reason: 'driver_bytes_unavailable' | 'downstream_unobserved',
+  ): void;
 };
 type ContextualTelemetry = Telemetry & {
   withRemoteContext?: <T>(
@@ -183,6 +194,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   let logger = options.logger,
     auth = options.auth;
   let telemetry = options.telemetry;
+  let meter = options.meter as ScopedMeter | undefined;
   let state: 'created' | 'starting' | 'ready' | 'closing' | 'closed' = 'created';
   let starting: Promise<void> | undefined, closing: Promise<void> | undefined;
   let document: Readonly<Record<string, unknown>> | undefined;
@@ -197,8 +209,33 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       clean: () => void;
       responseBytes?: number;
       traceId?: string;
+      meterSession?: MeterSession;
     }
   >();
+  const finishMeter = (
+    entry: NonNullable<ReturnType<typeof entries.get>>,
+    status: MeterResultStatus,
+  ) => {
+    const session = entry.meterSession;
+    if (!session) return;
+    delete entry.meterSession;
+    try {
+      if (entry.responseBytes !== undefined)
+        session.recordUsage('http.response.bytes', {
+          unit: 'bytes',
+          source: 'observed',
+          value: entry.responseBytes,
+        });
+      else meter!.markMissing(session, 'driver_bytes_unavailable');
+    } catch {
+      counters.observerFailures++;
+    }
+    try {
+      session.end(status);
+    } catch {
+      counters.observerFailures++;
+    }
+  };
   const middleware: Record<'postAuthentication' | 'preHandler', ApiMiddleware[]> = {
     postAuthentication: [],
     preHandler: [],
@@ -296,6 +333,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
     const disconnected = () => {
       if (!entries.has(request)) return;
       controller.abort(new KitError({ code: 'EK_ABORTED', message: 'Client disconnected' }));
+      finishMeter(entries.get(request)!, 'aborted');
       release();
       counters.completed++;
       counters.failed++;
@@ -316,13 +354,28 @@ export function createApi(options: ApiOptions): ManagedApiServer {
     // Existing keep-alive requests finish their response, then relinquish the draining socket.
     if (state === 'closing') reply.header('connection', 'close');
     const entry = entries.get(request);
-    if (entry && (typeof payload === 'string' || Buffer.isBuffer(payload)))
+    if (entry && (request.method === 'HEAD' || [204, 304].includes(reply.statusCode)))
+      entry.responseBytes = 0;
+    else if (entry && (typeof payload === 'string' || Buffer.isBuffer(payload)))
       entry.responseBytes = Buffer.byteLength(payload);
     return payload;
   });
   server.addHook('onResponse', async (request, reply) => {
     const entry = entries.get(request);
     if (!entry) return;
+    let completion: MeterResultStatus = reply.statusCode >= 400 ? 'error' : 'ok';
+    try {
+      const reason = entry.controller.signal.reason;
+      if (
+        reason instanceof KitError &&
+        (reason.code === 'EK_ABORTED' ||
+          (reason.code === 'EK_TIMEOUT' && reason.details.upstream !== true))
+      )
+        completion = 'aborted';
+    } catch {
+      counters.observerFailures++;
+    }
+    finishMeter(entry, completion);
     entry.clean();
     active.delete(entry.controller);
     entries.delete(request);
@@ -495,11 +548,12 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         });
       return document;
     },
-    [SERVICES](nextLogger, nextAuth, nextTelemetry) {
+    [SERVICES](nextLogger, nextAuth, nextTelemetry, nextMeter) {
       registering();
       logger = nextLogger;
       auth = nextAuth;
       telemetry = nextTelemetry;
+      meter = nextMeter as ScopedMeter | undefined;
     },
     start(operation: OperationOptions = {}) {
       try {
@@ -508,6 +562,8 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         return Promise.reject(error);
       }
       if (starting) return starting;
+      if (meter && (typeof meter.run !== 'function' || typeof meter.markMissing !== 'function'))
+        return Promise.reject(invalid('Automatic request metering requires owned scope controls'));
       if (routes.some((route) => route.spec.auth.assurance !== undefined)) {
         let configured = false;
         try {
@@ -577,6 +633,20 @@ export function createApi(options: ApiOptions): ManagedApiServer {
                           auth!.requireAssurance(identity, spec.auth.assurance);
                         tenant = auth!.tenantFrom(identity);
                       }
+                      if (tenant && meter) {
+                        try {
+                          entry.meterSession = meter.start({
+                            tenant,
+                            operation: request.method + ' ' + path,
+                            requestId: request.id,
+                          });
+                          entry.meterSession.recordOperation('http.requests');
+                        } catch (error) {
+                          if (error instanceof KitError && error.code === 'EK_TENANT_UNVERIFIED')
+                            throw error;
+                          counters.observerFailures++;
+                        }
+                      }
                       const headers = Object.fromEntries(
                         Object.entries(request.headers).map(([name, value]) => [
                           name,
@@ -617,13 +687,18 @@ export function createApi(options: ApiOptions): ManagedApiServer {
                             message: 'Middleware must continue or throw a typed error',
                           });
                       };
-                      await dispatch(0);
-                      if (options.validateResponses !== false && !validate(result))
-                        throw new KitError({
-                          code: 'EK_INTERNAL',
-                          message: 'Handler response schema validation failed',
-                        });
-                      return result;
+                      const execute = async () => {
+                        await dispatch(0);
+                        if (options.validateResponses !== false && !validate(result))
+                          throw new KitError({
+                            code: 'EK_INTERNAL',
+                            message: 'Handler response schema validation failed',
+                          });
+                        return result;
+                      };
+                      return entry.meterSession
+                        ? meter!.run(entry.meterSession, execute)
+                        : execute();
                     },
                     { timeoutMs: timeout, signal: entry.controller.signal },
                   );
@@ -750,7 +825,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
 /** Explicit plugin dependencies authorize access to authentication and future integrations. */
 export interface ApiPluginOptions extends Omit<
   ApiOptions,
-  'service' | 'host' | 'port' | 'requestTimeoutMs' | 'logger' | 'auth' | 'telemetry'
+  'service' | 'host' | 'port' | 'requestTimeoutMs' | 'logger' | 'auth' | 'telemetry' | 'meter'
 > {
   readonly dependencies?: readonly string[];
 }
@@ -780,6 +855,9 @@ export function apiPlugin(options: ApiPluginOptions = {}): ComposablePlugin {
         context.logger,
         context.options.security ? context.require<Auth>(COMPONENTS.auth) : undefined,
         context.options.telemetry ? context.require<Telemetry>(COMPONENTS.telemetry) : undefined,
+        context.options.metering?.enabled
+          ? context.require<UsageMeter>(COMPONENTS.meter)
+          : undefined,
       );
     },
     async [ACTIVATE_PLUGIN](context) {

@@ -338,6 +338,10 @@ importers:
       '@arkenivajs/http':
         specifier: workspace:*
         version: link:../http
+    devDependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../api
 
   packages/security:
     dependencies:
