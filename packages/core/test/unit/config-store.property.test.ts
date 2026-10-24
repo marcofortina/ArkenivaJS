@@ -16,10 +16,21 @@ test('EK-CONF-001 random concurrent reloads retain complete immutable generation
     fc.asyncProperty(
       fc.array(fc.integer({ min: 0, max: 100 }), { minLength: 1, maxLength: 20 }),
       async (counts) => {
-        const store = new ConfigStore({ count: 0 }, { schema, dynamicPaths: ['count'] });
+        const events: unknown[] = [];
+        const store = new ConfigStore(
+          { count: 0 },
+          {
+            schema,
+            dynamicPaths: ['count'],
+            onDiagnostic(event) {
+              events.push(event);
+            },
+          },
+        );
         const before = store.snapshot();
         await Promise.all(counts.map((count) => store.reload({ count })));
         assert.equal(store.require('count'), counts.at(-1));
+        assert.equal(events.length, counts.length);
         assert.equal(before.count, 0);
         assert.ok(Object.isFrozen(store.snapshot()));
         await assert.rejects(

@@ -3,7 +3,13 @@ import { resolve, relative, isAbsolute, sep } from 'node:path';
 import { parseDocument } from 'yaml';
 import { KitError, COMPONENTS } from '@arkenivajs/core';
 import type { ConfigService, Plugin, OperationOptions } from '@arkenivajs/core';
-import { ConfigStore, copyData, mergeData, within } from '@arkenivajs/core/support';
+import {
+  ConfigStore,
+  copyData,
+  mergeData,
+  within,
+  reportConfigurationDiagnostic,
+} from '@arkenivajs/core/support';
 import type { StoreOptions } from '@arkenivajs/core/support';
 
 export type { ConfigService } from '@arkenivajs/core';
@@ -213,11 +219,25 @@ export async function createConfig<T extends Record<string, unknown>>(
           target[key] = secret;
         }
       }
-      const merged = mergeData(
-        mergeData(mergeData(defaults as Record<string, unknown>, yaml), envData),
-        runtime as Record<string, unknown>,
-      );
-      return new ConfigStore(merged as T, { ...options, secretPaths: protectedPaths });
+      const layers = [
+        ['yaml', yaml],
+        ['environment', envData],
+        ['runtime', runtime],
+      ] as const;
+      let merged = defaults;
+      const overrides: { source: 'yaml' | 'environment' | 'runtime'; keyCount: number }[] = [];
+      for (const [source, layer] of layers) {
+        const keyCount = Object.keys(layer).filter((key) => Object.hasOwn(merged, key)).length;
+        if (keyCount > 0) overrides.push({ source, keyCount });
+        merged = mergeData(merged, layer);
+      }
+      const store = new ConfigStore(merged as T, { ...options, secretPaths: protectedPaths });
+      for (const override of overrides)
+        reportConfigurationDiagnostic(
+          { event: 'configuration.override.applied', ...override },
+          options.onDiagnostic,
+        );
+      return store;
     }, options);
   } catch (cause) {
     if (cause instanceof KitError) throw cause;

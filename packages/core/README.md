@@ -28,3 +28,5 @@ Use `COMPONENTS` with plugin `provide` and `require` to install explicit service
 A core-only application has lifecycle and validated configuration. Required accessors for absent adapters throw `EK_UNSUPPORTED_CAPABILITY`, while optional accessors return undefined. HTTP, database, security, telemetry, health and metering implementations are separate integrations. The type-only ports describe their application-facing contracts and do not open or simulate those services.
 
 Reload preflight is bounded by `preflightTimeoutMs` (default 30,000 ms). A hung or failed preflight leaves the active generation unchanged and releases the serialized reload queue; late preflight completion cannot commit.
+
+Store options accept synchronous `onDiagnostic(event)` for committed reload audit events. The default sink writes bounded JSON metadata to standard error. `ConfigurationDiagnostic` and `reportConfigurationDiagnostic` are available from the support entry point for configuration adapters; events contain only a fixed event name, source and top-level key count. No values or paths are logged, and a failing custom sink cannot reverse the committed generation.
