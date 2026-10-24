@@ -45,3 +45,7 @@ See the [configuration example](../examples/configuration/README.md) for complet
 ## Process diagnostics
 
 `@arkenivajs/diagnostics` exports `Diagnostics`, `ProcessSnapshot`, `createDiagnostics(options?)`, `diagnosticsPlugin(options?)` and immutable `DIAGNOSTIC_SOURCES`. The managed collector adds idempotent `close()` to the normative snapshot interface. Measurements are native process CPU/memory and optional event-loop observations; absent samples stay omitted. See the [diagnostics reference](../packages/diagnostics/README.md) for units, source, interval, defaults and cleanup.
+
+## Outbound HTTP
+
+`@arkenivajs/http` exports `OutboundHttpClient`, `createHttpClient(options)`, `httpPlugin(options)` and `DEFAULT_HTTP_TIMEOUT_MS=10000`. The managed client adds `close` and transport statistics. Destinations require exact origins and connection-time DNS validation; response bodies, connection count, deadline and retries are bounded. See the [HTTP client reference](../packages/http/README.md) for argument policies, cancellation, trace/service identity hooks and observed-byte coverage.

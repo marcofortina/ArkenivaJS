@@ -1,0 +1,17 @@
+# @arkenivajs/http
+
+`createHttpClient(options)` implements `OutboundHttpClient` with an isolated Undici agent. Importing the package opens no connection. `httpPlugin(options)` installs and closes a client per application. Standalone clients require `await client.close()` in a finally block.
+
+Required `allowedOrigins` lists exact scheme/host/port combinations; an empty list denies all destinations. HTTPS is the default. Credentials, fragments and unapproved destinations reject with `EK_CONFIG_INVALID`. Connection-time DNS checks reject private, loopback, link-local, mapped and reserved address ranges, including mixed public/private answers. A trusted custom `resolve` function remains subject to the same address checks. `allowPrivateNetwork:true` explicitly permits HTTP and private addresses for isolated local integrations; retain an origin allowlist. TLS certificate/hostname verification remains enabled, with TLS 1.2 minimum.
+
+`request(url, init)`, `get(url, options?)` and `post(url, plainJsonBody, options?)` return standard Response objects. The default 10,000 ms deadline covers resolution, connection, headers and consumption of the body. Bodies are buffered with a default eight MiB bound (configurable up to 64 MiB); this interface does not stream arbitrarily large responses. `responseBytes` measures decoded payload bytes, excluding wire framing and compressed transport size. Non-success HTTP status codes remain visible in the Response. Redirects remain manual and cannot bypass destination validation.
+
+Operations accept `timeoutMs` and `signal`; cancellation aborts the transport. Invalid arguments use `EK_CONFIG_INVALID`, failures use `EK_HTTP_UPSTREAM`, cancellation uses `EK_ABORTED`, deadline expiry uses `EK_TIMEOUT`, and use after close uses `EK_RESOURCE_CLOSED`. Native failures remain internal causes. The agent defaults to ten connections, with a configurable upper bound of 64.
+
+Retries are disabled by default (`attempts:1`). Explicit `retry:{attempts:2,delayMs:100}` permits at most three total attempts for GET/HEAD/OPTIONS/PUT/DELETE with replayable bodies on network failures or 502/503/504 responses. The single operation deadline includes bounded backoff. POST/PATCH are never replayed automatically, including when an `idempotencyKey` is provided. Callers must reconcile uncertain write outcomes.
+
+Explicit trace headers are checked for valid W3C traceparent structure. `traceHeaders()` supplies current correlation. Tenant headers and baggage are removed; correlation does not authorize identity. `serviceToken(origin, signal)` can acquire a new destination-audience token and replaces a caller authorization header. No inbound request headers are inherited automatically.
+
+Synchronous `onObservation(event)` receives frozen method, outcome, duration and available status/decoded response byte count, excluding URLs, headers and payloads. Observer failures increment `stats().observerFailures` without changing the business outcome. `stats()` also reports completed/failed operations and active count. Close aborts in-flight requests and bounds agent shutdown with OperationOptions.
+
+The tests execute local disposable HTTP servers, capture actual headers and payloads, test abort/timeouts and response limits, exercise safe retries and reject private DNS answers and alternate IP spellings. `pnpm verify` also runs the seeded URL property suite.
