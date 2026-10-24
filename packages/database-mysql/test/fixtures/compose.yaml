@@ -1,0 +1,52 @@
+# prepare.py writes private material outside the checkout; no fixture credentials belong here.
+name: arkenivajs-mysql-test
+x-mysql: &mysql
+  image: mysql:9.7.4@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54
+  user: '999:999'
+  environment:
+    MYSQL_ROOT_PASSWORD_FILE: /fixture/admin-password
+    MYSQL_DATABASE: arkeniva_test
+  command:
+    - --ssl-ca=/fixture/ca.crt
+    - --ssl-cert=/fixture/server.crt
+    - --ssl-key=/fixture/server.key
+    - --require-secure-transport=ON
+    - --skip-name-resolve
+    - --local-infile=OFF
+    - --mysqlx=OFF
+    - --socket=/tmp/mysql.sock
+    - --pid-file=/tmp/mysql.pid
+  healthcheck:
+    test: [CMD, mysqladmin, ping, --socket=/tmp/mysql.sock, --silent]
+    interval: 2s
+    timeout: 2s
+    retries: 60
+    start_period: 15s
+  mem_limit: 768m
+  cpus: 1
+  pids_limit: 128
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+services:
+  mysql:
+    <<: *mysql
+    ports:
+      - '${MYSQL_FIXTURE_BIND_ADDRESS:-127.0.0.1}:13306:3306'
+    volumes:
+      - '${MYSQL_FIXTURE_DIRECTORY:?Prepare private MySQL fixtures}/data-server:/var/lib/mysql'
+      - '${MYSQL_FIXTURE_DIRECTORY}/server.crt:/fixture/server.crt:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/server.key:/fixture/server.key:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/ca.crt:/fixture/ca.crt:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'
+  wrong-san:
+    <<: *mysql
+    ports:
+      - '${MYSQL_FIXTURE_BIND_ADDRESS:-127.0.0.1}:13308:3306'
+    volumes:
+      - '${MYSQL_FIXTURE_DIRECTORY:?Prepare private MySQL fixtures}/data-wrong-san:/var/lib/mysql'
+      - '${MYSQL_FIXTURE_DIRECTORY}/wrong-san.crt:/fixture/server.crt:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/wrong-san.key:/fixture/server.key:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/ca.crt:/fixture/ca.crt:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
+      - '${MYSQL_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'
