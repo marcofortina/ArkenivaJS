@@ -81,3 +81,31 @@ jobs:
           node --input-type=module -e 'let ready=false; for(let attempt=0;attempt<30;attempt++){try{ready=(await fetch(process.env.ARKENIVAJS_METER_INTEGRATION_ENDPOINT+"/readyz",{signal:AbortSignal.timeout(500)})).ok;}catch{} if(ready)break; await new Promise(resolve=>setTimeout(resolve,100));} if(!ready)throw new Error("Collector did not become ready");'
           pnpm test:integration:metering
           node scripts/check-meter-collector.mjs "$ARKENIVAJS_METER_EVIDENCE_PATH" "$collector_dir/events.jsonl"
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.4', '24.22.1', '26.12.1']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare private disposable credentials and TLS identities
+        run: python3 packages/database-postgres/test/fixtures/prepare.py "$RUNNER_TEMP/postgres-fixture" --github-env "$GITHUB_ENV"
+      - name: Start verified PostgreSQL and the negative certificate fixture
+        run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
+      - run: pnpm coverage:postgres
+      - if: always() && env.PG_FIXTURE_DIRECTORY != ''
+        run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml logs --no-color
+      - if: always() && env.PG_FIXTURE_DIRECTORY != ''
+        run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml down

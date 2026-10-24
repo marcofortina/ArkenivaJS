@@ -1,0 +1,56 @@
+# prepare.py creates private test material outside the checkout.
+name: arkenivajs-postgres-test
+x-postgres: &postgres
+  image: postgres:18.6-bookworm@sha256:6b38fe68f2c02cafffbbce7496f76d110d8a947c039bd22c067e9a43c2250240
+  user: '999:999'
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_DB: arkeniva_test
+    POSTGRES_PASSWORD_FILE: /fixture/admin-password
+    PGDATA: /var/lib/postgresql/18/docker
+  command:
+    - postgres
+    - -c
+    - ssl=on
+    - -c
+    - ssl_cert_file=/fixture/server.crt
+    - -c
+    - ssl_key_file=/fixture/server.key
+    - -c
+    - hba_file=/fixture/pg_hba.conf
+    - -c
+    - password_encryption=scram-sha-256
+  healthcheck:
+    test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d arkeniva_test']
+    interval: 2s
+    timeout: 2s
+    retries: 30
+    start_period: 5s
+  mem_limit: 768m
+  cpus: 1
+  pids_limit: 128
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+services:
+  postgres:
+    <<: *postgres
+    ports:
+      - '${PG_FIXTURE_BIND_ADDRESS:-127.0.0.1}:15432:5432'
+    volumes:
+      - '${PG_FIXTURE_DIRECTORY:?Prepare private PostgreSQL fixtures}/data-server:/var/lib/postgresql'
+      - '${PG_FIXTURE_DIRECTORY}/server.crt:/fixture/server.crt:ro'
+      - '${PG_FIXTURE_DIRECTORY}/server.key:/fixture/server.key:ro'
+      - '${PG_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
+      - '${PG_FIXTURE_DIRECTORY}/pg_hba.conf:/fixture/pg_hba.conf:ro'
+      - '${PG_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'
+  wrong-san:
+    <<: *postgres
+    ports:
+      - '${PG_FIXTURE_BIND_ADDRESS:-127.0.0.1}:15433:5432'
+    volumes:
+      - '${PG_FIXTURE_DIRECTORY:?Prepare private PostgreSQL fixtures}/data-wrong-san:/var/lib/postgresql'
+      - '${PG_FIXTURE_DIRECTORY}/wrong-san.crt:/fixture/server.crt:ro'
+      - '${PG_FIXTURE_DIRECTORY}/wrong-san.key:/fixture/server.key:ro'
+      - '${PG_FIXTURE_DIRECTORY}/admin-password:/fixture/admin-password:ro'
+      - '${PG_FIXTURE_DIRECTORY}/pg_hba.conf:/fixture/pg_hba.conf:ro'
+      - '${PG_FIXTURE_DIRECTORY}/init.sql:/docker-entrypoint-initdb.d/10-application.sql:ro'
