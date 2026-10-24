@@ -50,6 +50,7 @@ export type ErrorCode =
   | 'EK_METER_EXPORT'
   | 'EK_HEALTH_NOT_READY'
   | 'EK_INTERNAL';
+/** Internal developer error details; only the safe envelope crosses external boundaries. */
 export interface KitErrorOptions {
   code: ErrorCode;
   message: string;

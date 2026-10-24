@@ -1,0 +1,20 @@
+{
+  "name": "ArkenivaJS",
+  "entryPointStrategy": "packages",
+  "entryPoints": ["packages/*"],
+  "out": ".build/api",
+  "readme": "README.md",
+  "projectDocuments": ["docs/*.md", "examples/*/README.md"],
+  "includeVersion": true,
+  "hideGenerator": true,
+  "treatWarningsAsErrors": true,
+  "packageOptions": {
+    "entryPoints": ["src/index.ts"],
+    "tsconfig": "tsconfig.json",
+    "validation": {
+      "notExported": true,
+      "invalidLink": true,
+      "notDocumented": false
+    }
+  }
+}
