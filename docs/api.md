@@ -56,4 +56,4 @@ See the [configuration example](../examples/configuration/README.md) for complet
 
 ## Identity and trusted tenant context
 
-`@arkenivajs/security` exports `createAuthService`, `securityPlugin` and the public authentication types. Signature, issuer, audience, time, type and scope checks precede tenant attribution. Runtime provenance rejects cloned or foreign identity/context objects. See the [security reference](../packages/security/README.md).
+`@arkenivajs/security` exports `createAuthService`, `securityPlugin` and the public authentication types. Signature, issuer, audience, time, type and scope checks precede tenant attribution. Runtime provenance rejects cloned or foreign identity/context objects. See the [security reference](../packages/security/README.md) and [executable tenant guide](../examples/oidc-tenants/README.md).
