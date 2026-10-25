@@ -217,3 +217,8 @@ third-party notices; retain applicable notices when redistributing. Type
 declarations use `@types/oracledb` 26.0.0 (MIT). Both versions are pinned.
 Oracle Client libraries and database server licensing/setup are separate and
 are neither installed nor bundled by this adapter.
+
+When an optional health collector is installed, the plugin pings each owned
+named pool through the adapter's bounded operation scope. The callback retains
+its original plugin context and cannot use resources after owner closure.
+Oracle adapter contract-tested with mocks; live compatibility not verified.
