@@ -1,9 +1,10 @@
 # @arkenivajs/security-totp
 
-This optional package is under development. Its entry point currently exports
-the TOTP lifecycle/storage types and shared MFA types. It does not yet export
-`createTotpService` or enable enrollment, verification, QR or recovery flows.
-Do not deploy it as a factor service or treat its types as runtime authorization.
+`createTotpService(options)` implements optional server-side TOTP enrollment,
+verification, PNG provisioning and recovery. It requires a real application
+authentication authority and explicitly selected durable providers. This private
+workspace has no published release; production readiness depends on the chosen
+authority, storage, secret providers and the applicable release gates.
 
 The private compatibility adapter delegates cryptographic verification to pinned
 `otplib` 13.5.0 and provisioning to `@otplib/uri` 13.5.0. It uses 160-bit CSPRNG
@@ -71,14 +72,71 @@ clock; the deployment must maintain trustworthy synchronized time. Request
 arguments cannot choose the clock, environment or provider. Provider operations
 obey cancellation/deadlines, and late results cannot initiate subsequent work.
 
-The public service factory remains unavailable while durable lifecycle wiring
-is completed. These runtime contracts and guards do not by themselves activate
-a factor or issue an authentication session.
+## Service operations and persistence
 
-Trusted subject/management policy, factor-specific durable state, protection and
-key rotation, distributed limits, evidence persistence, QR delivery, recovery,
-end-to-end guides and release checks remain necessary before activation. TOTP
-is not phishing-resistant and does not implement Microsoft Authenticator push.
+| Method                                                    | Behavior                                                                                                                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `beginEnrollment(subject, options?)`                      | Resolve the trusted owner, authorize enroll/replace, encrypt a fresh seed and persist expiring pending state before returning its opaque ID and secret-bearing URI. |
+| `getQrCodeImage(subject, id, options?)`                   | Revalidate owner/session and management policy, then return a PNG data URL for the unexpired enrollment. QR code dependencies load only on this path.               |
+| `confirmEnrollment(subject, id, code, options?)`          | Reauthorize the current transition, verify through otplib and atomically activate the exact pending generation with its accepted step.                              |
+| `verify(subject, code, options?)`                         | Verify the six-digit proof and generation-bound durable step CAS, then persist one-use evidence before returning it.                                                |
+| `isEnabled(subject, options?)`                            | Resolve the current verified owner and inspect its active factor.                                                                                                   |
+| `disable(subject, authorization, options?)`               | Independently authorize recent management proof and atomically revoke an existing factor, pending state and recovery set.                                           |
+| `generateRecoveryCodes(subject, authorization, options?)` | Authorize management, issue ten independent 256-bit random codes and atomically replace the stored keyed-hash set before returning plaintext once.                  |
+| `verifyRecoveryCode(subject, code, options?)`             | Resolve the primary owner, obtain the code's retained HMAC key version, consume its exact owner-bound hash atomically and persist evidence.                         |
+
+TOTP defaults stay SHA1/30 seconds/six digits with ±1 step; `driftSteps:0`
+selects the exact interval. Enrollment TTL defaults to 300000 ms, bounded to
+1–300000 ms. IDs are opaque CSPRNG references. Pending state binds the exact
+primary session, and replacement keeps the old factor until activation commits.
+Every accepted step must be greater than the persisted value for that factor
+ID/generation. Two pods cannot both accept a step or a recovery code.
+
+A shared limit permits five attempts per owner/operation in 60000 ms. The scope
+includes issuer and tenant and is shared across primary sessions. Invalid
+attempts count, and provider outage never skips the limit. Primary authentication
+and authorization run before factor access. Caller deadlines/cancellation apply
+to every provider, with no automatic write retry.
+
+Recovery plaintext uses `keyVersion.base64urlRandomBytes`; only a framed,
+owner-bound versioned HMAC is stored. Rotation retains old external keys while
+old unused codes remain valid. Regeneration and factor replacement/revocation
+invalidate earlier sets. Missing keys or an uncertain write never produce a
+success result. A consumed OTP/recovery proof stays spent if evidence persistence
+fails; begin a fresh verification instead of retrying a non-idempotent write.
+
+Returned evidence has `method`, `assurance:'mfa'`, subject, verification/expiry
+and an opaque ID, with a one-minute lifetime. The application authority must
+consume its separately persisted issuer/tenant/primary-session-bound record
+before issuing its own session decision. Existing identities are never upgraded
+in place; the framework signs no JWT and sets no cookie. TOTP and recovery are
+not phishing-resistant and do not implement Microsoft Authenticator push.
+
+## Executable integration
+
+The [PostgreSQL guide](../../examples/postgres/mfa-shared-state.md) runs this
+public factory with real signed OIDC identities, authenticated encryption,
+external ephemeral test keys and shared SQL. Inject its protected disposable
+TLS `DATABASE_URL` and run:
+
+```sh
+export ARKENIVA_POSTGRES_DISPOSABLE=1
+pnpm --filter @arkenivajs/example-postgres test:integration
+pnpm test:packed:examples --integration postgres
+```
+
+Tests fail explicitly if the fixture is missing; they do not silently skip.
+They verify all operations, foreign/unowned objects, independent management
+grants, interval/expiry boundaries, key rotation, rate limits, corrupted data,
+unknown persistence outcomes and two complete independent factor processes.
+Only owned schemas, pools, issuer sockets and ephemeral test keys are cleaned up.
+
+Enrollment URI/QR and recovery lists are sensitive return values. Applications
+must deliver them only over authenticated HTTPS with `Cache-Control: no-store`
+and exclude them from logs, tracing, metering, analytics and error payloads.
+The module emits no secret-bearing telemetry. The disposable adapters are
+explicitly rejected in production; production providers must pass durable
+conformance and key-readiness checks before the application exposes a listener.
 
 ArkenivaJS is AGPL-3.0-or-later. Upstream components retain the licenses in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

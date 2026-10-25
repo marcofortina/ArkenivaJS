@@ -70,5 +70,12 @@ export function startMfaWorker(t: TestContext, script: string, context: unknown)
     diagnostic = (diagnostic + String(chunk)).slice(-4096);
   });
   void result.catch(() => undefined);
-  return { ready, result, exit, go: () => child.stdin.end('consume\n') };
+  // Secret-bearing test payloads use the owned pipe, never process arguments or stdout.
+  return {
+    ready,
+    result,
+    exit,
+    go: (input?: unknown) =>
+      child.stdin.end(input === undefined ? 'consume\n' : JSON.stringify(input) + '\n'),
+  };
 }

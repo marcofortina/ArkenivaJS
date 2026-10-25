@@ -15,8 +15,9 @@ export const policyError = () =>
   new KitError({ code: 'EK_MFA_POLICY', message: 'Invalid or insufficient TOTP security policy' });
 export const invalidProof = () =>
   new KitError({ code: 'EK_MFA_INVALID', message: 'Invalid factor proof' });
-export const storageError = (cause?: unknown) =>
-  new KitError({ code: 'EK_MFA_STORAGE', message: 'Required MFA provider is unavailable', cause });
+// Secret-bearing providers may echo input; retain only the fixed category at this boundary.
+export const storageError = () =>
+  new KitError({ code: 'EK_MFA_STORAGE', message: 'Required MFA provider is unavailable' });
 
 /** Inspect data without executing caller-controlled accessors. Preserve authority object references. */
 export function data(value: unknown, fields: readonly string[]): Record<string, unknown> {
@@ -107,7 +108,7 @@ function subjectData(value: unknown): Record<string, unknown> {
       !Object.isFrozen(tenant.identity) ||
       identity.subject !== record.subject ||
       identity.issuer !== record.issuer ||
-      !['oidc', 'service-identity'].includes(String(tenant.source))
+      (tenant.source !== 'oidc' && tenant.source !== 'service-identity')
     )
       throw policyError();
   }
@@ -157,6 +158,8 @@ export function createTotpRuntime(input: TotpServiceOptions) {
     let value: number;
     try {
       value = clock();
+      if ((value as unknown) instanceof Promise)
+        void (value as unknown as Promise<unknown>).catch(() => undefined);
     } catch {
       throw policyError();
     }
@@ -237,7 +240,7 @@ export function createTotpRuntime(input: TotpServiceOptions) {
             check();
             if (cause instanceof KitError && ['EK_ABORTED', 'EK_TIMEOUT'].includes(cause.code))
               throw cause;
-            throw kind === 'policy' ? policyError() : storageError(cause);
+            throw kind === 'policy' ? policyError() : storageError();
           }
           check();
           return value;
@@ -245,6 +248,14 @@ export function createTotpRuntime(input: TotpServiceOptions) {
       };
       try {
         return await within(() => work(call), captured);
+      } catch (cause) {
+        if (cause instanceof KitError && ['EK_ABORTED', 'EK_TIMEOUT'].includes(cause.code))
+          throw new KitError({
+            code: cause.code,
+            message:
+              cause.code === 'EK_ABORTED' ? 'MFA operation aborted' : 'MFA operation timed out',
+          });
+        throw cause;
       } finally {
         finished = true;
         controller.abort();
@@ -344,7 +355,7 @@ export function createTotpRuntime(input: TotpServiceOptions) {
         return version + ':' + digest;
       } catch (cause) {
         if (cause instanceof KitError) throw cause;
-        throw storageError(cause);
+        throw storageError();
       } finally {
         owned.fill(0);
       }

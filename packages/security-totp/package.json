@@ -29,7 +29,11 @@
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
     "@otplib/uri": "13.5.0",
-    "otplib": "13.5.0"
+    "otplib": "13.5.0",
+    "qrcode": "1.5.4"
   },
-  "license": "AGPL-3.0-or-later"
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "@types/qrcode": "1.5.6"
+  }
 }
