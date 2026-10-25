@@ -33,7 +33,9 @@
     "@fastify/swagger": "9.9.2"
   },
   "devDependencies": {
-    "@arkenivajs/http": "workspace:*"
+    "@arkenivajs/http": "workspace:*",
+    "@fastify/websocket": "11.3.4",
+    "@types/ws": "8.18.1"
   },
   "license": "AGPL-3.0-or-later"
 }

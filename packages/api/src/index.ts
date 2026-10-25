@@ -4,9 +4,17 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { Server as NativeTlsServer, type TlsOptions } from 'node:tls';
+import type { Socket } from 'node:net';
+import type { Http2SecureServer, ServerHttp2Session } from 'node:http2';
 import { validateServerTlsFiles, withServerTls } from './server-tls.js';
 import Fastify from 'fastify';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type {
+  FastifyInstance,
+  FastifyRequest,
+  RawServerBase,
+  RawServerDefault,
+  RouteGenericInterface,
+} from 'fastify';
 import swagger from '@fastify/swagger';
 import { KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
 import type {
@@ -75,7 +83,9 @@ export interface ApiOptions {
   readonly tls?: { readonly key: string; readonly cert: string } | ServerTlsFiles;
 }
 /** Managed standalone servers expose their actual bound address and bounded cleanup. */
-export interface ManagedApiServer extends ApiServer {
+export interface ManagedApiServer<
+  RawServer extends RawServerBase = RawServerDefault,
+> extends ApiServer {
   start(options?: OperationOptions): Promise<void>;
   close(options?: OperationOptions): Promise<void>;
   address(): string | undefined;
@@ -85,13 +95,13 @@ export interface ManagedApiServer extends ApiServer {
     active: number;
     observerFailures: number;
   }>;
-  native(): FastifyInstance;
+  native(): FastifyInstance<RawServer>;
 }
 type Auth = NonNullable<Application['auth']>;
 const SERVICES = Symbol('api.services');
 /** Application composition owns listener selection; standalone servers retain explicit start semantics. */
-const listenerModes = new WeakMap<ManagedApiServer, (enabled: boolean) => void>();
-type InternalApi = ManagedApiServer & {
+const listenerModes = new WeakMap<object, (enabled: boolean) => void>();
+type ApiServices = {
   [SERVICES](
     logger: Logger,
     auth?: Auth,
@@ -100,6 +110,8 @@ type InternalApi = ManagedApiServer & {
     health?: HealthRegistry,
   ): void;
 };
+type InternalApi<RawServer extends RawServerBase = RawServerDefault> = ManagedApiServer<RawServer> &
+  ApiServices;
 type ScopedMeter = UsageMeter & {
   run<T>(session: MeterSession, work: () => T): T;
   markMissing(
@@ -170,8 +182,58 @@ const routeBag = (value: unknown): unknown =>
       : value,
   );
 
-/** EK-HTTP-001: Fastify routing with strict schemas and safe lifecycle/error boundaries. */
-export function createApi(options: ApiOptions): ManagedApiServer {
+/** Native constructor settings shared by both official Fastify transport overloads. */
+interface NativeServerConfiguration {
+  logger: false;
+  requestIdHeader: false;
+  genReqId: () => string;
+  bodyLimit: number;
+  requestTimeout: number;
+  return503OnClosing: false;
+  onProtoPoisoning: 'error';
+  onConstructorPoisoning: 'error';
+}
+
+/** EK-HTTP-001: one routing implementation with protocol-specific native server types. */
+export function createApi(
+  options: ApiOptions & { readonly http2: true },
+): ManagedApiServer<Http2SecureServer>;
+export function createApi(options: ApiOptions & { readonly http2?: false }): ManagedApiServer;
+export function createApi(
+  options: ApiOptions,
+): ManagedApiServer | ManagedApiServer<Http2SecureServer>;
+export function createApi(
+  options: ApiOptions,
+): ManagedApiServer | ManagedApiServer<Http2SecureServer> {
+  if (options?.http2 === true)
+    return createApiWithServer<Http2SecureServer>(options, (base, tls) =>
+      Fastify({
+        ...base,
+        http2: true,
+        http2SessionTimeout: 60000,
+        https: {
+          ...tls,
+          allowHTTP1: true,
+          settings: { maxConcurrentStreams: 100, maxHeaderListSize: 16384 },
+          maxSessionMemory: 10,
+        },
+      }),
+    );
+  return createApiWithServer<RawServerDefault>(options, (base, tls) =>
+    Fastify({
+      ...base,
+      ...(tls === undefined ? {} : { https: tls }),
+    }),
+  );
+}
+
+function createApiWithServer<RawServer extends RawServerBase>(
+  options: ApiOptions,
+  make: (
+    base: NativeServerConfiguration,
+    tls: TlsOptions | undefined,
+  ) => FastifyInstance<RawServer>,
+): ManagedApiServer<RawServer> {
   if (
     !options ||
     !options.service ||
@@ -223,11 +285,6 @@ export function createApi(options: ApiOptions): ManagedApiServer {
     (port === 0 && options.service.environment !== 'test')
   )
     throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid HTTP transport selection' });
-  if (options.http2 === true)
-    throw new KitError({
-      code: 'EK_UNSUPPORTED_CAPABILITY',
-      message: 'HTTP/2 transport is not available',
-    });
   let tlsFiles: Readonly<ServerTlsFiles> | undefined;
   let nativeTls: TlsOptions | undefined;
   if (tls !== undefined) {
@@ -242,6 +299,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         minVersion: tlsFiles.minVersion ?? 'TLSv1.2',
         requestCert: tlsFiles.clientCertificate === 'required',
         rejectUnauthorized: true,
+        handshakeTimeout: 10000,
       };
     } else {
       if (
@@ -254,7 +312,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         tls.cert.length > 1048576
       )
         throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid legacy TLS material' });
-      nativeTls = { key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' };
+      nativeTls = { key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2', handshakeTimeout: 10000 };
     }
   }
   options = Object.freeze({
@@ -274,9 +332,11 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   let document: Readonly<Record<string, unknown>> | undefined;
   const counters = { completed: 0, failed: 0, observerFailures: 0 };
   const active = new Set<AbortController>();
+  const sockets = new Set<Socket>();
+  const sessions = new Set<ServerHttp2Session>();
   const activeRoutes = new Map<string, number>();
   const entries = new WeakMap<
-    FastifyRequest,
+    FastifyRequest<RouteGenericInterface, RawServer>,
     {
       controller: AbortController;
       began: number;
@@ -319,24 +379,37 @@ export function createApi(options: ApiOptions): ManagedApiServer {
     path: string;
     spec: RouteDefinition<unknown, unknown, unknown, unknown>;
   }[] = [];
-  let server: FastifyInstance;
+  let server: FastifyInstance<RawServer>;
   try {
-    server = Fastify({
-      logger: false,
-      requestIdHeader: false,
-      genReqId: () => randomUUID(),
-      bodyLimit,
-      requestTimeout: timeout,
-      return503OnClosing: false,
-      onProtoPoisoning: 'error',
-      onConstructorPoisoning: 'error',
-      ...(nativeTls === undefined ? {} : { https: nativeTls }),
-    });
+    server = make(
+      {
+        logger: false,
+        requestIdHeader: false,
+        genReqId: () => randomUUID(),
+        bodyLimit,
+        requestTimeout: timeout,
+        return503OnClosing: false,
+        onProtoPoisoning: 'error',
+        onConstructorPoisoning: 'error',
+      },
+      nativeTls,
+    );
   } catch (cause) {
     throw new KitError({
       code: 'EK_CONFIG_INVALID',
       message: 'Invalid API transport configuration',
       cause,
+    });
+  }
+  server.server.on('connection', (socket: Socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  if (options.http2 === true) {
+    server.server.on('session', (session: ServerHttp2Session) => {
+      sessions.add(session);
+      session.once('close', () => sessions.delete(session));
+      session.on('error', () => undefined);
     });
   }
   const accepting = () => state === 'ready' && (options.isReady?.() ?? true);
@@ -345,7 +418,8 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       controller.abort(
         new KitError({ code: 'EK_ABORTED', message: 'Server shutdown deadline reached' }),
       );
-    server.server.closeAllConnections();
+    for (const session of sessions) session.destroy();
+    for (const socket of sockets) socket.destroy();
   };
   const open = () => {
     if (state === 'closed' || state === 'closing')
@@ -422,7 +496,8 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   });
   server.addHook('onSend', async (request, reply, payload) => {
     // Existing keep-alive requests finish their response, then relinquish the draining socket.
-    if (state === 'closing') reply.header('connection', 'close');
+    if (state === 'closing' && request.raw.httpVersionMajor === 1)
+      reply.header('connection', 'close');
     const entry = entries.get(request);
     if (entry && (request.method === 'HEAD' || [204, 304].includes(reply.statusCode)))
       entry.responseBytes = 0;
@@ -586,7 +661,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       },
     });
   };
-  const api: InternalApi = {
+  const api: InternalApi<RawServer> = {
     get: (path, spec) => register('GET', path, spec),
     post: (path, spec) => register('POST', path, spec),
     put: (path, spec) => register('PUT', path, spec),
@@ -920,6 +995,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       const abort = () => abortAll();
       operation.signal?.addEventListener('abort', abort, { once: true });
       if (operation.signal?.aborted) abort();
+      for (const session of sessions) if (!session.closed && !session.destroyed) session.close();
       const nativeClose = server.close();
       void nativeClose.catch(() => undefined);
       closing = within(() => nativeClose, operation)
@@ -997,7 +1073,7 @@ export function apiPlugin(options: ApiPluginOptions = {}): ComposablePlugin {
       return new Map([[COMPONENTS.api, api]]);
     },
     init(context) {
-      const api = context.require<InternalApi>(COMPONENTS.api);
+      const api = context.require<ApiServices>(COMPONENTS.api);
       api[SERVICES](
         context.logger,
         context.options.security ? context.require<Auth>(COMPONENTS.auth) : undefined,
