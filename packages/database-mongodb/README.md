@@ -166,6 +166,9 @@ insert/commit/abort replies, independent cancellation, TLS/authentication
 negatives, tenant filters, metering and cursor/change-stream/session shutdown.
 Coverage requires at least 95% of lines and branches.
 
+Run the [executable customer consumer](../../examples/mongodb/README.md) for an
+application-level BSON/DTO and native-session transaction example.
+
 | Driver        | Server                                           | Node                        | Platform                            | Verified date |
 | ------------- | ------------------------------------------------ | --------------------------- | ----------------------------------- | ------------- |
 | mongodb 7.7.0 | MongoDB 9.0.4, one-member replica set, TLS/SCRAM | 22.23.4 / 24.22.1 / 26.12.1 | Linux x64; Ubuntu 24.04 QEMU server | 2026-10-25    |

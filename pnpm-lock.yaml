@@ -290,6 +290,21 @@ importers:
         specifier: 6.2.13
         version: 6.2.13
 
+  examples/mongodb:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-mongodb':
+        specifier: workspace:*
+        version: link:../../packages/database-mongodb
+      mongodb:
+        specifier: 7.7.0
+        version: 7.7.0
+      mongodb-connection-string-url:
+        specifier: 7.0.2
+        version: 7.0.2
+
   examples/mysql:
     dependencies:
       '@arkenivajs/core':
