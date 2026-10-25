@@ -45,6 +45,9 @@ export function startMfaWorker(t: TestContext, script: string, context: unknown)
       } else resolve(payload);
     });
   });
+  const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.once('close', (code, signal) => resolve({ code, signal }));
+  });
   lines.on('line', (line) => {
     try {
       if (line.length > 4096) throw new Error('MFA worker response exceeds the test limit');
@@ -67,5 +70,5 @@ export function startMfaWorker(t: TestContext, script: string, context: unknown)
     diagnostic = (diagnostic + String(chunk)).slice(-4096);
   });
   void result.catch(() => undefined);
-  return { ready, result, go: () => child.stdin.end('consume\n') };
+  return { ready, result, exit, go: () => child.stdin.end('consume\n') };
 }

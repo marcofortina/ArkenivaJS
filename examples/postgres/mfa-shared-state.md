@@ -156,3 +156,18 @@ issuer/tenant/account/session mismatches, expiry/future timestamps, cancellation
 corrupt metadata and two independent authority processes contending for the
 same evidence. Exactly one receives it. No browser bearer credential, cookie,
 JWT, automatic identity upgrade or monetary record is produced by this adapter.
+
+## Process death and unavailable providers
+
+The failure suite terminates only its own dedicated Node child with `SIGKILL`
+after an acknowledged record/consume operation. The parent checks the actual
+termination signal and reads state through an independent connection. A record
+survives producer death; a consumed proof stays consumed after authority death
+and cannot be re-recorded.
+
+A separate application first exercises all three real SQL-backed stores, then
+closes its own pools. Retained store handles must reject with `EK_MFA_STORAGE`,
+without consuming a challenge/evidence or granting an attempt. A healthy
+application sharing the tables verifies that the failed operations changed no
+state. This tests unavailable/closed providers without stopping the shared test
+database. It is not a database-server failover or network-partition claim.
