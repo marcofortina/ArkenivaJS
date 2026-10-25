@@ -3,7 +3,8 @@
 This application-owned example implements `MfaStateStore` against real
 PostgreSQL, with a shared `MfaRateLimitStore`. It demonstrates shared atomic state before the optional factor
 services are available. It does not verify a factor, issue a session or implement
-the evidence, TOTP-factor or WebAuthn-credential stores.
+the TOTP-factor or WebAuthn-credential stores. It also demonstrates the durable
+evidence handoff described below using synthetic test records.
 
 ## Setup and execution
 
@@ -112,3 +113,46 @@ boundary/reset/retry values, conflicting active policies, clock rollback and two
 separate Node processes contending for one capacity-three bucket. Ten attempts
 collectively receive exactly three grants. Unknown/noninteger/overflowing
 inputs are rejected before SQL, and backend errors remain safe and fail closed.
+
+## Server-side single-use evidence handoff
+
+[src/mfa-evidence-store.ts](src/mfa-evidence-store.ts) implements
+`MfaEvidenceStore`. Create its table with
+`createPostgresMfaEvidenceTable(sql, connection, schema)` and obtain its port with
+`createPostgresMfaEvidenceStore(sql, connection, schema)`. This remains an
+application-owned disposable reference with no factor verifier or session issuer.
+The tests deliberately construct synthetic records to verify persistence; they
+do not establish that a user completed a real factor.
+
+`recordOnce(record, options?)` may be called only by trusted successful factor
+verification code. Records bind an opaque evidence ID, method, assurance,
+issuer, subject, optional tenant, primary session and verification/expiry times.
+Raw OTP/assertion/provisioning data and undeclared fields are rejected. TOTP
+and recovery-code records cannot claim phishing-resistant assurance.
+
+The application's independent session authority calls
+`consume({evidenceId,issuer,subject,tenantId?,primarySessionId,now}, options?)`
+with its current authenticated owner and server clock. One SQL update matches
+all owner fields, an unused record and the exact validity window. A wrong
+owner/session, expired/future proof or reuse returns `null` without granting
+assurance. Missing optional tenant cannot match a tenant-bound record. An
+already-aborted request cannot consume the proof.
+
+Successful consumption retains a `consumed_at` tombstone. A later insertion
+with the same ID still fails, including after successful consumption, so a
+retry cannot reconstruct a used proof. Retain those rows through expiry under
+the production cleanup policy. The disposable example drops the entire owned
+schema after its tests.
+
+Method, assurance and validity are stored separately from the JSON body and
+checked again before returning evidence, together with the exact owner/session.
+Corrupt JSON cannot substitute another owner, change verified factor class,
+increase assurance or alter proof freshness. Storage uncertainty rejects the
+handoff. A session authority that crashes after consuming but before recording
+its session upgrade must start a new verification rather than re-create proof.
+
+The integration command covers duplicate insertion before and after use,
+issuer/tenant/account/session mismatches, expiry/future timestamps, cancellation,
+corrupt metadata and two independent authority processes contending for the
+same evidence. Exactly one receives it. No browser bearer credential, cookie,
+JWT, automatic identity upgrade or monetary record is produced by this adapter.
