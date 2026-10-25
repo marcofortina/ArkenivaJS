@@ -194,3 +194,10 @@ Upstream references: [mysql2 documentation](https://sidorares.github.io/node-mys
 [prepared statements](https://sidorares.github.io/node-mysql2/docs/documentation/prepared-statements),
 [official MySQL image](https://hub.docker.com/_/mysql), and
 [implicit commits](https://dev.mysql.com/doc/refman/9.7/en/implicit-commit.html).
+
+With an optional health collector installed, the plugin performs a fresh
+readonly native readiness probe through its owned client and bounded operation
+scope. Health runs after owner initialization, before inbound listeners activate;
+public provider facades still require application READY. Scoped hook integration
+tests use the actual authenticated disposable server and reject stale callbacks
+and pre-aborted operations. Health never closes the native owner's client.
