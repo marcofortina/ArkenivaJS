@@ -119,6 +119,14 @@ The service uses upstream TOTP verification, durable generation-bound replay CAS
 external-key HMAC-SHA256 recovery and persisted single-use assurance evidence.
 It does not issue a session; production requires independently verified providers.
 
+The experimental [WebAuthn package](../packages/security-webauthn/README.md) exports
+`createWebAuthnService(options)` and its authority, credential-store and ceremony
+types. Its eight operations combine upstream verification with single-use challenges,
+stable account handles, version CAS and independent live authorization. Passwordless
+is opt-in; its evidence binds the consumed ceremony as a pre-session authentication
+transaction, consumed through the evidence store before the application issues a
+session. Durable-store, browser and performance acceptance remain separate gates.
+
 ## Metrics and tracing
 
 `@arkenivajs/telemetry` exports `createTelemetry`, `telemetryPlugin`, `DURATION_BUCKETS_SECONDS` and the public telemetry port. Providers and W3C async context are instance-owned; no process-global SDK is replaced. Metric labels and series, span queues and exporter deadlines are bounded. See the [telemetry reference](../packages/telemetry/README.md) for modes, units, sampling, resource metadata and actual collector integration. The [distributed guide](../examples/distributed-tracing/README.md) runs two HTTP hops with correlated logs and measured process quantities.
