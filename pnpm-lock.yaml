@@ -338,6 +338,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-postgres
 
+  examples/redis:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-redis':
+        specifier: workspace:*
+        version: link:../../packages/database-redis
+
   packages/api:
     dependencies:
       '@arkenivajs/core':
