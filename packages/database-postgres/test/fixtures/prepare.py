@@ -8,6 +8,11 @@ import secrets
 import subprocess
 from urllib.parse import urlencode
 
+IMAGES = {
+    17: "postgres:17.11-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27",
+    18: "postgres:18.6-bookworm@sha256:6b38fe68f2c02cafffbbce7496f76d110d8a947c039bd22c067e9a43c2250240",
+}
+
 
 def run(*arguments):
     subprocess.run(arguments, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -19,7 +24,12 @@ def private_file(path, content):
         output.write(content)
 
 
-def prepare(directory, github_environment=None):
+def prepare(directory, github_environment=None, server_major=18, port=15432, wrong_san_port=15433):
+    if server_major not in IMAGES:
+        raise ValueError("The PostgreSQL fixture requires a reviewed server major")
+    if any(type(value) is not int or not 1024 <= value <= 65535
+           for value in (port, wrong_san_port)) or port == wrong_san_port:
+        raise ValueError("PostgreSQL fixture ports must be distinct unprivileged TCP ports")
     directory = directory.resolve()
     if "\n" in str(directory) or "\r" in str(directory):
         raise ValueError("The fixture directory must fit on one environment line")
@@ -73,7 +83,8 @@ def prepare(directory, github_environment=None):
         run("sudo", "-n", "chown", "999:999", *map(str, owned))
         runtime = {
             "applicationUser": "arkeniva_app", "applicationPassword": password,
-            "database": "arkeniva_test", "port": 15432, "wrongSanPort": 15433,
+            "database": "arkeniva_test", "port": port, "wrongSanPort": wrong_san_port,
+            "serverMajor": server_major, "image": IMAGES[server_major],
         }
         private_file(directory / "runtime.json", json.dumps(runtime) + "\n")
         query = urlencode({"sslmode": "verify-full", "sslrootcert": str(directory / "ca.crt")})
@@ -81,12 +92,16 @@ def prepare(directory, github_environment=None):
             return f"postgres://arkeniva_app:{password}@127.0.0.1:{port}/arkeniva_test?{query}"
         environment = {
             "PG_FIXTURE_DIRECTORY": str(directory),
-            "ARKENIVA_POSTGRES_IMAGE": "postgres:18.6-bookworm@sha256:6b38fe68f2c02cafffbbce7496f76d110d8a947c039bd22c067e9a43c2250240",
+            "PG_FIXTURE_IMAGE": IMAGES[server_major],
+            "PG_FIXTURE_MAJOR": str(server_major),
+            "PG_FIXTURE_PORT": str(port),
+            "PG_FIXTURE_WRONG_SAN_PORT": str(wrong_san_port),
+            "ARKENIVA_POSTGRES_IMAGE": IMAGES[server_major],
             "ARKENIVA_POSTGRES_CONTAINER_LIMITS": "memory=768MiB;cpus=1;pids=128;per-container",
             "ARKENIVA_POSTGRES_DISPOSABLE": "1",
-            "ARKENIVA_POSTGRES_URL": endpoint(15432),
-            "ARKENIVA_POSTGRES_WRONG_SAN_URL": endpoint(15433),
-            "DATABASE_URL": endpoint(15432),
+            "ARKENIVA_POSTGRES_URL": endpoint(port),
+            "ARKENIVA_POSTGRES_WRONG_SAN_URL": endpoint(wrong_san_port),
+            "DATABASE_URL": endpoint(port),
         }
         private_file(directory / "environment.json", json.dumps(environment) + "\n")
         if github_environment:
@@ -102,5 +117,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--github-env", type=Path)
+    parser.add_argument("--server-major", type=int, choices=sorted(IMAGES), default=18)
+    parser.add_argument("--port", type=int, default=15432)
+    parser.add_argument("--wrong-san-port", type=int, default=15433)
     arguments = parser.parse_args()
-    prepare(arguments.directory, arguments.github_env)
+    prepare(arguments.directory, arguments.github_env, arguments.server_major,
+            arguments.port, arguments.wrong_san_port)

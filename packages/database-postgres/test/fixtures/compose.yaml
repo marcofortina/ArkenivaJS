@@ -1,13 +1,13 @@
 # prepare.py creates private test material outside the checkout.
 name: arkenivajs-postgres-test
 x-postgres: &postgres
-  image: postgres:18.6-bookworm@sha256:6b38fe68f2c02cafffbbce7496f76d110d8a947c039bd22c067e9a43c2250240
+  image: '${PG_FIXTURE_IMAGE:-postgres:18.6-bookworm@sha256:6b38fe68f2c02cafffbbce7496f76d110d8a947c039bd22c067e9a43c2250240}'
   user: '999:999'
   environment:
     POSTGRES_USER: postgres
     POSTGRES_DB: arkeniva_test
     POSTGRES_PASSWORD_FILE: /fixture/admin-password
-    PGDATA: /var/lib/postgresql/18/docker
+    PGDATA: /var/lib/postgresql/${PG_FIXTURE_MAJOR:-18}/docker
   command:
     - postgres
     - -c
@@ -35,7 +35,7 @@ services:
   postgres:
     <<: *postgres
     ports:
-      - '${PG_FIXTURE_BIND_ADDRESS:-127.0.0.1}:15432:5432'
+      - '${PG_FIXTURE_BIND_ADDRESS:-127.0.0.1}:${PG_FIXTURE_PORT:-15432}:5432'
     volumes:
       - '${PG_FIXTURE_DIRECTORY:?Prepare private PostgreSQL fixtures}/data-server:/var/lib/postgresql'
       - '${PG_FIXTURE_DIRECTORY}/server.crt:/fixture/server.crt:ro'
@@ -46,7 +46,7 @@ services:
   wrong-san:
     <<: *postgres
     ports:
-      - '${PG_FIXTURE_BIND_ADDRESS:-127.0.0.1}:15433:5432'
+      - '${PG_FIXTURE_BIND_ADDRESS:-127.0.0.1}:${PG_FIXTURE_WRONG_SAN_PORT:-15433}:5432'
     volumes:
       - '${PG_FIXTURE_DIRECTORY:?Prepare private PostgreSQL fixtures}/data-wrong-san:/var/lib/postgresql'
       - '${PG_FIXTURE_DIRECTORY}/wrong-san.crt:/fixture/server.crt:ro'
