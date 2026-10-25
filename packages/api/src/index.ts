@@ -17,6 +17,7 @@ import type {
   UsageMeter,
   MeterSession,
   MeterResultStatus,
+  HealthRegistry,
 } from '@arkenivajs/core';
 import {
   copyData,
@@ -28,8 +29,9 @@ import {
   DRAIN_PLUGIN,
   SEMVER_PATTERN,
   instrumentOperation,
+  SUPPORT_PLUGINS,
 } from '@arkenivajs/core/support';
-import type { ComposablePlugin } from '@arkenivajs/core/support';
+import type { ComposablePlugin, SupportPluginFactory } from '@arkenivajs/core/support';
 
 export type {
   ApiServer,
@@ -58,6 +60,8 @@ export interface ApiOptions {
   readonly auth?: NonNullable<Application['auth']>;
   readonly telemetry?: Telemetry;
   readonly meter?: UsageMeter;
+  readonly health?: HealthRegistry;
+  readonly readinessTimeoutMs?: number;
   readonly isReady?: () => boolean;
   readonly onObservation?: (event: ApiObservation) => void;
   readonly tls?: { readonly key: string; readonly cert: string };
@@ -78,7 +82,13 @@ export interface ManagedApiServer extends ApiServer {
 type Auth = NonNullable<Application['auth']>;
 const SERVICES = Symbol('api.services');
 type InternalApi = ManagedApiServer & {
-  [SERVICES](logger: Logger, auth?: Auth, telemetry?: Telemetry, meter?: UsageMeter): void;
+  [SERVICES](
+    logger: Logger,
+    auth?: Auth,
+    telemetry?: Telemetry,
+    meter?: UsageMeter,
+    health?: HealthRegistry,
+  ): void;
 };
 type ScopedMeter = UsageMeter & {
   run<T>(session: MeterSession, work: () => T): T;
@@ -165,7 +175,8 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   const host = options.host ?? '127.0.0.1',
     port = options.port ?? 8080;
   const timeout = options.requestTimeoutMs ?? 30_000,
-    bodyLimit = options.bodyLimitBytes ?? 1_048_576;
+    bodyLimit = options.bodyLimitBytes ?? 1_048_576,
+    readinessTimeoutMs = options.readinessTimeoutMs ?? 2000;
   if (
     typeof host !== 'string' ||
     !host ||
@@ -180,6 +191,13 @@ export function createApi(options: ApiOptions): ManagedApiServer {
     !Number.isSafeInteger(bodyLimit) ||
     bodyLimit <= 0 ||
     bodyLimit > 67_108_864 ||
+    !Number.isSafeInteger(readinessTimeoutMs) ||
+    readinessTimeoutMs <= 0 ||
+    readinessTimeoutMs > 10_000 ||
+    (options.health !== undefined &&
+      (!options.health ||
+        typeof options.health.live !== 'function' ||
+        typeof options.health.ready !== 'function')) ||
     (options.validateResponses !== undefined && typeof options.validateResponses !== 'boolean')
   )
     throw invalid('Invalid API transport policy');
@@ -195,6 +213,8 @@ export function createApi(options: ApiOptions): ManagedApiServer {
     auth = options.auth;
   let telemetry = options.telemetry;
   let meter = options.meter as ScopedMeter | undefined;
+  let health = options.health;
+  let readinessProbe: ReturnType<HealthRegistry['ready']> | undefined;
   let state: 'created' | 'starting' | 'ready' | 'closing' | 'closed' = 'created';
   let starting: Promise<void> | undefined, closing: Promise<void> | undefined;
   let document: Readonly<Record<string, unknown>> | undefined;
@@ -548,12 +568,13 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         });
       return document;
     },
-    [SERVICES](nextLogger, nextAuth, nextTelemetry, nextMeter) {
+    [SERVICES](nextLogger, nextAuth, nextTelemetry, nextMeter, nextHealth) {
       registering();
       logger = nextLogger;
       auth = nextAuth;
       telemetry = nextTelemetry;
       meter = nextMeter as ScopedMeter | undefined;
+      health = nextHealth;
     },
     start(operation: OperationOptions = {}) {
       try {
@@ -765,8 +786,31 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         }
         server.get('/livez', { schema: { hide: true } }, () => ({ status: 'live' }));
         server.get('/readyz', { schema: { hide: true } }, async (_request, reply) => {
-          if (!accepting()) void reply.code(503);
-          return { status: accepting() ? 'ready' : 'not_ready' };
+          let ready = accepting();
+          if (ready && health) {
+            try {
+              if (!readinessProbe) {
+                const owner = health;
+                const pending = Promise.resolve().then(() => owner.ready());
+                readinessProbe = pending;
+                const release = () => {
+                  if (readinessProbe === pending) readinessProbe = undefined;
+                };
+                void pending.then(release, release);
+              }
+              const pending = readinessProbe;
+              const result = await within(() => pending, { timeoutMs: readinessTimeoutMs });
+              ready =
+                result.status === 'ready' &&
+                Array.isArray(result.failing) &&
+                result.failing.length === 0;
+            } catch {
+              ready = false;
+            }
+          }
+          ready = ready && accepting();
+          if (!ready) void reply.code(503);
+          return { status: ready ? 'ready' : 'not_ready' };
         });
         await server.ready();
         document = freezeData(sorted(copyData(server.swagger())) as Record<string, unknown>);
@@ -825,17 +869,43 @@ export function createApi(options: ApiOptions): ManagedApiServer {
 /** Explicit plugin dependencies authorize access to authentication and future integrations. */
 export interface ApiPluginOptions extends Omit<
   ApiOptions,
-  'service' | 'host' | 'port' | 'requestTimeoutMs' | 'logger' | 'auth' | 'telemetry' | 'meter'
+  | 'service'
+  | 'host'
+  | 'port'
+  | 'requestTimeoutMs'
+  | 'logger'
+  | 'auth'
+  | 'telemetry'
+  | 'meter'
+  | 'health'
 > {
   readonly dependencies?: readonly string[];
 }
+const HEALTH_SERVICE = Symbol('api.health');
+const healthSupport: SupportPluginFactory = (root) => {
+  const owner = root.plugins?.find((plugin) => plugin.capabilities.has('health'));
+  return {
+    id: 'api-health',
+    version: '0.1.0',
+    capabilities: new Set(),
+    dependencies: owner ? [owner.id] : [],
+    init(context) {
+      context.provide(
+        HEALTH_SERVICE,
+        Object.freeze(owner ? { health: context.require<HealthRegistry>(COMPONENTS.health) } : {}),
+      );
+    },
+    close() {},
+  };
+};
 /** Prepare route registration before start; activate the listener after every resource init. */
 export function apiPlugin(options: ApiPluginOptions = {}): ComposablePlugin {
   return {
     id: 'api',
     version: '0.1.0',
     capabilities: new Set(['api']),
-    dependencies: ['logging', ...(options.dependencies ?? [])],
+    dependencies: ['logging', 'api-health', ...(options.dependencies ?? [])],
+    [SUPPORT_PLUGINS]: [healthSupport],
     [PREPARE_PLUGIN](context) {
       return new Map([
         [
@@ -858,6 +928,7 @@ export function apiPlugin(options: ApiPluginOptions = {}): ComposablePlugin {
         context.options.metering?.enabled
           ? context.require<UsageMeter>(COMPONENTS.meter)
           : undefined,
+        context.require<{ health?: HealthRegistry }>(HEALTH_SERVICE).health,
       );
     },
     async [ACTIVATE_PLUGIN](context) {

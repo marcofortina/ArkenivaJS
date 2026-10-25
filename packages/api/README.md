@@ -27,3 +27,19 @@ Protected routes may declare `auth.assurance:'single-factor' | 'mfa' | 'phishing
 MFA verification errors use opaque envelopes: invalid proof 401, inadequate assurance 403, replay/enrollment/credential or counter conflict 409, expiration 410, rate limiting 429 and unavailable durable state/crypto 503. `EK_MFA_RATE_LIMIT` may carry internal `retryAfterMs` as a positive integer up to one day; the response exposes only rounded-up integer seconds in `Retry-After`. Invalid delay metadata is omitted. No account/factor details or raw proof appear in responses.
 
 Optional `meter` supplies an independent usage port with managed `run`/`markMissing` scope controls. Root metering requires an explicit `metering` plugin dependency. Trusted sessions begin only after all authorization checks, cover middleware and handler work and finish once after response serialization or client disconnect. Public/health/unauthenticated requests never acquire a tenant meter. HEAD/204/304 have zero body bytes; unknown body sizes remain unavailable. Export/queue failure is observable without replaying business work. See the [metering example](../../examples/metering/README.md).
+
+## Dependency readiness
+
+With an explicit health plugin installed, API composition declares a support
+dependency on its owner. Startup health checks finish before listener activation.
+`/readyz` returns 503 on unhealthy, malformed, rejected or timed out evidence and
+rechecks lifecycle after awaiting it. Its body contains only status. `/livez`
+remains a local process response; neither route is a business OpenAPI endpoint.
+Without a health owner, readiness checks application lifecycle alone.
+
+Standalone `createApi` accepts an optional `health: HealthRegistry` and a positive
+integer `readinessTimeoutMs` (default 2000, maximum 10000). Concurrent requests
+share one pending registry call, retained until actual settlement even after a
+logical timeout. Registry cleanup remains the caller's responsibility. Application
+`apiPlugin` obtains health from its declared owner instead of accepting a foreign
+registry. Probe endpoints should be limited to trusted deployment infrastructure.
