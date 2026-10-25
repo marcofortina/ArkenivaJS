@@ -17,3 +17,9 @@ Mermaid diagrams are optional. If a diagram is added, include a pinned renderer 
 TLS rejection tests require the OpenSSL CLI already present on the supported Ubuntu CI image. They create private keys only in protected temporary directories, trust the test CA only in a short-lived child process, and remove all certificate material after the test. No private certificate/key is versioned.
 
 POSIX JSONL resource-failure tests use the Ubuntu Bash builtin file-size limit and the preinstalled `prlimit` utility in a short-lived child process. They handle `SIGXFSZ` only in that child, verify an actual failed write and rollback of partial data, and restore that child's original limit before V8 emits coverage. The parent and system limits remain unaffected.
+
+`pnpm test:package:messaging` verifies packed portable messaging exports with
+an unpatched SDK in a private temporary consumer. The separate NATS matrix
+requires verified TLS, scoped accounts, negative transport tests, actual
+telemetry export and independent metering. See the
+[NATS fixture](packages/messaging/test/fixtures/README.md).

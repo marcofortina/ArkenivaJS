@@ -14,3 +14,8 @@ license and attribution when distributing the corrected dependency.
 The specified `nats` package has moved upstream to `@nats-io/transport-node`.
 This module retains the specified package; switching implementations requires
 an explicit compatibility and dependency review.
+
+`pnpm test:package:messaging` packs the real core/messaging artifacts, installs
+them in a private temporary consumer with the unmodified registry SDK, and
+checks strict public declarations and actual ESM import. It does not publish
+anything and removes only its own temporary directory.
