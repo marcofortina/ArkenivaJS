@@ -18,6 +18,11 @@ handling and cleanup instructions. Development fixture URLs contain private
 credentials and belong outside the checkout. Run container services inside a
 dedicated VM or disposable CI runner.
 
+Every example includes `.env.example` as a variable inventory. These applications
+do not automatically load dotenv files. Keep actual URLs, passwords and key
+paths in the documented private fixture environment loader or an approved
+external secret provider; the checked-in inventory contains no live credentials.
+
 | Project                                                          | Learn                                                            | Infrastructure                                                 |
 | ---------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
 | [Configuration](../examples/configuration/README.md)             | YAML, environment precedence and immutable validated values      | None                                                           |
