@@ -2,8 +2,9 @@
 
 This application-owned example implements `MfaStateStore` against real
 PostgreSQL, with a shared `MfaRateLimitStore`. It demonstrates shared atomic state for optional factor
-services. It does not verify a factor, issue a session or implement
-the TOTP-factor or WebAuthn-credential stores. It also demonstrates the durable
+services; it does not verify a factor or issue a session.
+The [WebAuthn credential reference](webauthn-state.md) separately
+implements its durable credential contract. This guide also demonstrates the durable
 evidence handoff described below using synthetic test records.
 
 ## Setup and execution

@@ -52,7 +52,14 @@ export function mfaId(value: unknown): asserts value is string {
 export function mfaTable(
   schema: string,
   suffix:
-    'challenges' | 'rate_limits' | 'evidence' | 'totp_accounts' | 'totp_pending' | 'totp_recovery',
+    | 'challenges'
+    | 'rate_limits'
+    | 'evidence'
+    | 'totp_accounts'
+    | 'totp_pending'
+    | 'totp_recovery'
+    | 'webauthn_accounts'
+    | 'webauthn_credentials',
 ): string {
   if (process.env.ARKENIVA_POSTGRES_DISPOSABLE !== '1')
     throw new KitError({
@@ -69,6 +76,8 @@ export function mfaTable(
       'totp_accounts',
       'totp_pending',
       'totp_recovery',
+      'webauthn_accounts',
+      'webauthn_credentials',
     ].includes(suffix)
   )
     throw mfaPolicyError();

@@ -51,3 +51,8 @@ The same disposable fixture also exercises the
 [shared MFA state adapters](mfa-shared-state.md), including exact owner/session
 matching, one-time challenge/evidence consumption and bounded rate quotas across independent Node processes. This
 application-owned reference does not implement a factor verifier or issue a session.
+
+The [WebAuthn credential reference](webauthn-state.md) adds stable account handles,
+database-owned revisions and cross-process counter/revocation concurrency using
+the same named SQL provider. It remains explicitly test-only until application-owned
+production storage policy and the separate factor acceptance gates are satisfied.
