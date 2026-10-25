@@ -368,18 +368,23 @@ test('MongoDB failed diagnostic methods cannot replay work or replace an establi
 });
 
 test('MongoDB incomplete meter quality controls stay diagnostic and delayed wrappers preserve acknowledged results', async (context) => {
+  let now = 0;
   const meter = {
     current: () => ({ recordOperation() {}, recordUsage() {} }),
   } as unknown as UsageMeter;
   const telemetry = {
     async withSpan(_name: string, work: () => Promise<unknown>) {
       await work();
+      now += 31;
       await delay(30);
     },
     recordHistogram() {},
   } as unknown as Telemetry;
   const f = nativeDouble(context, { meter, telemetry });
   await f.connection.start();
+  // Expire only after native acknowledgement, independent of runner scheduling before submission.
+  now = performance.now();
+  context.mock.method(performance, 'now', () => now);
   assert.equal(
     await f.connection.insertOne('records', { _id: 'acknowledged' }, { timeoutMs: 10 }),
     '"acknowledged"',
