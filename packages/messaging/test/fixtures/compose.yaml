@@ -1,0 +1,44 @@
+name: arkenivajs-nats-test
+services:
+  nats:
+    image: ${ARKENIVA_NATS_IMAGE:?A verified NATS image is required}
+    user: '1000:1000'
+    command: ['--config', '/fixture/nats.conf']
+    ports: ['${NATS_FIXTURE_BIND_ADDRESS:-127.0.0.1}:${NATS_FIXTURE_PORT:-14223}:4222']
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    volumes:
+      - ${NATS_FIXTURE_DIRECTORY:?}/server.crt:/fixture/server.crt:ro
+      - ${NATS_FIXTURE_DIRECTORY:?}/server.key:/fixture/server.key:ro
+      - ${NATS_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${NATS_FIXTURE_DIRECTORY:?}/nats.conf:/fixture/nats.conf:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '-', 'http://127.0.0.1:8222/healthz']
+      interval: 1s
+      timeout: 5s
+      retries: 60
+  wrong-san:
+    image: ${ARKENIVA_NATS_IMAGE:?A verified NATS image is required}
+    user: '1000:1000'
+    command: ['--config', '/fixture/nats.conf']
+    ports: ['${NATS_FIXTURE_BIND_ADDRESS:-127.0.0.1}:${NATS_WRONG_SAN_PORT:-14224}:4222']
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    volumes:
+      - ${NATS_FIXTURE_DIRECTORY:?}/wrong-san.crt:/fixture/server.crt:ro
+      - ${NATS_FIXTURE_DIRECTORY:?}/wrong-san.key:/fixture/server.key:ro
+      - ${NATS_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${NATS_FIXTURE_DIRECTORY:?}/nats.conf:/fixture/nats.conf:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '-', 'http://127.0.0.1:8222/healthz']
+      interval: 1s
+      timeout: 5s
+      retries: 60
