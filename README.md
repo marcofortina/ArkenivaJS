@@ -54,3 +54,6 @@ safe HTTP readiness, optional actual Redis probes and graceful shutdown.
 
 The [Core NATS consumer](examples/messaging/README.md) demonstrates checked JSON,
 correlation, explicit handler error policy and truthful acknowledgment semantics.
+
+Follow the [developer learning path](docs/learning-path.md) for executable
+projects and independent verification with packed public artifacts.
