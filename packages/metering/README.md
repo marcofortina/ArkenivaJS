@@ -4,7 +4,18 @@
 
 `start({tenant,operation,requestId?})` returns a manual session without entering an asynchronous scope or performing I/O. `run(session,work)` enters an owned live session for adapter integrations; `measure(input,work)` starts a scope, awaits its callback and closes it on success, failure or cancellation. Concurrent scopes are isolated through AsyncLocalStorage. Child scopes retain the original request and trace identifiers and receive a unique operation identifier and parent link. A nested scope cannot change tenant or request correlation. Work continuing after a parent ends needs a new explicit scope; late implicit children are rejected.
 
+`withoutScope(work)` on the managed provider enters an independent asynchronous
+background context without inheriting the request's meter session. A background
+consumer must authenticate and authorize its own tenant before starting a new
+`measure` operation. Its event has no inherited parent operation or request ID.
+Returning to the publisher restores the original scope.
+
 `recordUsage(name,{unit,value,source})` accumulates finite nonnegative quantities in registered dimensions. `usageDefinitions` registers at most 128 names, including reserved framework dimensions. Names contain 2–80 lowercase letters, digits, underscores or periods and begin with a letter. Units are `bytes`, `operations`, `milliseconds` or `items`; source is `observed` or `derived`. A dimension cannot change unit or mix sources in one event. `recordOperation(name,count?)` records integer operation counts, default one; explicitly measured zero is permitted. Built-in names are `http.requests`, `http.response.bytes`, `db.query`, `db.client.elapsed`, `http.client.requests`, `http.client.elapsed` and `http.client.response.bytes` with their corresponding units. An application must avoid counting an operation both manually and automatically.
+
+Optional messaging adapters also use `messaging.publish` (operations),
+`messaging.client.elapsed` (milliseconds) and `messaging.payload.bytes` (bytes).
+Payload bytes describe the encoded application envelope, excluding TLS and
+network overhead. Unobserved transport bytes remain explicitly unavailable.
 
 `recordError(error)` records only a completion category. Raw messages, stacks, claims and submitted secrets never enter the event. `end(status?)` closes exactly once and returns an immutable enqueue receipt; it performs no file or network I/O. A manual scope with no outcome uses `unknown`; `measure` uses `ok`, `error` or `aborted`. Repeated completion and use of an ended or foreign session throw `EK_METER_SESSION`.
 

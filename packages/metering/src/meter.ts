@@ -70,6 +70,8 @@ export interface MeterOptions {
 /** Explicit scope controls for adapters; untrusted callers cannot manufacture owned sessions. */
 export interface ManagedUsageMeter extends UsageMeter {
   run<T>(session: MeterSession, work: () => T): T;
+  /** Background consumers must not inherit the registering request's tenant accounting scope. */
+  withoutScope<T>(work: () => T): T;
   markMissing(session: MeterSession, reason: MeteringGap): void;
   close(options?: OperationOptions): Promise<void>;
 }
@@ -117,6 +119,9 @@ const defaultDimensions = Object.freeze({
   'http.client.requests': 'operations',
   'http.client.elapsed': 'milliseconds',
   'http.client.response.bytes': 'bytes',
+  'messaging.publish': 'operations',
+  'messaging.client.elapsed': 'milliseconds',
+  'messaging.payload.bytes': 'bytes',
 } satisfies Record<string, UsageQuantity['unit']>);
 
 /** EK-METER-001: independent immutable events, verified tenant provenance and bounded asynchronous export. */
@@ -513,6 +518,10 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
       const state = owned(session);
       if (typeof work !== 'function') throw sessionError('Meter work must be a function');
       return storage.run(state, work);
+    },
+    withoutScope(work) {
+      if (typeof work !== 'function') throw sessionError('Meter work must be a function');
+      return storage.run(undefined, work);
     },
     markMissing(session, reason) {
       const state = owned(session);
