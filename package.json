@@ -32,7 +32,9 @@
     "test:integration:mariadb": "node scripts/test.mjs database-mariadb-integration",
     "coverage:mariadb": "pnpm --filter @arkenivajs/database-mariadb coverage",
     "test:integration:oracle": "node scripts/test.mjs database-oracle-integration",
-    "coverage:oracle": "pnpm --filter @arkenivajs/database-oracle coverage"
+    "coverage:oracle": "pnpm --filter @arkenivajs/database-oracle coverage",
+    "test:integration:redis": "node scripts/test.mjs database-redis-integration",
+    "coverage:redis": "pnpm --filter @arkenivajs/database-redis coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

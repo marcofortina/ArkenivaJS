@@ -1,0 +1,54 @@
+name: arkenivajs-redis-test
+services:
+  redis:
+    image: ${ARKENIVA_REDIS_IMAGE:?A verified Redis image is required}
+    user: '999:999'
+    command: ['redis-server', '/fixture/redis.conf']
+    ports: ['${REDIS_FIXTURE_BIND_ADDRESS:-127.0.0.1}:16379:6379']
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    volumes:
+      - ${REDIS_FIXTURE_DIRECTORY:?}/server.crt:/fixture/server.crt:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/server.key:/fixture/server.key:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/users.acl:/fixture/users.acl:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/health-password:/fixture/health-password:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/healthcheck.sh:/fixture/healthcheck.sh:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/redis.conf:/fixture/redis.conf:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/data-server:/data
+    healthcheck:
+      test: ['CMD', 'sh', '/fixture/healthcheck.sh']
+      interval: 1s
+      timeout: 5s
+      retries: 90
+  wrong-san:
+    image: ${ARKENIVA_REDIS_IMAGE:?A verified Redis image is required}
+    user: '999:999'
+    command: ['redis-server', '/fixture/redis.conf']
+    environment:
+      REDIS_HEALTH_SERVER_NAME: wrong.invalid
+    ports: ['${REDIS_FIXTURE_BIND_ADDRESS:-127.0.0.1}:16380:6379']
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    volumes:
+      - ${REDIS_FIXTURE_DIRECTORY:?}/wrong-san.crt:/fixture/server.crt:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/wrong-san.key:/fixture/server.key:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/users.acl:/fixture/users.acl:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/health-password:/fixture/health-password:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/healthcheck.sh:/fixture/healthcheck.sh:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/redis.conf:/fixture/redis.conf:ro
+      - ${REDIS_FIXTURE_DIRECTORY:?}/data-wrong-san:/data
+    healthcheck:
+      test: ['CMD', 'sh', '/fixture/healthcheck.sh']
+      interval: 1s
+      timeout: 5s
+      retries: 90
