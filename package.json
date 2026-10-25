@@ -45,7 +45,8 @@
     "coverage:health": "pnpm --filter @arkenivajs/health coverage",
     "test:integration:messaging": "node scripts/test.mjs messaging-integration",
     "coverage:messaging": "pnpm --filter @arkenivajs/messaging coverage",
-    "test:package:messaging": "node scripts/check-messaging-package.mjs"
+    "test:package:messaging": "node scripts/check-messaging-package.mjs",
+    "test:packed:examples": "node scripts/check-packed-examples.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

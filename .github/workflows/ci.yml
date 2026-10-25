@@ -25,6 +25,8 @@ jobs:
       - run: corepack enable && corepack install
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      - name: Compile and execute examples against packed public artifacts
+        run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim
         run: pnpm coverage:oracle
       - run: pnpm audit --audit-level=high
@@ -108,6 +110,7 @@ jobs:
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:postgres
       - run: pnpm --filter @arkenivajs/example-postgres test:integration
+      - run: pnpm test:packed:examples --integration postgres
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
@@ -137,6 +140,7 @@ jobs:
         run: docker compose -f packages/database-mysql/test/fixtures/compose.yaml up -d --wait --wait-timeout 180
       - run: pnpm coverage:mysql
       - run: pnpm --filter @arkenivajs/example-mysql test:integration
+      - run: pnpm test:packed:examples --integration mysql
       - if: always() && env.MYSQL_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-mysql/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.MYSQL_FIXTURE_DIRECTORY != ''
@@ -166,6 +170,7 @@ jobs:
         run: docker compose -f packages/database-mariadb/test/fixtures/compose.yaml up -d --wait --wait-timeout 180
       - run: pnpm coverage:mariadb
       - run: pnpm --filter @arkenivajs/example-mariadb test:integration
+      - run: pnpm test:packed:examples --integration mariadb
       - if: always() && env.MARIADB_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-mariadb/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.MARIADB_FIXTURE_DIRECTORY != ''
@@ -197,10 +202,13 @@ jobs:
         run: docker compose -f packages/database-redis/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:redis
       - run: pnpm --filter @arkenivajs/example-redis test:integration
+      - run: pnpm test:packed:examples --integration redis
       - run: pnpm coverage:cache
       - run: pnpm --filter @arkenivajs/example-cache test:integration
+      - run: pnpm test:packed:examples --integration cache
       - run: pnpm coverage:health
       - run: pnpm --filter @arkenivajs/example-health test:integration
+      - run: pnpm test:packed:examples --integration health
       - if: always() && env.REDIS_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-redis/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.REDIS_FIXTURE_DIRECTORY != ''
@@ -236,6 +244,7 @@ jobs:
           docker compose -f packages/database-etcd/test/fixtures/compose.yaml exec -T wrong-san /usr/local/bin/etcdctl --endpoints=https://wrong.invalid:2379 --cacert=/fixture/ca.crt --cert=/fixture/health.crt --key=/fixture/health.key endpoint health
       - run: pnpm coverage:etcd
       - run: pnpm --filter @arkenivajs/example-etcd test:integration
+      - run: pnpm test:packed:examples --integration etcd
       - if: always() && env.ETCD_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-etcd/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.ETCD_FIXTURE_DIRECTORY != ''
@@ -269,6 +278,7 @@ jobs:
         run: docker compose -f packages/database-mongodb/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:mongodb
       - run: pnpm --filter @arkenivajs/example-mongodb test:integration
+      - run: pnpm test:packed:examples --integration mongodb
       - if: always() && env.MONGODB_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-mongodb/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.MONGODB_FIXTURE_DIRECTORY != ''
@@ -300,6 +310,7 @@ jobs:
         run: docker compose -f packages/messaging/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:messaging
       - run: pnpm --filter @arkenivajs/example-messaging test:integration
+      - run: pnpm test:packed:examples --integration messaging
       - run: pnpm test:package:messaging
       - if: always() && env.NATS_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/messaging/test/fixtures/compose.yaml logs --no-color
