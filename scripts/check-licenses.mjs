@@ -27,7 +27,7 @@ for (const path of paths) {
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).license, 'AGPL-3.0-or-later', path);
     manifests++;
   }
-  const prefix = ['.ts', '.js', '.mjs'].includes(extension)
+  const prefix = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'].includes(extension)
     ? '// '
     : (['.py', '.sh', '.yaml', '.yml', '.example'].includes(extension) &&
           name !== 'pnpm-lock.yaml') ||
