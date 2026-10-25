@@ -2,3 +2,6 @@ packages:
   - packages/*
   - examples/*
   - tools/*
+allowBuilds:
+  # Thin mode needs no install hook or Oracle Client setup.
+  oracledb@26.0.0: false

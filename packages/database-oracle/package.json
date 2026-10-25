@@ -1,0 +1,39 @@
+{
+  "name": "@arkenivajs/database-oracle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "format:check": "prettier --check src test",
+    "lint": "eslint src test",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "node --test dist-test/unit/*.test.js dist-test/contract/*.test.js",
+    "test:unit": "node --test dist-test/unit/*.test.js",
+    "test:contract": "node --test dist-test/contract/*.test.js",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-include='dist/*.js' --test-coverage-lines=95 --test-coverage-branches=95 dist-test/unit/*.test.js dist-test/contract/*.test.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/database": "workspace:*",
+    "oracledb": "26.0.0"
+  },
+  "devDependencies": {
+    "@types/oracledb": "26.0.0"
+  }
+}
