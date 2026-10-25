@@ -749,6 +749,9 @@ importers:
 
   tools/benchmark:
     devDependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@arkenivajs/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -770,6 +773,21 @@ importers:
       '@arkenivajs/metering':
         specifier: workspace:*
         version: link:../../packages/metering
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      fastify:
+        specifier: 5.12.7
+        version: 5.12.7
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
       pg:
         specifier: 8.23.1
         version: 8.23.1

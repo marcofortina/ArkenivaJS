@@ -7,7 +7,9 @@
     "start": "node foundation.mjs",
     "metering": "node metering.mjs",
     "sql": "node sql.mjs",
-    "postgres": "node postgres.mjs"
+    "postgres": "node postgres.mjs",
+    "test": "node --test test/*.unit.test.mjs",
+    "test:integration": "node --test test/http.integration.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/core": "workspace:*",
@@ -21,6 +23,12 @@
     "@arkenivajs/database-postgres": "workspace:*",
     "pg": "8.23.1",
     "pg-cursor": "2.22.1",
-    "pg-connection-string": "2.14.1"
+    "pg-connection-string": "2.14.1",
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "fastify": "5.12.7",
+    "jose": "6.2.13",
+    "ajv": "8.20.0"
   }
 }
