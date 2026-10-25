@@ -145,6 +145,12 @@ export class EtcdConnection implements EtcdProvider {
     return this.starting;
   }
 
+  /** Confirm scoped native range access again; startup's cached promise is not ongoing backend evidence. */
+  async health(input?: OperationOptions): Promise<boolean> {
+    await this.run('get', false, input, (scope) => this.probe(scope), { observe: false });
+    return true;
+  }
+
   private run<T>(
     operation: Operation,
     write: boolean,

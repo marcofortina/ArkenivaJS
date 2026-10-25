@@ -158,3 +158,10 @@ replay/compaction, lease loss/cleanup, isolated cancellation and unknown write
 outcomes. Other platforms, server versions, multi-member failover and etcd 3.7
 RangeStream are not qualified by this matrix. See [third-party notices](THIRD_PARTY_NOTICES.md)
 for the selected SDK and its upstream license attributions.
+
+With an optional health collector installed, the plugin performs a fresh
+readonly native readiness probe through its owned client and bounded operation
+scope. Health runs after owner initialization, before inbound listeners activate;
+public provider facades still require application READY. Scoped hook integration
+tests use the actual authenticated disposable server and reject stale callbacks
+and pre-aborted operations. Health never closes the native owner's client.
