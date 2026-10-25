@@ -51,3 +51,6 @@ finite expiration, actual deletion outcomes and explicit business DTO validation
 
 The [health service](examples/health/README.md) demonstrates process liveness,
 safe HTTP readiness, optional actual Redis probes and graceful shutdown.
+
+The [Core NATS consumer](examples/messaging/README.md) demonstrates checked JSON,
+correlation, explicit handler error policy and truthful acknowledgment semantics.
