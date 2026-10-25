@@ -31,3 +31,7 @@ operations with InnoDB, exact values and explicit handling of DDL commit semanti
 
 Use the [MariaDB orders example](examples/mariadb/README.md) for its independent
 native driver, bigint result values and explicit JSON transport conversion.
+
+The [Oracle exact-number consumer](examples/oracle/README.md) demonstrates named
+binds and lossless JSON DTOs. Oracle is contract-tested with mocks; live
+compatibility remains unverified and real execution requires explicit opt-in.
