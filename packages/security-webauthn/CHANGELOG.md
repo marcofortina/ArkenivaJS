@@ -14,3 +14,6 @@
   transitions, including zero-counter races and fail-closed persistence checks.
 - Delegate direct attestation to the pinned verifier and bound concurrent native
   verification work without an implicit queue.
+- Expose the eight-operation factor service with live authority checks, stable
+  account handles, versioned state and one-use evidence; keep production acceptance
+  gated on durable-store, browser and performance verification.
