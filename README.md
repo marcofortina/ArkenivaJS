@@ -57,3 +57,17 @@ correlation, explicit handler error policy and truthful acknowledgment semantics
 
 Follow the [developer learning path](docs/learning-path.md) for executable
 projects and independent verification with packed public artifacts.
+
+## License
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
+ArkenivaJS is licensed under the GNU Affero General Public License, version 3
+or later. See [LICENSE](LICENSE) for the full text. Upstream components retain
+their own licenses and attributions; see the notices for
+[Redis](packages/database-redis/THIRD_PARTY_NOTICES.md),
+[etcd](packages/database-etcd/THIRD_PARTY_NOTICES.md),
+[MongoDB](packages/database-mongodb/THIRD_PARTY_NOTICES.md) and
+[messaging](packages/messaging/THIRD_PARTY_NOTICES.md).

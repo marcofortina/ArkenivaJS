@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 /** Explicit portable limits leave larger native operations under caller ownership. */
 export const ETCD_LIMITS = Object.freeze({
   pending: 128,

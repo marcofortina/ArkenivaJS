@@ -12,5 +12,6 @@
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/config": "workspace:*"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import type { TestContext } from 'node:test';
 import { MongoClient, Db, Collection, AbstractCursor, BSON } from 'mongodb';
 import type { Document } from 'mongodb';

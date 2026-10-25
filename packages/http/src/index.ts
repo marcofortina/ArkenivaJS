@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { lookup as resolveHost } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';

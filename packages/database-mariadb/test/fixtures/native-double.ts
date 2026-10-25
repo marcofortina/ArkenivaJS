@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import type { PoolConnection, Prepare } from 'mariadb';

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { performance } from 'node:perf_hooks';
 import { KitError, DEFAULT_SQL_TIMEOUT_MS } from '@arkenivajs/core';
 import type { OperationOptions } from '@arkenivajs/core';

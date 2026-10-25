@@ -16,5 +16,6 @@
     "@arkenivajs/api": "workspace:*",
     "@arkenivajs/health": "workspace:*",
     "@arkenivajs/database-redis": "workspace:*"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

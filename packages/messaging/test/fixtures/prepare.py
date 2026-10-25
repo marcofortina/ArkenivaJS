@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 """Prepare private disposable NATS identities and independently healthy TLS endpoints."""
 
 import argparse

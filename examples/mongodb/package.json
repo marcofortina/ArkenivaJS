@@ -15,5 +15,6 @@
     "@arkenivajs/database-mongodb": "workspace:*",
     "mongodb": "7.7.0",
     "mongodb-connection-string-url": "7.0.2"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

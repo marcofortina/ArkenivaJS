@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 const evidence = JSON.parse(readFileSync(process.argv[2], 'utf8'));

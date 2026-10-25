@@ -12,5 +12,6 @@
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/database-oracle": "workspace:*"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

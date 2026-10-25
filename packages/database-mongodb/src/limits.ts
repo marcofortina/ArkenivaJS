@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 /** Portable bounds retain larger native workloads under explicit caller ownership. */
 export const MONGODB_LIMITS = Object.freeze({
   pending: 128,

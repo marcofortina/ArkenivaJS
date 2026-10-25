@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 export { KitError } from './errors.js';
 export type { ErrorCode, KitErrorOptions } from './contracts.js';
 export type { ConfigService, OperationOptions } from './contracts.js';

@@ -32,5 +32,6 @@
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/database": "workspace:*",
     "mariadb": "3.5.4"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }
