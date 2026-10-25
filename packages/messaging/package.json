@@ -1,0 +1,41 @@
+{
+  "name": "@arkenivajs/messaging",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
+    "compat"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "lint": "eslint src test",
+    "test": "node --test dist-test/unit/*.test.js dist-test/contract/*.test.js",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-include='dist/*.js' --test-coverage-lines=95 --test-coverage-branches=95 dist-test/unit/*.test.js dist-test/contract/*.test.js dist-test/integration/*.test.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "nats": "2.29.3"
+  },
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "@arkenivajs/metering": "workspace:*",
+    "jose": "6.2.13"
+  }
+}
