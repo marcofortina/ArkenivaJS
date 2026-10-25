@@ -48,6 +48,6 @@ The adapter integration suite additionally verifies JWT rejection before SQL and
 database-enforced tenant isolation with PostgreSQL row-level security.
 
 The same disposable fixture also exercises the
-[shared MFA challenge adapter](mfa-shared-state.md), including exact owner/session
-matching and one-time consumption by two independent Node processes. This
+[shared MFA state adapters](mfa-shared-state.md), including exact owner/session
+matching, one-time consumption and bounded rate quotas across independent Node processes. This
 application-owned reference does not implement a factor verifier or issue a session.

@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import { KitError } from '@arkenivajs/core';
 import type {
   MfaChallengeRecord,
   MfaStateStore,
   OperationOptions,
   SqlProvider,
 } from '@arkenivajs/core';
-import { copyData } from '@arkenivajs/core/support';
+import {
+  mfaPolicyError as invalid,
+  mfaText as text,
+  mfaObject as object,
+  mfaInstant as instant,
+  mfaId as identity,
+  mfaTable,
+  mfaStorage as storage,
+} from './mfa-store-support.js';
 
 const fields = [
   'id',
@@ -28,45 +35,6 @@ const purposes: readonly string[] = [
   'webauthn-authenticate',
   'webauthn-passwordless',
 ];
-const invalid = () =>
-  new KitError({ code: 'EK_MFA_POLICY', message: 'Invalid MFA challenge storage input' });
-
-function text(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || value.length < 1 || value.length > 1024) throw invalid();
-  for (const character of value)
-    if (character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) throw invalid();
-}
-
-function object(value: unknown, keys: readonly string[]): Record<string, unknown> {
-  let owned: unknown;
-  try {
-    owned = copyData(value);
-  } catch {
-    throw invalid();
-  }
-  if (!owned || typeof owned !== 'object' || Array.isArray(owned)) throw invalid();
-  const record = owned as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !keys.includes(key))) throw invalid();
-  return record;
-}
-
-function instant(value: unknown): number {
-  text(value);
-  const parsed = Date.parse(value);
-  if (
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) ||
-    !Number.isFinite(parsed) ||
-    new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19)
-  )
-    throw invalid();
-  return parsed;
-}
-
-function identity(value: unknown): asserts value is string {
-  text(value);
-  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(value)) throw invalid();
-}
-
 function record(value: unknown): MfaChallengeRecord {
   const owned = object(value, fields);
   identity(owned.id);
@@ -80,37 +48,13 @@ function record(value: unknown): MfaChallengeRecord {
   return Object.freeze(owned) as unknown as MfaChallengeRecord;
 }
 
-function table(schema: string): string {
-  if (process.env.ARKENIVA_POSTGRES_DISPOSABLE !== '1')
-    throw new KitError({
-      code: 'EK_CONFIG_INVALID',
-      message: 'MFA storage example requires a disposable PostgreSQL fixture',
-    });
-  if (typeof schema !== 'string' || !/^mfa_[a-f0-9]{24}$/.test(schema)) throw invalid();
-  // Only a caller-owned random test namespace is interpolated; all record values remain SQL binds.
-  return schema + '.mfa_challenges';
-}
-
-async function storage<T>(operation: () => Promise<T>): Promise<T> {
-  try {
-    return await operation();
-  } catch (cause) {
-    if (cause instanceof KitError && ['EK_ABORTED', 'EK_TIMEOUT'].includes(cause.code)) throw cause;
-    throw new KitError({
-      code: 'EK_MFA_STORAGE',
-      message: 'MFA challenge storage is unavailable',
-      cause,
-    });
-  }
-}
-
 /** Create the table only inside an already-created, owned disposable example schema. */
 export async function createPostgresMfaStateTable(
   sql: SqlProvider,
   connection: string,
   schema: string,
 ): Promise<void> {
-  const name = table(schema);
+  const name = mfaTable(schema, 'challenges');
   text(connection);
   await storage(() =>
     sql.execute(connection, {
@@ -133,7 +77,7 @@ export function createPostgresMfaStateStore(
   connection: string,
   schema: string,
 ): MfaStateStore {
-  const name = table(schema);
+  const name = mfaTable(schema, 'challenges');
   text(connection);
   return Object.freeze({
     async createChallenge(input: MfaChallengeRecord, options?: OperationOptions): Promise<void> {
