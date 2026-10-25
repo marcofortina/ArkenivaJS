@@ -494,6 +494,15 @@ test('EK-DB-004 root database names permit bounded pool metrics and fixed SQL op
       'db.system.name': 'postgresql',
       'db.operation.name': 'execute',
     });
+    for (const operation of ['get', 'set', 'del', 'increment', 'publish']) {
+      await app.telemetry.withSpan('db.client.operation', () => 1, {
+        attributes: { 'db.system.name': 'redis', 'db.operation.name': operation },
+      });
+      app.telemetry.recordHistogram('db.client.operation.duration', 0.001, {
+        'db.system.name': 'redis',
+        'db.operation.name': operation,
+      });
+    }
     app.telemetry.recordHistogram('arkenivajs.db.pool.acquire.duration', 0.001, {
       pool: 'main',
       driver: 'postgresql',
@@ -526,6 +535,9 @@ test('EK-DB-004 root database names permit bounded pool metrics and fixed SQL op
       'arkenivajs.db.pool.active',
       'arkenivajs.db.pool.idle',
       '{connection}',
+      'redis',
+      'increment',
+      'publish',
     ])
       assert.ok(body.includes(expected));
     assert.equal((app.telemetry as ManagedTelemetry).stats().exportFailures, 0);

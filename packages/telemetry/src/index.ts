@@ -111,7 +111,7 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   direction: ['server.response', 'client.response'],
   'db.system.name': ['postgresql', 'mysql', 'mariadb', 'oracle', 'redis', 'etcd', 'mongodb'],
-  'db.operation.name': ['query', 'execute', 'ping'],
+  'db.operation.name': ['query', 'execute', 'ping', 'get', 'set', 'del', 'increment', 'publish'],
   driver: ['postgresql', 'mysql', 'mariadb', 'oracle', 'redis', 'etcd', 'mongodb'],
   state: ['user', 'system'],
   exporter: ['jsonl', 'http', 'otlp'],
