@@ -1,0 +1,26 @@
+diff --git a/lib/nats-base-client/core.d.ts b/lib/nats-base-client/core.d.ts
+--- a/lib/nats-base-client/core.d.ts
++++ b/lib/nats-base-client/core.d.ts
+@@ -1,3 +1,4 @@
++// Declaration-only compatibility correction: optional getters explicitly permit undefined.
+ import { JetStreamClient, JetStreamManager } from "../jetstream/types";
+ /**
+  * Events reported by the {@link NatsConnection#status} iterator.
+@@ -412,7 +413,7 @@
+     /**
+      * ServerInfo to the currently connected server or undefined
+      */
+-    info?: ServerInfo;
++    info?: ServerInfo | undefined;
+     /**
+      * Returns a promise that can be used to monitor if the client closes.
+      * The promise can resolve an Error if the reason for the close was
+@@ -587,7 +588,7 @@
+     /**
+      * Possible headers that may have been set by the server or the publisher.
+      */
+-    headers?: MsgHdrs;
++    headers?: MsgHdrs | undefined;
+     /**
+      * Convenience to publish a response to the {@link reply} subject in the
+      * message - this is the same as doing `nc.publish(msg.reply, ...)`.

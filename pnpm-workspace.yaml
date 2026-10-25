@@ -2,6 +2,8 @@ packages:
   - packages/*
   - examples/*
   - tools/*
+patchedDependencies:
+  nats@2.29.3: packages/messaging/compat/nats-exact-optional.diff
 allowBuilds:
   # Thin mode needs no install hook or Oracle Client setup.
   oracledb@26.0.0: false
