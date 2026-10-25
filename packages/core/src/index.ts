@@ -11,6 +11,7 @@ export type {
   UsageQuantity,
 } from './ports.js';
 export type { OutboundHttpClient } from './ports.js';
+export type { RedisProvider } from './ports.js';
 export type {
   SqlValue,
   SqlBindings,
