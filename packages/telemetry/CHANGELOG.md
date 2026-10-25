@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Export cache and health duration histograms with second units and the shared explicit duration buckets.
+
 - Permit bounded SQL operation labels and root-configured pool names, with explicit
   connection units for active/idle gauges.
 

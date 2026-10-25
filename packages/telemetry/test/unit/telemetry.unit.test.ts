@@ -25,7 +25,15 @@ interface Envelope {
       }[];
     }[];
   }[];
-  resourceMetrics?: unknown[];
+  resourceMetrics?: {
+    scopeMetrics: {
+      metrics: {
+        name: string;
+        unit: string;
+        histogram?: { dataPoints: { sum: number; explicitBounds: number[] }[] };
+      }[];
+    }[];
+  }[];
 }
 async function receiver() {
   const data: { path: string; body: Envelope }[] = [];
@@ -99,6 +107,13 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
       route: '/orders/:id',
       status_code: 200,
     });
+    const readinessDurations = [
+      'cache.get.duration',
+      'cache.set.duration',
+      'cache.delete.duration',
+      'health.ready.duration',
+    ];
+    for (const name of readinessDurations) telemetry.recordHistogram(name, 0.002);
     assert.throws(
       () => telemetry.addCounter('http.server.active_requests', 1),
       code('EK_CONFIG_INVALID'),
@@ -115,6 +130,16 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
     });
     await telemetry.flush();
     assert.ok(target.data.some((entry) => entry.path === '/v1/metrics'));
+    const exportedMetrics = target.data
+      .flatMap((entry) => entry.body.resourceMetrics ?? [])
+      .flatMap((group) => group.scopeMetrics.flatMap((scope) => scope.metrics));
+    for (const name of readinessDurations) {
+      const metric = exportedMetrics.find((entry) => entry.name === name);
+      assert.ok(metric, 'The SDK must export each extension duration histogram');
+      assert.equal(metric.unit, 's');
+      assert.equal(metric.histogram?.dataPoints[0]?.sum, 0.002);
+      assert.deepEqual(metric.histogram?.dataPoints[0]?.explicitBounds, DURATION_BUCKETS_SECONDS);
+    }
     const spans = target.data
       .flatMap((entry) => entry.body.resourceSpans ?? [])
       .flatMap((group) => group.scopeSpans.flatMap((scope) => scope.spans));

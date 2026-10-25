@@ -1,5 +1,9 @@
 # @arkenivajs/telemetry
 
+Cache get/set/delete and health readiness duration histograms use the OTel unit
+`s` and the shared explicit second-based bucket boundaries. Their payloads carry
+measured seconds, independently of native database metering in milliseconds.
+
 `createTelemetry(options)` creates an owned SDK with the public `Telemetry` methods. `telemetryPlugin(options?)` uses root service/mode/sampling policy and provides `app.telemetry`. Register logging explicitly. Module imports start no collector, timer or listener. Each application owns independent providers and AsyncLocalStorage; initialization and shutdown never replace or disable a process-global OTel provider/context manager. Raw auto-instrumentation needs its own explicit bootstrap and must avoid measuring the same operation twice.
 
 Options require service metadata and, for an enabled mode, a trusted collector `endpoint` origin. HTTPS uses native CA/hostname verification and Node's TLS 1.2 minimum. Plain loopback HTTP is an explicit `allowInsecureLoopback:true` development/test opt-in; it is forbidden in production. OTLP JSON goes to `/v1/traces` and `/v1/metrics`. Export timeout defaults to 5000 ms, metric interval to 10000 ms, and exporter concurrency to one. The interval must be at least the timeout. Configure collector access and retention independently; diagnostic export is best effort.
