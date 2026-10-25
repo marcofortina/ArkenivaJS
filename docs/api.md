@@ -110,10 +110,12 @@ deadline contract. Persistence outages or uncertain outcomes must use safe
 storage failures, never success evidence. Actual multi-instance atomicity,
 outage handling and encryption require independent implementation tests.
 
-The optional [TOTP package](../packages/security-totp/README.md) currently
-exports its lifecycle/storage types. Its private upstream compatibility adapter
-is tested independently; the service factory, durable factor lifecycle and
-production activation are still under development.
+The optional [TOTP package](../packages/security-totp/README.md) exports
+`createTotpService(options)` and its lifecycle/storage types. Its explicit
+application authority resolves ownership and authorizes sensitive management.
+The service uses upstream TOTP verification, durable generation-bound replay CAS,
+external-key HMAC-SHA256 recovery and persisted single-use assurance evidence.
+It does not issue a session; production requires independently verified providers.
 
 ## Metrics and tracing
 

@@ -4,95 +4,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KitError } from '@arkenivajs/core';
-import type { MfaSubjectContext, MfaManagementAuthorization, TenantId } from '@arkenivajs/core';
+import type { MfaSubjectContext, TenantId } from '@arkenivajs/core';
 import type { TotpServiceOptions } from '../../dist/index.js';
 import { createTotpRuntime } from '../../dist/runtime.js';
+import { runtimeFixture as fixture } from '../support/runtime-fixture.js';
 
 const hasCode = (code: string) => (error: unknown) =>
   error instanceof KitError && error.code === code;
-function fixture() {
-  let time = 1800000000000,
-    active = 'first';
-  const subject = Object.freeze({
-    issuer: 'https://issuer.example.test',
-    subject: 'synthetic-account',
-    primarySessionId: 'session-a',
-    authenticatedAt: new Date(time).toISOString(),
-  });
-  const owners = new WeakSet<MfaSubjectContext>([subject]);
-  const grants = new WeakSet<MfaManagementAuthorization>();
-  const strong = new WeakSet<MfaSubjectContext>();
-  // Public test-vector key, restricted to a test-only secret provider.
-  const keys = new Map([
-    ['first', new Uint8Array(32).fill(11)],
-    ['second', new Uint8Array(32).fill(12)],
-  ]);
-  const unavailable = async (): Promise<never> => {
-    throw new Error('Unconfigured unit test storage');
-  };
-  const options: TotpServiceOptions = {
-    issuer: 'Synthetic Company',
-    environment: 'test',
-    clock: () => time,
-    stateStore: {
-      usage: 'test-only',
-      createChallenge: unavailable,
-      claimChallenge: unavailable,
-      discardChallenge: unavailable,
-      putPending: unavailable,
-      getPending: unavailable,
-      activatePending: unavailable,
-      getFactor: unavailable,
-      acceptStepIfGreater: unavailable,
-      revokeFactor: unavailable,
-      replaceRecoveryHashes: unavailable,
-      consumeRecoveryHash: unavailable,
-    },
-    rateLimitStore: { usage: 'test-only', checkAndRecord: unavailable },
-    secretProtector: { usage: 'test-only', seal: unavailable, open: unavailable },
-    evidenceStore: { usage: 'test-only', recordOnce: unavailable, consume: unavailable },
-    trustPolicy: {
-      usage: 'test-only',
-      async resolveSubject(value) {
-        return owners.has(value) ? value : null;
-      },
-      async authorize(value, input) {
-        return (
-          owners.has(value) &&
-          (input.authorization === undefined ? strong.has(value) : grants.has(input.authorization))
-        );
-      },
-    },
-    recoveryCodeHmac: {
-      algorithm: 'HMAC-SHA256',
-      keyProvider: {
-        usage: 'test-only',
-        async currentKeyId() {
-          return active;
-        },
-        async resolveKey(id) {
-          const value = keys.get(id);
-          if (!value) throw new Error('Synthetic missing key');
-          return value;
-        },
-      },
-    },
-  };
-  return {
-    options,
-    subject,
-    owners,
-    grants,
-    strong,
-    keys,
-    setTime(value: number) {
-      time = value;
-    },
-    rotate() {
-      active = 'second';
-    },
-  };
-}
 
 test('Runtime provenance and independent strong authorization reject fabricated subjects and grants', async () => {
   const f = fixture(),
@@ -311,23 +229,46 @@ test('Provider cancellation/deadlines stop later work and policy configuration i
   const f = fixture();
   let released!: (value: MfaSubjectContext) => void,
     writes = 0;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const response = new Promise<MfaSubjectContext>((resolve) => {
+    released = resolve;
+  });
   const trust = {
     ...f.options.trustPolicy,
-    resolveSubject: () =>
-      new Promise<MfaSubjectContext>((resolve) => {
-        released = resolve;
-      }),
+    resolveSubject: () => {
+      entered();
+      return response;
+    },
   };
   const runtime = createTotpRuntime({ ...f.options, trustPolicy: trust });
+  const controller = new AbortController();
+  const active = runtime.run({ signal: controller.signal }, async (call) => {
+    await runtime.resolve(f.subject, 'verify', call);
+    writes++;
+  });
+  await started;
+  controller.abort();
+  await assert.rejects(active, hasCode('EK_ABORTED'));
+  released(f.subject);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(writes, 0);
+  const unavailable = createTotpRuntime({
+    ...f.options,
+    trustPolicy: {
+      ...f.options.trustPolicy,
+      resolveSubject: () => new Promise<MfaSubjectContext>(() => {}),
+    },
+  });
   await assert.rejects(
-    runtime.run({ timeoutMs: 5 }, async (call) => {
-      await runtime.resolve(f.subject, 'verify', call);
+    unavailable.run({ timeoutMs: 5 }, async (call) => {
+      await unavailable.resolve(f.subject, 'verify', call);
       writes++;
     }),
     hasCode('EK_TIMEOUT'),
   );
-  released(f.subject);
-  await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(writes, 0);
   await assert.rejects(
     runtime.run({ signal: AbortSignal.abort() }, async () => {
@@ -341,4 +282,94 @@ test('Provider cancellation/deadlines stop later work and policy configuration i
   await captured.run(undefined, async (call) => {
     assert.equal(await captured.resolve(f.subject, 'verify', call), f.subject);
   });
+});
+
+test('A mistakenly asynchronous test clock is rejected without an unhandled promise rejection', async () => {
+  const f = fixture();
+  assert.throws(
+    () =>
+      createTotpRuntime({
+        ...f.options,
+        clock: (async () => {
+          throw new Error('Synthetic invalid clock');
+        }) as unknown as () => number,
+      }),
+    hasCode('EK_MFA_POLICY'),
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+});
+
+test('Provider methods may be inherited, but missing/accessor methods and late authorization are rejected', async () => {
+  const f = fixture(),
+    { getFactor, ...other } = f.options.stateStore;
+  const inherited = Object.assign(
+    Object.create({ getFactor }) as typeof f.options.stateStore,
+    other,
+  );
+  assert.doesNotThrow(() => createTotpRuntime({ ...f.options, stateStore: inherited }));
+  assert.throws(
+    () => createTotpRuntime({ ...f.options, stateStore: other as typeof f.options.stateStore }),
+    hasCode('EK_MFA_POLICY'),
+  );
+  let invoked = false;
+  Object.defineProperty(inherited, 'getFactor', {
+    get() {
+      invoked = true;
+      return getFactor;
+    },
+  });
+  assert.throws(
+    () => createTotpRuntime({ ...f.options, stateStore: inherited }),
+    hasCode('EK_MFA_POLICY'),
+  );
+  assert.equal(invoked, false);
+  assert.throws(
+    () =>
+      createTotpRuntime({
+        ...f.options,
+        clock() {
+          throw new Error('Synthetic clock failure');
+        },
+      }),
+    hasCode('EK_MFA_POLICY'),
+  );
+  const runtime = createTotpRuntime({
+    ...f.options,
+    trustPolicy: {
+      ...f.options.trustPolicy,
+      async authorize() {
+        f.setTime(Date.parse(f.subject.authenticatedAt) + 300001);
+        return true;
+      },
+    },
+  });
+  await assert.rejects(
+    runtime.run(undefined, (call) => runtime.authorize(f.subject, 'enroll', undefined, call)),
+    hasCode('EK_MFA_POLICY'),
+  );
+});
+
+test('A tenant source object is rejected without invoking primitive coercion hooks', async () => {
+  const f = fixture();
+  let invoked = false;
+  const subject = Object.freeze({
+    ...f.subject,
+    tenant: Object.freeze({
+      tenantId: 'tenant-a',
+      identity: Object.freeze({ subject: f.subject.subject, issuer: f.subject.issuer }),
+      verifiedAt: f.subject.authenticatedAt,
+      source: {
+        [Symbol.toPrimitive]() {
+          invoked = true;
+          return 'oidc';
+        },
+      },
+    }),
+  }) as unknown as MfaSubjectContext;
+  const runtime = createTotpRuntime(f.options);
+  await assert.rejects(
+    runtime.run(undefined, (call) => runtime.resolve(subject, 'verify', call)),
+    hasCode('EK_MFA_POLICY'),
+  );
+  assert.equal(invoked, false);
 });

@@ -80,11 +80,12 @@ export async function totpFixture() {
       const identity = await verifier.verifyBearer(
         await issuer.bearer({ ...claims, auth_time: Math.floor(clock / 1000) }),
       );
-      const tenant = verifier.tenantFrom(identity);
+      const tenant =
+        identity.claims.tenant_id === undefined ? undefined : verifier.tenantFrom(identity);
       const value = Object.freeze({
         issuer: identity.issuer,
         subject: identity.subject,
-        tenant,
+        ...(tenant ? { tenant } : {}),
         primarySessionId: String(identity.claims.sid),
         authenticatedAt: new Date((identity.claims.auth_time as number) * 1000).toISOString(),
       });
@@ -102,6 +103,8 @@ export async function totpFixture() {
       owners,
       subject,
       protector,
+      // Copies are used only over owned child stdin for cross-process tests, never persisted or printed.
+      workerEncryptionKey: () => new Uint8Array(encryptionKey),
       clock: () => clock,
       setTime(value: number) {
         clock = value;

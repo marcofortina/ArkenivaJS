@@ -1,8 +1,8 @@
 # Durable MFA state reference adapters
 
 This application-owned example implements `MfaStateStore` against real
-PostgreSQL, with a shared `MfaRateLimitStore`. It demonstrates shared atomic state before the optional factor
-services are available. It does not verify a factor, issue a session or implement
+PostgreSQL, with a shared `MfaRateLimitStore`. It demonstrates shared atomic state for optional factor
+services. It does not verify a factor, issue a session or implement
 the TOTP-factor or WebAuthn-credential stores. It also demonstrates the durable
 evidence handoff described below using synthetic test records.
 
@@ -76,7 +76,7 @@ exactly one succeeds, and the parent cannot consume again.
 Missing service/credential configuration must fail explicitly. A TLS/network or
 storage failure requires restoring the verified fixture; never disable TLS
 verification. Tests and logs print no DSN, factor secret or credential material.
-Future factor modules still require their own verifier, replay/counter/recovery,
+Factor modules require their own verifier, replay/counter/recovery,
 secret protection, distributed rate-limit, evidence-handoff and end-to-end tests.
 
 ## Shared atomic attempt limiter
@@ -292,3 +292,35 @@ recovery deletion. Two separate Node processes contend for enrollment activation
 the same OTP step and the same recovery hash; each transition has exactly one
 winner. These are storage transitions; actual OTP verification and service
 authorization require the additional factor-service tests.
+
+## Public TOTP service integration
+
+[The factor-service tests](test/integration/totp-service.integration.test.ts)
+import `createTotpService` from the public package entry point. Their
+[application authority](test/integration/totp-service-fixture.ts) verifies actual
+OIDC provenance with the existing auth service, exact tenant/session ownership,
+scopes and a fixture-issuer-specific signed recent reauthentication policy.
+Only authority-owned contexts are registered. A copied subject or management
+grant cannot acquire provenance by preserving its fields.
+
+The fixture explicitly approves initial enrollment/replacement after that
+independent reauthentication. For recovery/disable management it first consumes
+real stored factor evidence for the exact owner/session, then creates its own
+short-lived authority grant. The framework cannot mint such grants or upgrade
+an existing verified identity. These are controlled test-authority decisions,
+not a production account-recovery policy or a live external IdP accreditation.
+
+The same integration command above executes enrollment, real otplib proof,
+PNG provisioning, confirmation, verification, external-key recovery rotation,
+regeneration and disabling. It checks prescribed drift/TTL, shared rate limits,
+foreign tenants/sessions, fabricated objects, corrupt secret bytes, failed
+providers and lost acknowledgments. Pending ciphertext and recovery hash rows
+are inspected without printing provisioning or recovery material.
+
+A dedicated barrier starts two full factor-service Node processes with separate
+SQL pools. The parent authenticates the fixture context before handing it across
+its closed authority channel. Ephemeral synthetic keys and proofs are delivered
+only through owned stdin pipes, never command arguments or stdout. The child
+authority remains test-only and cannot be configured in production. Exactly one
+process accepts each shared OTP/recovery proof. No production credential enters
+these tests; fixture keys are cleared and only the owned schema is removed.

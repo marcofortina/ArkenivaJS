@@ -12,11 +12,11 @@ function seed(value: string): void {
   if (typeof value !== 'string' || !/^[A-Z2-7]{32}$/.test(value) || value.length !== 32)
     throw storage();
 }
-function label(value: string): void {
+function label(value: string, maximum = 128): void {
   if (
     typeof value !== 'string' ||
     value.length < 1 ||
-    value.length > 128 ||
+    value.length > maximum ||
     value.trim() !== value ||
     [...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
   )
@@ -37,7 +37,7 @@ export function newTotpSecret(): string {
 /** Secret-bearing URI; callers must never include the result in telemetry or errors. */
 export function totpProvisioningUri(issuer: string, account: string, secret: string): string {
   label(issuer);
-  label(account);
+  label(account, 512);
   seed(secret);
   try {
     return generateTOTP({
