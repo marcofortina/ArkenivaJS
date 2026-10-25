@@ -45,3 +45,6 @@ exact revisions, CAS contention, resumable watches and explicitly renewed leases
 The [MongoDB customer consumer](examples/mongodb/README.md) demonstrates native
 BSON, exact JSON conversion, modified counts, bounded aggregation and owned
 session transactions with verified commit and rollback.
+
+The [JSON cache consumer](examples/cache/README.md) demonstrates checked values,
+finite expiration, actual deletion outcomes and explicit business DTO validation.

@@ -137,3 +137,6 @@ metering verify isolation and independent accounting with tracing disabled.
 Run `pnpm --filter @arkenivajs/cache coverage` with the fixture's private
 environment. This module ships no in-memory adapter and makes no live claim
 for an alternative cache backend.
+
+The [executable consumer](../../examples/cache/README.md) verifies JSON DTOs,
+actual deletion outcomes and native expiration with explicit fixture opt-in.
