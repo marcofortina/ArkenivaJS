@@ -112,6 +112,10 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
       'cache.set.duration',
       'cache.delete.duration',
       'health.ready.duration',
+      'messaging.publish.duration',
+      'messaging.subscribe.duration',
+      'messaging.health.duration',
+      'messaging.process.duration',
     ];
     for (const name of readinessDurations) telemetry.recordHistogram(name, 0.002);
     assert.throws(
