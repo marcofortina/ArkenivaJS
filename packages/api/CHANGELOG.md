@@ -12,3 +12,8 @@
   loading, enforce client-certificate/minimum-version policy and preserve routing.
 - Keep applications without HTTP configuration free of implicit listeners and
   report bind failures as `EK_HTTP_LISTEN`.
+
+- Enable typed native HTTP/2 with mandatory HTTP/1.1 fallback, bounded session
+  policy and graceful/forced cleanup of owned sessions and sockets.
+- Verify WSS upgrades using the official Fastify plugin as a development-only
+  dependency, with trusted and untrusted TLS client cases.

@@ -75,6 +75,16 @@ Certificate rotation takes effect through a controlled application restart.
 
 Routes, schema validation, OpenAPI, readiness and drain remain Fastify-owned.
 Bind failures use `EK_HTTP_LISTEN`. Ephemeral `port:0` is restricted to the test
-environment. The current adapter supports HTTPS with HTTP/1.1; selecting
-`http2:true` raises `EK_UNSUPPORTED_CAPABILITY` before binding. HTTP/2, WSS and the
-complete transport observability/performance acceptance remain separate requirements.
+environment. `http2:true` enables native secure HTTP/2 with `allowHTTP1:true`;
+the same routes remain available to HTTP/1.1 clients. Plaintext h2c is forbidden.
+HTTP/2 sessions have a 60-second idle bound, 100 concurrent streams, a 16 KiB
+header-list limit and Node's 10 MiB session-memory budget. TLS handshakes have a
+10-second deadline. Shutdown sends GOAWAY, drains accepted streams and destroys
+owned sessions/sockets when the application deadline expires.
+
+The private test dependency `@fastify/websocket` verifies WSS through the
+listener's HTTP/1.1 upgrade path, including HTTP/2 fallback. It does not register
+runtime realtime routes or promise RFC 8441 extended CONNECT. Native extensions
+retain their own authentication, resource and instrumentation responsibilities.
+Complete transport observability/performance and runnable deployment-guide
+acceptance remain separate requirements.

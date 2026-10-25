@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
+import { connect as connectHttp2, type ClientHttp2Session } from 'node:http2';
+import { setTimeout as delay } from 'node:timers/promises';
 import { mkdtemp, chmod, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,8 +21,9 @@ import {
   type HttpServerOptions,
   type Plugin,
 } from '@arkenivajs/core';
-import { createApi, apiPlugin, type ApiOptions } from '@arkenivajs/api';
-import type { FastifyInstance } from 'fastify';
+import { createApi, apiPlugin, type ApiOptions, type ManagedApiServer } from '@arkenivajs/api';
+import type { FastifyInstance, RawServerBase } from 'fastify';
+import websocket from '@fastify/websocket';
 // Exercise the owned build artifact without adding a public export for the private adapter.
 const { validateServerTlsFiles, withServerTls } = (await import(
   new URL('../../../dist/server-tls.js', import.meta.url).href
@@ -436,7 +440,7 @@ test('HTTPS files resolve only on activation, and invalid material fails startup
   await api.close();
 });
 
-test('HTTP and HTTPS discriminants reject ambiguity, insecure versions, unsupported HTTP2 and production port zero', async () => {
+test('HTTP and HTTPS discriminants reject ambiguity, insecure versions, h2c and production port zero', async () => {
   for (const http of [
     { host: '127.0.0.1', port: 0, tls: files() },
     { protocol: 'http', host: '127.0.0.1', port: 0, tls: files() },
@@ -463,10 +467,7 @@ test('HTTP and HTTPS discriminants reject ambiguity, insecure versions, unsuppor
   );
   assert.throws(() => createApi({ service, protocol: 'https' }), code('EK_HTTP_TLS_CONFIG'));
   assert.throws(() => createApi({ service, http2: false }), code('EK_HTTP_TLS_CONFIG'));
-  assert.throws(
-    () => createApi({ service, tls: files(), http2: true }),
-    code('EK_UNSUPPORTED_CAPABILITY'),
-  );
+  assert.throws(() => createApi({ service, http2: true }), code('EK_HTTP_TLS_CONFIG'));
   for (const environment of ['production', 'development'] as const) {
     await assert.rejects(
       createApplication({
@@ -575,4 +576,193 @@ test('Legacy and explicit plain HTTP application settings remain equivalent', as
       await app.stop();
     }
   }
+});
+
+async function h2Get(session: ClientHttp2Session, path = '/') {
+  return await new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const stream = session.request({ ':path': path });
+    let status: number | undefined;
+    const parts: Buffer[] = [];
+    stream.once('response', (headers) => {
+      status = Number(headers[':status']);
+    });
+    stream.on('data', (part: Buffer) => parts.push(part));
+    stream.once('end', () =>
+      status === undefined
+        ? reject(new Error('The HTTP2 stream ended without response headers'))
+        : resolve({ status, body: Buffer.concat(parts).toString() }),
+    );
+    stream.once('error', reject);
+    stream.setTimeout(2000, () => stream.destroy(new Error('HTTP2 fixture timeout')));
+    stream.end();
+  });
+}
+
+const securedRoute = (handler: () => unknown) => ({
+  auth: { required: false as const },
+  schema: {
+    response: {
+      type: 'object',
+      properties: { secured: { type: 'boolean' } },
+      required: ['secured'],
+      additionalProperties: false,
+    },
+  },
+  handler,
+});
+
+test('Secure HTTP2 negotiates h2 and preserves HTTP1 fallback on the same Fastify routes', async () => {
+  const api = createApi({ service, port: 0, http2: true, tls: files() });
+  api.get(
+    '/',
+    securedRoute(() => ({ secured: true })),
+  );
+  let session: ClientHttp2Session | undefined;
+  try {
+    await api.start();
+    const origin = api.address();
+    assert.ok(origin);
+    const ca = await readFile(cert);
+    session = connectHttp2(origin, { ca });
+    session.on('error', () => undefined);
+    await once(session, 'connect');
+    assert.equal(session.alpnProtocol, 'h2');
+    assert.deepEqual(await h2Get(session), { status: 200, body: '{"secured":true}' });
+    assert.deepEqual(await get(origin, ca), { status: 200, body: '{"secured":true}' });
+    assert.equal((await h2Get(session, '/readyz')).status, 200);
+    assert.equal(api.openApiDocument().openapi, '3.1.0');
+    await api.close({ timeoutMs: 1000 });
+  } finally {
+    session?.destroy();
+    await api.close().catch(() => undefined);
+  }
+});
+
+test('Application HTTP2 activation drains an accepted stream without forbidden HTTP1 connection headers', async () => {
+  const app = await createApplication({
+    service,
+    http: { protocol: 'https', host: '127.0.0.1', port: 0, tls: files(), http2: true },
+    plugins: [logging(), apiPlugin()],
+  });
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  app.api.get(
+    '/',
+    securedRoute(async () => {
+      entered();
+      await gate;
+      return { secured: true };
+    }),
+  );
+  let session: ClientHttp2Session | undefined;
+  try {
+    await app.start();
+    const native = app.api.native() as FastifyInstance;
+    const address = native.server.address();
+    assert.ok(address && typeof address === 'object');
+    session = connectHttp2(`https://127.0.0.1:${address.port}`, { ca: await readFile(cert) });
+    session.on('error', () => undefined);
+    await once(session, 'connect');
+    const pending = h2Get(session);
+    await started;
+    const stopping = app.stop({ timeoutMs: 1000 });
+    await delay(10);
+    release();
+    assert.deepEqual(await pending, { status: 200, body: '{"secured":true}' });
+    await stopping;
+    assert.equal(app.state, 'CLOSED');
+    assert.equal(native.server.listening, false);
+  } finally {
+    release();
+    session?.destroy();
+    await app.stop().catch(() => undefined);
+  }
+});
+
+test('Forced HTTP2 shutdown aborts an uncooperative stream and releases its native listener', async () => {
+  const api = createApi({ service, port: 0, http2: true, tls: files() });
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  api.get(
+    '/',
+    securedRoute(async () => {
+      entered();
+      await gate;
+      return { secured: true };
+    }),
+  );
+  let session: ClientHttp2Session | undefined;
+  const native = api.native();
+  try {
+    await api.start();
+    const origin = api.address();
+    assert.ok(origin);
+    session = connectHttp2(origin, { ca: await readFile(cert) });
+    session.on('error', () => undefined);
+    await once(session, 'connect');
+    const pending = h2Get(session);
+    const rejected = assert.rejects(pending);
+    await started;
+    await assert.rejects(api.close({ timeoutMs: 20 }), code('EK_TIMEOUT'));
+    await rejected;
+    assert.equal(native.server.listening, false);
+    assert.equal(api.stats().active, 0);
+  } finally {
+    release();
+    session?.destroy();
+    await api.close().catch(() => undefined);
+  }
+});
+
+async function verifyNativeWss<RawServer extends RawServerBase>(api: ManagedApiServer<RawServer>) {
+  const native = api.native();
+  native.register(websocket, { options: { maxPayload: 1024, perMessageDeflate: false } });
+  native.register(async (instance) => {
+    instance.get('/ws', { websocket: true }, (socket) => {
+      socket.on('message', (data, binary) => socket.send(data, { binary }));
+    });
+  });
+  try {
+    await api.start();
+    const origin = api.address();
+    assert.ok(origin);
+    const client = `
+        const socket = new WebSocket(process.argv[1]);
+        const timer = setTimeout(() => { socket.close(); process.exitCode = 2; }, 2000);
+        socket.addEventListener('open', () => socket.send('synthetic-echo'));
+        socket.addEventListener('message', event => {
+          if (event.data !== 'synthetic-echo') { process.exitCode = 3; socket.close(); return; }
+          socket.close();
+        });
+        socket.addEventListener('close', () => { clearTimeout(timer); if (!process.exitCode) process.stdout.write('WSS verified'); });
+        socket.addEventListener('error', () => { clearTimeout(timer); process.exitCode = 1; });
+      `;
+    const target = origin.replace('https:', 'wss:') + '/ws';
+    await assert.rejects(
+      execute(process.execPath, ['--input-type=module', '-e', client, target], { timeout: 5000 }),
+    );
+    const result = await execute(process.execPath, ['--input-type=module', '-e', client, target], {
+      timeout: 5000,
+      env: { ...process.env, NODE_EXTRA_CA_CERTS: cert },
+    });
+    assert.equal(result.stdout, 'WSS verified');
+    await api.close({ timeoutMs: 1000 });
+  } finally {
+    await api.close().catch(() => undefined);
+  }
+}
+
+test('The official WebSocket adapter upgrades WSS over HTTPS and HTTP2 HTTP1 fallback with actual CA validation', async () => {
+  await verifyNativeWss(createApi({ service, port: 0, http2: false, tls: files() }));
+  await verifyNativeWss(createApi({ service, port: 0, http2: true, tls: files() }));
 });
