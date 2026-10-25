@@ -8,6 +8,7 @@ import type {
   MfaSealedSecret,
   MfaEvidence,
   MfaEvidenceRecord,
+  MfaManagementAuthorization,
 } from '@arkenivajs/core';
 import { copyData } from '@arkenivajs/core/support';
 import type {
@@ -15,14 +16,13 @@ import type {
   TotpService,
   TotpFactorRecord,
   TotpPendingEnrollment,
-  TotpOperation,
+  TotpPolicyAction,
 } from './contracts.js';
 import {
   createTotpRuntime,
   data,
   text,
   instant,
-  keyId,
   policyError,
   invalidProof,
   storageError,
@@ -100,7 +100,7 @@ function owned(value: unknown, subject: MfaSubjectContext, kind: 'factor' | 'pen
 /** Create a factor service with explicit external authority and durable providers; no session is issued. */
 export function createTotpService(options: TotpServiceOptions): TotpService {
   const runtime = createTotpRuntime(options);
-  const limit = async (subject: MfaSubjectContext, operation: TotpOperation, call: TotpCall) => {
+  const limit = async (subject: MfaSubjectContext, operation: TotpPolicyAction, call: TotpCall) => {
     const scopeKey = createHash('sha256')
       .update(
         JSON.stringify([
@@ -195,12 +195,21 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     return result;
   };
 
+  const ownerFor = async (
+    subject: MfaSubjectContext,
+    action: TotpPolicyAction,
+    call: TotpCall,
+    authorization?: MfaManagementAuthorization,
+  ) => {
+    const owner = await runtime.resolve(subject, call);
+    await runtime.authorize(owner, action, authorization, call);
+    return owner;
+  };
+
   return Object.freeze<TotpService>({
     beginEnrollment(subject, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'begin-enrollment', call),
-          current = await factor(owner, call);
-        await runtime.authorize(owner, current ? 'replace' : 'enroll', undefined, call);
+        const owner = await ownerFor(subject, 'begin-enrollment', call);
         await limit(owner, 'begin-enrollment', call);
         const at = call.now(),
           expiresAt = expires(at, runtime.enrollmentTtlMs),
@@ -233,10 +242,8 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     },
     getQrCodeImage(subject, enrollmentId, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'qr-code', call),
-          current = await factor(owner, call);
-        await runtime.authorize(owner, current ? 'replace' : 'enroll', undefined, call);
-        await limit(owner, 'qr-code', call);
+        const owner = await ownerFor(subject, 'read-enrollment-qr', call);
+        await limit(owner, 'read-enrollment-qr', call);
         const pending = await enrollment(owner, enrollmentId, call),
           value = await open(owner, pending.secret, call),
           uri = totpProvisioningUri(runtime.issuer, owner.subject, value);
@@ -257,10 +264,7 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     },
     confirmEnrollment(subject, enrollmentId, code, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'confirm-enrollment', call),
-          current = await factor(owner, call);
-        // Reauthorize the current transition: an intervening activation can turn enrollment into replacement.
-        await runtime.authorize(owner, current ? 'replace' : 'enroll', undefined, call);
+        const owner = await ownerFor(subject, 'confirm-enrollment', call);
         await limit(owner, 'confirm-enrollment', call);
         const pending = await enrollment(owner, enrollmentId, call),
           value = await open(owner, pending.secret, call);
@@ -288,7 +292,7 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     },
     verify(subject, code, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'verify', call);
+        const owner = await ownerFor(subject, 'verify', call);
         await limit(owner, 'verify', call);
         const current = await factor(owner, call);
         if (!current) throw invalidProof();
@@ -318,14 +322,13 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     },
     isEnabled(subject, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'status', call);
+        const owner = await ownerFor(subject, 'is-enabled', call);
         return (await factor(owner, call)) !== null;
       });
     },
     disable(subject, authorization, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'disable', call);
-        await runtime.authorize(owner, 'disable', authorization, call);
+        const owner = await ownerFor(subject, 'disable', call, authorization);
         await limit(owner, 'disable', call);
         const current = await factor(owner, call);
         if (!current) throw invalidProof();
@@ -338,18 +341,21 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     },
     generateRecoveryCodes(subject, authorization, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'recovery-codes', call);
-        await runtime.authorize(owner, 'recovery-codes', authorization, call);
-        await limit(owner, 'recovery-codes', call);
-        if (!(await factor(owner, call))) throw invalidProof();
-        const version = await runtime.activeRecoveryKey(call),
-          codes: string[] = [],
+        const owner = await ownerFor(subject, 'generate-recovery-codes', call, authorization);
+        await limit(owner, 'generate-recovery-codes', call);
+        const current = await factor(owner, call);
+        if (!current) throw invalidProof();
+        const codes: string[] = [],
           hashes: string[] = [];
-        for (let index = 0; index < 10; index++) {
-          const code = version + '.' + randomToken();
+        for (let index = 0; index < runtime.recoveryCodeCount; index++) {
+          const code = randomToken();
           codes.push(code);
-          hashes.push(await runtime.recoveryHash(owner, version, code, call));
+          hashes.push(
+            await runtime.recoveryVerifier({ ...binding(owner), factorId: current.id, code }, call),
+          );
         }
+        if (new Set(codes).size !== codes.length || new Set(hashes).size !== hashes.length)
+          throw storageError();
         await call.call(() =>
           runtime.state.replaceRecoveryHashes(owner, Object.freeze(hashes), call.options),
         );
@@ -358,30 +364,30 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     },
     verifyRecoveryCode(subject, code, operation) {
       return runtime.run(operation, async (call) => {
-        const owner = await runtime.resolve(subject, 'verify-recovery-code', call);
+        const owner = await ownerFor(subject, 'verify-recovery-code', call);
         await limit(owner, 'verify-recovery-code', call);
-        if (typeof code !== 'string' || code.length > 108) throw invalidProof();
-        const parts = code.split('.');
-        if (parts.length !== 2) throw invalidProof();
-        const version = parts[0]!,
-          body = parts[1]!;
-        try {
-          keyId(version);
-        } catch {
+        if (
+          typeof code !== 'string' ||
+          code.length !== 43 ||
+          /[^A-Za-z0-9_-]/.test(code) ||
+          Buffer.from(code, 'base64url').toString('base64url') !== code
+        )
           throw invalidProof();
+        const current = await factor(owner, call);
+        if (!current) throw invalidProof();
+        const hashes = await runtime.recoveryCandidates(
+          { ...binding(owner), factorId: current.id, code },
+          call,
+        );
+        let accepted = false;
+        for (const hash of hashes) {
+          const consumed = await call.call(() =>
+            runtime.state.consumeRecoveryHash(owner, hash, call.options),
+          );
+          if (typeof consumed !== 'boolean') throw storageError();
+          accepted = consumed || accepted;
         }
-        if (
-          body.length !== 43 ||
-          /[^A-Za-z0-9_-]/.test(body) ||
-          Buffer.from(body, 'base64url').toString('base64url') !== body
-        )
-          throw invalidProof();
-        const hash = await runtime.recoveryHash(owner, version, code, call);
-        if (
-          (await call.call(() => runtime.state.consumeRecoveryHash(owner, hash, call.options))) !==
-          true
-        )
-          throw invalidProof();
+        if (!accepted) throw invalidProof();
         return evidence(owner, 'recovery-code', call);
       });
     },

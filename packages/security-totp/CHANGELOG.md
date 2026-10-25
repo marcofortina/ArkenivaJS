@@ -6,3 +6,8 @@
 - Add shared TOTP lifecycle and durable storage type contracts.
 - Pin and test the private upstream RFC 6238/provisioning compatibility adapter.
 - Implement the public factor lifecycle with independent authority checks, shared attempt limits, atomic replay/recovery transitions, secret-bearing provisioning and durable single-use evidence.
+
+- Align factory inputs with the independent per-operation subject authority and
+  opaque recovery HMAC backend; default to production and restrict clocks to tests.
+- Bind recovery verifiers to active factors, validate bounded rotation candidates
+  and support ten through twenty independent recovery codes.

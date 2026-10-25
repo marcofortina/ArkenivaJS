@@ -81,10 +81,46 @@ test('Missing, malformed or request-like factory settings cannot activate a TOTP
     null,
     {},
     { ...f.options, environment: undefined },
-    { ...f.options, trustPolicy: null },
+    { ...f.options, subjectAuthority: null },
     { ...f.options, now: Date.now() },
   ])
     assert.throws(() => createTotpService(value as never), hasCode('EK_MFA_POLICY'));
+});
+
+test('All eight actions require their own authorization before factor or limiter access', async () => {
+  const f = runtimeFixture();
+  const actions = [
+    'begin-enrollment',
+    'read-enrollment-qr',
+    'confirm-enrollment',
+    'verify',
+    'is-enabled',
+    'disable',
+    'generate-recovery-codes',
+    'verify-recovery-code',
+  ];
+  const service = createTotpService(f.options);
+  const grant = {
+    action: 'disable',
+    subject: f.subject.subject,
+    trustedSessionId: f.subject.primarySessionId,
+    verifiedAt: f.subject.authenticatedAt,
+  } as const;
+  const work = [
+    () => service.beginEnrollment(f.subject),
+    () => service.getQrCodeImage(f.subject, 'handle'),
+    () => service.confirmEnrollment(f.subject, 'handle', '123456'),
+    () => service.verify(f.subject, '123456'),
+    () => service.isEnabled(f.subject),
+    () => service.disable(f.subject, grant),
+    () => service.generateRecoveryCodes(f.subject, { ...grant, action: 'recovery-codes' }),
+    () => service.verifyRecoveryCode(f.subject, 'A'.repeat(43)),
+  ];
+  for (let index = 0; index < actions.length; index++) {
+    f.denied.add(actions[index]!);
+    await assert.rejects(work[index]!(), hasCode('EK_AUTH_FORBIDDEN'));
+    f.denied.clear();
+  }
 });
 
 /** Fault injection only: these providers are neither encryption nor durable storage implementations. */
@@ -113,7 +149,7 @@ function faultyProviderFixture() {
     subject: f.subject.subject,
     primarySessionId: f.subject.primarySessionId,
     secret: envelope,
-    expiresAt: new Date(f.options.clock!() + 300000).toISOString(),
+    expiresAt: new Date(f.options.clock!.nowEpochMs() + 300000).toISOString(),
   };
   const state = {
     factor: factor as unknown,
@@ -175,7 +211,7 @@ function faultyProviderFixture() {
     factor,
     pending,
     grant,
-    code: () => generate({ secret: seed, epoch: Math.floor(f.options.clock!() / 1000) }),
+    code: () => generate({ secret: seed, epoch: Math.floor(f.options.clock!.nowEpochMs() / 1000) }),
   };
 }
 
@@ -227,7 +263,7 @@ test('Pending metadata, invalid proof and refused atomic transitions fail withou
       [-30, 0, 30].map((delta) =>
         generate({
           secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',
-          epoch: Math.floor(x.f.options.clock!() / 1000) + delta,
+          epoch: Math.floor(x.f.options.clock!.nowEpochMs() / 1000) + delta,
         }),
       ),
     ),

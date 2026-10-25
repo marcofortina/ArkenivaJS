@@ -11,7 +11,11 @@ import type {
   MfaEvidence,
   MfaStateStore,
   OperationOptions,
+  TotpClock,
+  TotpTrustedSubjectAuthority,
+  TotpRecoveryHmacProvider,
 } from '../../dist/index.js';
+import { createTotpService } from '../../dist/index.js';
 
 // Compile-only consumer checks; no fake durable store or trust resolver is installed.
 function contracts(
@@ -23,6 +27,20 @@ function contracts(
   settings: TotpServiceOptions,
   operation: OperationOptions,
 ): void {
+  const subjectAuthority: TotpTrustedSubjectAuthority = settings.subjectAuthority;
+  const recoveryHmac: TotpRecoveryHmacProvider = settings.recoveryHmac;
+  const clock: TotpClock = { nowEpochMs: () => 1800000000000 };
+  const configured: TotpService = createTotpService({
+    ...settings,
+    subjectAuthority,
+    recoveryHmac,
+    environment: 'test',
+    clock,
+    recoveryCodeCount: 20,
+  });
+  // @ts-expect-error A bare function is not the explicit wall-clock port.
+  const invalidClock: TotpServiceOptions = { ...settings, clock: Date.now };
+  void [configured, invalidClock];
   const common: MfaStateStore = state;
   const created: Promise<void> = state.putPending(pending, operation);
   const activated: Promise<boolean> = state.activatePending(
@@ -57,13 +75,20 @@ function contracts(
   const invalidHmac: TotpServiceOptions = {
     ...settings,
     // @ts-expect-error Recovery protection is standard HMAC-SHA256, never an unkeyed digest.
-    recoveryCodeHmac: { ...settings.recoveryCodeHmac, algorithm: 'SHA256' },
+    recoveryHmac: { ...settings.recoveryHmac, algorithm: 'SHA256' },
   };
   const invalidUsage: TotpServiceOptions = {
     ...settings,
     // @ts-expect-error Provider deployment classification is explicit and has no implicit test fallback.
-    stateStore: { ...state, usage: 'automatic' },
+    recoveryHmac: { ...settings.recoveryHmac, securityLevel: 'automatic' },
   };
+  const { subjectAuthority: omittedAuthority, ...missingAuthority } = settings;
+  // @ts-expect-error The primary authority is required even with a valid-looking subject.
+  const invalidAuthority: TotpServiceOptions = missingAuthority;
+  const { recoveryHmac: omittedHmac, ...missingHmac } = settings;
+  // @ts-expect-error Recovery protection has no implicit unkeyed fallback.
+  const invalidRecovery: TotpServiceOptions = missingHmac;
+  void [omittedAuthority, omittedHmac, invalidAuthority, invalidRecovery];
   // @ts-expect-error Rotation/disable must include independently verified management authorization.
   service.disable(subject);
   // @ts-expect-error Step acceptance must bind the current factor generation.

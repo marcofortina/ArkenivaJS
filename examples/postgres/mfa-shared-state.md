@@ -324,3 +324,23 @@ only through owned stdin pipes, never command arguments or stdout. The child
 authority remains test-only and cannot be configured in production. Exactly one
 process accepts each shared OTP/recovery proof. No production credential enters
 these tests; fixture keys are cleared and only the owned schema is removed.
+
+The application-owned [recovery MAC reference](src/mfa-recovery-hmac.ts) implements
+`TotpRecoveryHmacProvider` with standard Node HMAC-SHA256. Its secret resolver is
+separate from PostgreSQL account data; only version/key-ID-qualified verifier
+strings enter SQL. The reference is explicitly `securityLevel:'test-only'` and
+requires disposable opt-in. Production deployments must provide a reviewed
+external secret/KMS backend; raw key export is not required by the public SPI.
+The encoding binds version, domain, issuer, tenant absence/value, subject, active
+factor ID and code. The approved rotation snapshot contains at most eight distinct
+versions and must include the current one. No code, key, verifier or provider
+diagnostic is printed.
+
+The factory defaults to production validation; deterministic `clock.nowEpochMs()`
+is allowed only in the test environment. Recovery generation defaults to ten
+codes and accepts integer counts up to twenty. Integration checks include twenty
+independent codes, a replayed management grant, changed active-factor binding,
+key retirement, and duplicate/oversized/failing MAC candidate providers before
+any durable consumption. Management grants are consumed by the independent
+fixture authority once; applications must enforce their own durable authority
+policy across processes.

@@ -7,17 +7,19 @@ import type { MfaSubjectContext, MfaManagementAuthorization } from '@arkenivajs/
 import { createTotpService } from '@arkenivajs/security-totp';
 import type { TotpServiceOptions } from '@arkenivajs/security-totp';
 import { totpFixture } from './totp-fixture.js';
+import { createDisposableRecoveryHmacProvider } from '../../dist/mfa-recovery-hmac.js';
 
 /** Independent application authority using actual OIDC provenance and durable evidence consumption. */
 export async function totpServiceFixture() {
   const f = await totpFixture(),
+    sessions = new WeakMap<MfaSubjectContext, number>(),
     permitted = new WeakMap<MfaSubjectContext, Set<string>>(),
     grants = new WeakMap<MfaManagementAuthorization, MfaSubjectContext>(),
     keys = new Map([['first', randomBytes(32)]]);
   let active = 'first';
   const resolve = (subject: MfaSubjectContext) => {
     const identity = f.owners.get(subject);
-    if (!identity) return null;
+    if (!identity || (sessions.get(subject) ?? 0) <= f.clock()) return null;
     try {
       f.auth.requireScope(identity, 'mfa:manage');
       if (
@@ -37,42 +39,73 @@ export async function totpServiceFixture() {
   const settings: TotpServiceOptions = {
     issuer: 'Synthetic Company',
     environment: 'test',
-    clock: f.clock,
+    clock: { nowEpochMs: f.clock },
     stateStore: f.state,
     rateLimitStore: Object.freeze({ ...f.limiter, usage: 'test-only' }),
     secretProtector: Object.freeze({ ...f.protector, usage: 'test-only' }),
     evidenceStore: Object.freeze({ ...f.evidence, usage: 'test-only' }),
-    trustPolicy: {
+    subjectAuthority: {
       usage: 'test-only',
       async resolveSubject(subject) {
-        return resolve(subject);
+        const verified = resolve(subject);
+        if (!verified)
+          throw new KitError({
+            code: 'EK_AUTH_FORBIDDEN',
+            message: 'Verified fixture session required',
+          });
+        return verified;
       },
-      async authorize(subject, input) {
-        if (!resolve(subject)) return false;
-        return input.authorization === undefined
-          ? permitted.get(subject)?.has(input.action) === true
-          : grants.get(input.authorization) === subject &&
-              input.authorization.action === input.action;
+      async authorize({ subject, action, authorization }) {
+        if (!resolve(subject))
+          throw new KitError({
+            code: 'EK_AUTH_FORBIDDEN',
+            message: 'Verified fixture session required',
+          });
+        if (['begin-enrollment', 'read-enrollment-qr', 'confirm-enrollment'].includes(action)) {
+          const current = await f.state.getFactor(subject);
+          if (!permitted.get(subject)?.has(current ? 'replace' : 'enroll'))
+            throw new KitError({
+              code: 'EK_MFA_POLICY',
+              message: 'Trusted reauthentication required',
+            });
+        }
+        if (action === 'disable' || action === 'generate-recovery-codes') {
+          if (
+            !authorization ||
+            grants.get(authorization) !== subject ||
+            authorization.action !== (action === 'disable' ? 'disable' : 'recovery-codes')
+          )
+            throw new KitError({
+              code: 'EK_MFA_POLICY',
+              message: 'Trusted management proof required',
+            });
+          grants.delete(authorization);
+        }
       },
     },
-    recoveryCodeHmac: {
-      algorithm: 'HMAC-SHA256',
-      keyProvider: {
-        usage: 'test-only',
-        async currentKeyId() {
-          return active;
-        },
-        async resolveKey(version) {
-          const key = keys.get(version);
-          if (!key) throw new Error('Synthetic external key unavailable');
-          return key;
-        },
+    recoveryHmac: createDisposableRecoveryHmacProvider(
+      async () => ({ current: active, allowed: [...keys.keys()] }),
+      async (version) => {
+        const key = keys.get(version);
+        if (!key) throw new Error('Synthetic external key unavailable');
+        return key;
       },
-    },
+    ),
   };
   return {
     ...f,
     settings,
+    async subject(claims: Record<string, unknown> = {}) {
+      const subject = await f.subject(claims);
+      sessions.set(subject, f.clock() + 600000);
+      return subject;
+    },
+    expireSession(subject: MfaSubjectContext) {
+      sessions.set(subject, 0);
+    },
+    revokeSession(subject: MfaSubjectContext) {
+      sessions.delete(subject);
+    },
     service: createTotpService(settings),
     approveReauthentication(subject: MfaSubjectContext, action: 'enroll' | 'replace') {
       const identity = f.owners.get(subject);
