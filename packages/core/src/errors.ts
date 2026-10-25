@@ -31,6 +31,7 @@ const errorCodes = new Set<ErrorCode>([
   'EK_HTTP_RATE_LIMIT',
   'EK_HTTP_TLS_CONFIG',
   'EK_HTTP_TLS_CERT',
+  'EK_HTTP_LISTEN',
   'EK_AUTH_REQUIRED',
   'EK_AUTH_INVALID',
   'EK_AUTH_FORBIDDEN',

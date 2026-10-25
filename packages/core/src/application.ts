@@ -242,6 +242,11 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
   const initialConfig = new ConfigStore(copyData(data) as Record<string, unknown>, {
     schema: APPLICATION_SCHEMA,
   });
+  if (data.http?.port === 0 && data.service.environment !== 'test')
+    throw new KitError({
+      code: 'EK_CONFIG_INVALID',
+      message: 'Ephemeral listener ports require the test environment',
+    });
   const roots = requested.map(capturePlugin);
   if (new Set(roots.map((plugin) => plugin.id)).size !== roots.length)
     throw new KitError({ code: 'EK_PLUGIN_DUPLICATE', message: 'Duplicate plugin id' });

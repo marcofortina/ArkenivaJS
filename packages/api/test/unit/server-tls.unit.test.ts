@@ -10,7 +10,16 @@ import { mkdtemp, chmod, writeFile, readFile, rm, symlink } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, request, type ServerOptions } from 'node:https';
-import { KitError, type ServerTlsFiles } from '@arkenivajs/core';
+import {
+  KitError,
+  COMPONENTS,
+  createApplication,
+  type ServerTlsFiles,
+  type HttpServerOptions,
+  type Plugin,
+} from '@arkenivajs/core';
+import { createApi, apiPlugin, type ApiOptions } from '@arkenivajs/api';
+import type { FastifyInstance } from 'fastify';
 // Exercise the owned build artifact without adding a public export for the private adapter.
 const { validateServerTlsFiles, withServerTls } = (await import(
   new URL('../../../dist/server-tls.js', import.meta.url).href
@@ -328,3 +337,242 @@ test(
     );
   },
 );
+
+const service = { name: 'tls-application', version: '1.0.0', environment: 'test' as const };
+function logging(): Plugin {
+  const logger = {
+    trace() {},
+    debug() {},
+    info() {},
+    warn() {},
+    error() {},
+    fatal() {},
+    child() {
+      return this;
+    },
+    setLevel() {},
+    async flush() {},
+  };
+  return {
+    id: 'logging',
+    version: '1.0.0',
+    capabilities: new Set(['logger']),
+    init(context) {
+      context.provide(COMPONENTS.logger, logger);
+    },
+    close() {},
+  };
+}
+async function get(origin: string, ca?: Buffer, path = '/', client: ServerOptions = {}) {
+  return await new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const outgoing = request(
+      new URL(path, origin),
+      { ...(ca === undefined ? {} : { ca }), ...client },
+      (reply) => {
+        const parts: Buffer[] = [];
+        reply.on('data', (part: Buffer) => parts.push(part));
+        reply.once('end', () =>
+          resolve({ status: reply.statusCode!, body: Buffer.concat(parts).toString() }),
+        );
+        reply.once('error', reject);
+      },
+    );
+    outgoing.setTimeout(2000, () => outgoing.destroy(new Error('HTTPS fixture timeout')));
+    outgoing.once('error', reject);
+    outgoing.end();
+  });
+}
+
+test('Application HTTPS file configuration preserves routing, OpenAPI, readiness and secret-reference redaction', async () => {
+  const app = await createApplication({
+    service,
+    http: { protocol: 'https', host: '127.0.0.1', port: 0, tls: files() },
+    plugins: [logging(), apiPlugin()],
+  });
+  app.api.get('/', {
+    auth: { required: false },
+    schema: {
+      response: {
+        type: 'object',
+        properties: { secured: { type: 'boolean' } },
+        required: ['secured'],
+        additionalProperties: false,
+      },
+    },
+    handler: () => ({ secured: true }),
+  });
+  assert.equal(
+    (app.config.snapshot() as { http: { tls: { privateKeyFile: string } } }).http.tls
+      .privateKeyFile,
+    '[REDACTED]',
+  );
+  try {
+    await app.start();
+    const native = app.api.native() as FastifyInstance;
+    const address = native.server.address();
+    assert.ok(address && typeof address === 'object');
+    const origin = `https://127.0.0.1:${address.port}`;
+    const ca = await readFile(cert);
+    assert.deepEqual(await get(origin, ca), { status: 200, body: '{"secured":true}' });
+    assert.equal((await get(origin, ca, '/readyz')).status, 200);
+    assert.equal(app.api.openApiDocument().openapi, '3.1.0');
+    await assert.rejects(get(origin), /certificate|self-signed/i);
+  } finally {
+    await app.stop();
+  }
+});
+
+test('HTTPS files resolve only on activation, and invalid material fails startup without opening HTTP', async () => {
+  const api = createApi({
+    service,
+    protocol: 'https',
+    port: 0,
+    tls: { ...files(), certificateFile: join(directory, 'missing-at-start.pem') },
+  });
+  const native = api.native();
+  assert.equal(native.server.listening, false);
+  await assert.rejects(api.start(), code('EK_HTTP_TLS_CERT'));
+  assert.equal(native.server.listening, false);
+  await api.close();
+});
+
+test('HTTP and HTTPS discriminants reject ambiguity, insecure versions, unsupported HTTP2 and production port zero', async () => {
+  for (const http of [
+    { host: '127.0.0.1', port: 0, tls: files() },
+    { protocol: 'http', host: '127.0.0.1', port: 0, tls: files() },
+    { protocol: 'http', host: '127.0.0.1', port: 0, http2: false },
+    { protocol: 'https', host: '127.0.0.1', port: 0 },
+    { protocol: 'https', host: '127.0.0.1', port: 0, tls: { ...files(), minVersion: 'TLSv1.1' } },
+  ])
+    await assert.rejects(
+      createApplication({
+        service,
+        http: http as HttpServerOptions,
+        plugins: [logging(), apiPlugin()],
+      }),
+      code('EK_CONFIG_INVALID'),
+    );
+  for (const tls of [null, { key: 'wrong', cert: 'wrong', extra: true }])
+    assert.throws(
+      () => createApi({ service, tls } as unknown as ApiOptions),
+      code('EK_HTTP_TLS_CONFIG'),
+    );
+  assert.throws(
+    () => createApi({ service, protocol: 'http', tls: files() }),
+    code('EK_HTTP_TLS_CONFIG'),
+  );
+  assert.throws(() => createApi({ service, protocol: 'https' }), code('EK_HTTP_TLS_CONFIG'));
+  assert.throws(() => createApi({ service, http2: false }), code('EK_HTTP_TLS_CONFIG'));
+  assert.throws(
+    () => createApi({ service, tls: files(), http2: true }),
+    code('EK_UNSUPPORTED_CAPABILITY'),
+  );
+  for (const environment of ['production', 'development'] as const) {
+    await assert.rejects(
+      createApplication({
+        service: { ...service, environment },
+        http: { host: '127.0.0.1', port: 0 },
+        plugins: [logging(), apiPlugin()],
+      }),
+      code('EK_CONFIG_INVALID'),
+    );
+    assert.throws(
+      () => createApi({ service: { ...service, environment }, port: 0 }),
+      code('EK_HTTP_TLS_CONFIG'),
+    );
+  }
+});
+
+test('Explicit API registration without ApplicationOptions.http starts no implicit network listener', async () => {
+  const app = await createApplication({ service, plugins: [logging(), apiPlugin()] });
+  try {
+    await app.start();
+    const native = app.api.native() as FastifyInstance;
+    assert.equal(native.server.listening, false);
+    assert.equal(native.server.address(), null);
+    assert.equal(app.state, 'READY');
+    assert.equal(app.api.openApiDocument().openapi, '3.1.0');
+  } finally {
+    await app.stop();
+  }
+});
+
+test('HTTPS bind failures retain a stable error and do not close another listener', async () => {
+  const first = createApi({ service, port: 0, tls: files() });
+  await first.start();
+  const address = first.native().server.address();
+  assert.ok(address && typeof address === 'object');
+  const second = createApi({ service, port: address.port, tls: files() });
+  const secondNative = second.native();
+  try {
+    await assert.rejects(second.start(), code('EK_HTTP_LISTEN'));
+    assert.equal(first.native().server.listening, true);
+    assert.equal(secondNative.server.listening, false);
+  } finally {
+    await second.close();
+    await first.close();
+  }
+});
+
+test('The managed HTTPS listener enforces configured client trust and minimum TLS before routes run', async () => {
+  let calls = 0;
+  const api = createApi({
+    service,
+    port: 0,
+    tls: { ...files(), caFile: cert, clientCertificate: 'required', minVersion: 'TLSv1.3' },
+  });
+  api.get('/', {
+    auth: { required: false },
+    schema: {
+      response: {
+        type: 'object',
+        properties: { secured: { type: 'boolean' } },
+        required: ['secured'],
+        additionalProperties: false,
+      },
+    },
+    handler: () => {
+      calls++;
+      return { secured: true };
+    },
+  });
+  const ca = await readFile(cert),
+    clientKey = await readFile(key),
+    foreignCert = await readFile(otherCert),
+    foreignKey = await readFile(otherKey);
+  try {
+    await api.start();
+    const origin = api.address();
+    assert.ok(origin);
+    await assert.rejects(get(origin, ca));
+    await assert.rejects(get(origin, ca, '/', { cert: foreignCert, key: foreignKey }));
+    await assert.rejects(get(origin, ca, '/', { cert: ca, key: clientKey, maxVersion: 'TLSv1.2' }));
+    assert.equal(calls, 0);
+    assert.equal((await get(origin, ca, '/', { cert: ca, key: clientKey })).status, 200);
+    assert.equal(calls, 1);
+  } finally {
+    await api.close();
+    clientKey.fill(0);
+    foreignKey.fill(0);
+  }
+});
+
+test('Legacy and explicit plain HTTP application settings remain equivalent', async () => {
+  for (const protocol of [undefined, 'http'] as const) {
+    const app = await createApplication({
+      service,
+      http: { ...(protocol === undefined ? {} : { protocol }), host: '127.0.0.1', port: 0 },
+      plugins: [logging(), apiPlugin()],
+    });
+    try {
+      await app.start();
+      const native = app.api.native() as FastifyInstance;
+      const address = native.server.address();
+      assert.ok(address && typeof address === 'object');
+      const result = await fetch(`http://127.0.0.1:${address.port}/livez`);
+      assert.equal(result.status, 200);
+    } finally {
+      await app.stop();
+    }
+  }
+});

@@ -47,6 +47,7 @@ export type ErrorCode =
   | 'EK_HTTP_RATE_LIMIT'
   | 'EK_HTTP_TLS_CONFIG'
   | 'EK_HTTP_TLS_CERT'
+  | 'EK_HTTP_LISTEN'
   | 'EK_AUTH_REQUIRED'
   | 'EK_AUTH_INVALID'
   | 'EK_AUTH_FORBIDDEN'
@@ -174,10 +175,33 @@ export interface ServerTlsFiles {
   readonly clientCertificate?: 'none' | 'required';
 }
 
+/** Plain HTTP preserves the original configuration and forbids TLS/h2c ambiguity. */
+export interface PlainHttpServerOptions {
+  readonly protocol?: 'http';
+  readonly host: string;
+  readonly port: number;
+  readonly requestTimeoutMs?: number;
+  readonly tls?: never;
+  readonly http2?: never;
+}
+
+/** Direct HTTPS uses external runtime certificate references. */
+export interface DirectHttpsServerOptions {
+  readonly protocol: 'https';
+  readonly host: string;
+  readonly port: number;
+  readonly requestTimeoutMs?: number;
+  readonly tls: ServerTlsFiles;
+  readonly http2?: boolean;
+}
+
+/** Startup-only inbound HTTP transport selection. */
+export type HttpServerOptions = PlainHttpServerOptions | DirectHttpsServerOptions;
+
 /** ApplicationOptions contract for explicit application composition. */
 export interface ApplicationOptions {
   readonly service: { name: string; version: string; environment: Environment };
-  readonly http?: { host: string; port: number; requestTimeoutMs?: number };
+  readonly http?: HttpServerOptions;
   readonly plugins?: readonly Plugin[];
   readonly databases?: Readonly<Record<string, DatabaseDefinition>>;
   readonly security?: {
