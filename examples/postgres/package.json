@@ -15,7 +15,8 @@
     "@arkenivajs/database-postgres": "workspace:*",
     "@arkenivajs/security": "workspace:*",
     "jose": "6.2.13",
-    "@arkenivajs/security-totp": "workspace:*"
+    "@arkenivajs/security-totp": "workspace:*",
+    "@arkenivajs/security-webauthn": "workspace:*"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {

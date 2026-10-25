@@ -409,6 +409,9 @@ importers:
       '@arkenivajs/security-totp':
         specifier: workspace:*
         version: link:../../packages/security-totp
+      '@arkenivajs/security-webauthn':
+        specifier: workspace:*
+        version: link:../../packages/security-webauthn
       jose:
         specifier: 6.2.13
         version: 6.2.13
