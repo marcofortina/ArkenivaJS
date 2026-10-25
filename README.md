@@ -41,3 +41,7 @@ values, actual NX outcomes, millisecond expiration, exact counters and cleanup.
 
 The [etcd configuration consumer](examples/etcd/README.md) demonstrates raw bytes,
 exact revisions, CAS contention, resumable watches and explicitly renewed leases.
+
+The [MongoDB customer consumer](examples/mongodb/README.md) demonstrates native
+BSON, exact JSON conversion, modified counts, bounded aggregation and owned
+session transactions with verified commit and rollback.
