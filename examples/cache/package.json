@@ -14,5 +14,6 @@
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/database-redis": "workspace:*",
     "@arkenivajs/cache": "workspace:*"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

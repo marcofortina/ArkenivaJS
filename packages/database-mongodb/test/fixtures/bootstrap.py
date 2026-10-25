@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 """Initiate dedicated TLS replica sets and scoped SCRAM users through container loopback."""
 
 import argparse

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import assert from 'node:assert/strict';
 import { readdir, readFile, writeFile, mkdir, mkdtemp, chmod, cp, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

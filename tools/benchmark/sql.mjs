@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import assert from 'node:assert/strict';
 import { cpus } from 'node:os';
 import { execFileSync } from 'node:child_process';

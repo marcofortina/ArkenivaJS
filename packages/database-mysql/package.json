@@ -32,5 +32,6 @@
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/database": "workspace:*",
     "mysql2": "3.24.6"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

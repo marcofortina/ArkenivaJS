@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 /** Atomic range checks precede INCRBY, preserve TTL and prevent unsafe results from mutating state. */
 export const SAFE_INCREMENT = `
 if redis.call('STRLEN', KEYS[1]) > 17 then

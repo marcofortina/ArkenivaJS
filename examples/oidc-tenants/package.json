@@ -15,5 +15,6 @@
     "@arkenivajs/security": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "jose": "6.2.13"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

@@ -41,5 +41,6 @@
     "@arkenivajs/api": "workspace:*",
     "@arkenivajs/http": "workspace:*",
     "@arkenivajs/logging": "workspace:*"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

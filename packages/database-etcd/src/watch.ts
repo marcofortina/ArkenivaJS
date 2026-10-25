@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { performance } from 'node:perf_hooks';
 import { TextDecoder } from 'node:util';
 import { Range } from 'etcd3';

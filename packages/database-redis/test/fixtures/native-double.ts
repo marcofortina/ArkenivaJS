@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { EventEmitter } from 'node:events';
 import type { TestContext } from 'node:test';
 import redis from 'redis';

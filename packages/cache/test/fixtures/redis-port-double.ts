@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import type { OperationOptions, RedisProvider } from '@arkenivajs/core';
 
 /** Unit-only framework-port double; live compatibility uses the separately installed native Redis adapter. */

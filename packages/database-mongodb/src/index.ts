@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
 import type { ApplicationOptions, Plugin, DocumentProvider } from '@arkenivajs/core';
 import { PREPARE_PLUGIN, ACTIVATE_PLUGIN, SUPPORT_PLUGINS } from '@arkenivajs/core/support';

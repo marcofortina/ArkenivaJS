@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 """Reject unsafe fixture inputs before creating credentials or invoking privileged tools."""
 
 from pathlib import Path

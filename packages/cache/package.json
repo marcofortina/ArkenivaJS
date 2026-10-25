@@ -36,5 +36,6 @@
     "@arkenivajs/telemetry": "workspace:*",
     "@arkenivajs/metering": "workspace:*",
     "jose": "6.2.13"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

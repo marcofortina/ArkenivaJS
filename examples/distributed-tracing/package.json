@@ -17,5 +17,6 @@
     "@arkenivajs/telemetry": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/diagnostics": "workspace:*"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

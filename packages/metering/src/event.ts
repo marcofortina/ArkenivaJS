@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
 import { KitError, METER_EVENT_SCHEMA_VERSION } from '@arkenivajs/core';
 import type { MeteringEvent } from '@arkenivajs/core';
 import { compileSchema, copyData, freezeData, SEMVER_PATTERN } from '@arkenivajs/core/support';

@@ -32,5 +32,6 @@
     "@grpc/grpc-js": "1.14.6",
     "cockatiel": "3.2.1",
     "etcd3": "1.1.2"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }
