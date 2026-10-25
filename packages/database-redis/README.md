@@ -152,3 +152,10 @@ tested. SDK packages are pinned and MIT licensed; see
 [third-party notices](THIRD_PARTY_NOTICES.md) for the adapted Apache-2.0 code and
 optional OTel peer. The Redis server image is a separate test prerequisite and is
 not included in the product's npm package.
+
+With an optional health collector installed, the plugin performs a fresh
+readonly native readiness probe through its owned client and bounded operation
+scope. Health runs after owner initialization, before inbound listeners activate;
+public provider facades still require application READY. Scoped hook integration
+tests use the actual authenticated disposable server and reject stale callbacks
+and pre-aborted operations. Health never closes the native owner's client.

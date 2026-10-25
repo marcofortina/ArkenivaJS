@@ -115,6 +115,11 @@ export function redisPlugin(): Plugin {
     [ACTIVATE_PLUGIN](context) {
       applications.get(context.options)!.active = true;
     },
+    async health(context, options) {
+      const owner = applications.get(context.options);
+      if (!owner || owner.closed || !owner.connection) return false;
+      return owner.connection.health(options);
+    },
     async close(context) {
       const owner = applications.get(context.options);
       if (!owner) return;
