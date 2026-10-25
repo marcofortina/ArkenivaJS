@@ -34,7 +34,9 @@
     "test:integration:oracle": "node scripts/test.mjs database-oracle-integration",
     "coverage:oracle": "pnpm --filter @arkenivajs/database-oracle coverage",
     "test:integration:redis": "node scripts/test.mjs database-redis-integration",
-    "coverage:redis": "pnpm --filter @arkenivajs/database-redis coverage"
+    "coverage:redis": "pnpm --filter @arkenivajs/database-redis coverage",
+    "test:integration:etcd": "node scripts/test.mjs database-etcd-integration",
+    "coverage:etcd": "pnpm --filter @arkenivajs/database-etcd coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
