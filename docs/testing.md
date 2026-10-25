@@ -40,3 +40,12 @@ check successful. The PostgreSQL jobs additionally run all four HTTP benchmark
 equivalence modes against actual disposable PostgreSQL and OTel services.
 These are short correctness checks; they do not run the long performance
 campaign or one-hour soak, and they do not claim a performance budget result.
+
+`pnpm lint` also validates every workflow YAML file: explicit main-only pushes,
+reviewed event kinds, immutable action references, read-only default permissions,
+nonpersistent checkout credentials and no failure suppression. Manually invoked
+or scheduled workflows without a push event require an explicit main-branch
+condition. Only the named CodeQL job in the security workflow may request its
+narrow security-event upload permission. Structural validation complements
+upstream tag/commit verification; it cannot prove that an arbitrary SHA has been
+reviewed or that a remote workflow executed successfully.

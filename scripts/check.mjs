@@ -1,10 +1,23 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { parse } from 'yaml';
-const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
-for (const match of workflow.matchAll(/uses: ([^\s]+)@([^\s]+)/g)) {
-  assert.match(match[2], /^[0-9a-f]{40}$/);
+import { readFileSync, readdirSync } from 'node:fs';
+import { validateWorkflow } from './workflow-policy.mjs';
+const files = readdirSync('.github/workflows')
+  .filter((name) => /\.ya?ml$/.test(name))
+  .sort();
+assert.ok(files.length > 0, 'At least one workflow is required');
+let jobs = 0,
+  actions = 0;
+for (const name of files) {
+  const result = validateWorkflow(name, readFileSync('.github/workflows/' + name, 'utf8'));
+  jobs += result.jobs;
+  actions += result.actions;
 }
-assert.deepEqual(parse(workflow).on, { push: { branches: ['main'] } });
-assert.ok(workflow.includes('contents: read'));
-console.log('Main-only triggers, action pins and permissions checks passed');
+console.log(
+  'Workflow policy passed: ' +
+    files.length +
+    ' workflows, ' +
+    jobs +
+    ' job definitions and ' +
+    actions +
+    ' immutable action references.',
+);
