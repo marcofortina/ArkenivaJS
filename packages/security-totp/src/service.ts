@@ -323,6 +323,7 @@ export function createTotpService(options: TotpServiceOptions): TotpService {
     isEnabled(subject, operation) {
       return runtime.run(operation, async (call) => {
         const owner = await ownerFor(subject, 'is-enabled', call);
+        await limit(owner, 'is-enabled', call);
         return (await factor(owner, call)) !== null;
       });
     },
