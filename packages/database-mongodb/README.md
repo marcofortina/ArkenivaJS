@@ -177,3 +177,10 @@ SRV discovery, multi-member failover, sharded clusters and alternate authenticat
 are outside this live compatibility claim. Server containers are separate test
 prerequisites; the npm adapter has no native database addon and does not bundle
 MongoDB Server. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+With an optional health collector installed, the plugin performs a fresh
+readonly native readiness probe through its owned client and bounded operation
+scope. Health runs after owner initialization, before inbound listeners activate;
+public provider facades still require application READY. Scoped hook integration
+tests use the actual authenticated disposable server and reject stale callbacks
+and pre-aborted operations. Health never closes the native owner's client.

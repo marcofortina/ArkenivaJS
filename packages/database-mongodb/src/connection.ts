@@ -151,17 +151,7 @@ export class MongoConnection implements DocumentProvider {
               { timeoutMS: mongoNativeBudget(scope) },
             );
             this.transactional = typeof hello.setName === 'string' || hello.msg === 'isdbgrid';
-            const cursor = db.collection(this.configuration.prefix + '.arkenivajs_readiness').find(
-              {},
-              {
-                projection: { _id: 1 },
-                limit: 1,
-                batchSize: 1,
-                timeoutMS: mongoNativeBudget(scope),
-                signal: scope.signal,
-              },
-            );
-            await this.collect(cursor, 1, scope);
+            await this.probe(scope);
           },
           true,
         );
@@ -181,6 +171,32 @@ export class MongoConnection implements DocumentProvider {
       }
     })();
     return this.starting;
+  }
+
+  private async probe(scope: MongoCallScope): Promise<void> {
+    const cursor = this.transport.client
+      .db(this.configuration.database)
+      .collection(this.configuration.prefix + '.arkenivajs_readiness')
+      .find(
+        {},
+        {
+          projection: { _id: 1 },
+          limit: 1,
+          batchSize: 1,
+          timeoutMS: mongoNativeBudget(scope),
+          signal: scope.signal,
+        },
+      );
+    await this.collect(cursor, 1, scope);
+  }
+
+  /** Recheck actual authenticated scoped read access without charging a business metering operation. */
+  async health(input?: OperationOptions): Promise<boolean> {
+    this.open();
+    if (!this.ready)
+      throw new KitError({ code: 'EK_LIFECYCLE_STATE', message: 'MongoDB provider is not ready' });
+    await this.run('findOne', false, input, (scope) => this.probe(scope), true);
+    return true;
   }
 
   private run<T>(
