@@ -11,7 +11,64 @@ import type {
   MfaSealedSecret,
   MfaSecretProtector,
   MfaManagementAuthorization,
+  Environment,
 } from '@arkenivajs/core';
+
+/** Deployment declaration backed by the adapter's independent conformance tests. */
+export interface TotpComponentPolicy {
+  readonly usage: 'production' | 'test-only';
+}
+
+/** Explicitly classified provider; a declaration cannot establish storage atomicity by itself. */
+export type TotpComponent<T> = T & TotpComponentPolicy;
+
+/** Operation presented to the application's trusted primary authentication authority. */
+export type TotpOperation =
+  | 'begin-enrollment'
+  | 'qr-code'
+  | 'confirm-enrollment'
+  | 'verify'
+  | 'status'
+  | 'disable'
+  | 'recovery-codes'
+  | 'verify-recovery-code';
+
+/** Runtime trust boundary; structural identity/session/authorization objects are never sufficient. */
+export interface TotpTrustPolicy extends TotpComponentPolicy {
+  /** Revalidate actual authority provenance, current session and exact tenant ownership or return null. */
+  resolveSubject(
+    subject: MfaSubjectContext,
+    operation: TotpOperation,
+    options?: OperationOptions,
+  ): Promise<MfaSubjectContext | null>;
+  /**
+   * Independently validate recent, sufficiently strong authentication and action permission.
+   * Enrollment/replacement have no caller grant: the authority must obtain its own trusted proof.
+   * A supplied management grant must be verified by the authority, never accepted by its fields alone.
+   */
+  authorize(
+    subject: MfaSubjectContext,
+    input: {
+      readonly action: 'enroll' | 'replace' | 'disable' | 'recovery-codes';
+      readonly authorization?: MfaManagementAuthorization;
+    },
+    options?: OperationOptions,
+  ): Promise<boolean>;
+}
+
+/** Secure external secret provider; key material must never be persisted with application factors. */
+export interface TotpRecoveryKeyProvider extends TotpComponentPolicy {
+  /** Select the active immutable version for a newly issued recovery set. */
+  currentKeyId(options?: OperationOptions): Promise<string>;
+  /** Resolve a retained version; use independent random 256–512-bit keys and authorized secret access. */
+  resolveKey(keyId: string, options?: OperationOptions): Promise<Uint8Array>;
+}
+
+/** The framework computes standard HMAC-SHA256; the provider supplies versioned external keys only. */
+export interface TotpRecoveryCodeHmacProvider {
+  readonly algorithm: 'HMAC-SHA256';
+  readonly keyProvider: TotpRecoveryKeyProvider;
+}
 
 /** Encrypted, expiring enrollment tied to an authenticated primary session. */
 export interface TotpPendingEnrollment {
@@ -38,7 +95,7 @@ export interface TotpFactorRecord {
 
 /** Durable shared storage; every transition must retain exact issuer/account/tenant ownership. */
 export interface TotpStateStore extends MfaStateStore {
-  /** Create pending state once without replacing an active factor. */
+  /** Create pending state once; keep any active factor unchanged until atomic activation. */
   putPending(pending: TotpPendingEnrollment, options?: OperationOptions): Promise<void>;
   /** Return only the exact owner's unexpired, primary-session-bound pending state. */
   getPending(
@@ -87,13 +144,18 @@ export interface TotpStateStore extends MfaStateStore {
   ): Promise<boolean>;
 }
 
-/** Declared TOTP configuration; trusted policy integration is required before service activation. */
+/** Startup-only TOTP policy; capture trusted providers once, never from request data. */
 export interface TotpServiceOptions {
   readonly issuer: string;
-  readonly stateStore: TotpStateStore;
-  readonly rateLimitStore: MfaRateLimitStore;
-  readonly secretProtector: MfaSecretProtector;
-  readonly evidenceStore: MfaEvidenceStore;
+  readonly environment: Environment;
+  readonly trustPolicy: TotpTrustPolicy;
+  readonly recoveryCodeHmac: TotpRecoveryCodeHmacProvider;
+  readonly stateStore: TotpComponent<TotpStateStore>;
+  readonly rateLimitStore: TotpComponent<MfaRateLimitStore>;
+  readonly secretProtector: TotpComponent<MfaSecretProtector>;
+  readonly evidenceStore: TotpComponent<MfaEvidenceStore>;
+  /** Trusted construction-time test/development clock in integer epoch milliseconds; forbidden in production. */
+  readonly clock?: () => number;
   readonly periodSeconds?: 30;
   readonly digits?: 6;
   readonly driftSteps?: 0 | 1;

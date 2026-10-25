@@ -54,10 +54,31 @@ function contracts(
   const invalidDrift: TotpServiceOptions = { ...settings, driftSteps: 2 };
   // @ts-expect-error The service uses exactly six digits for authenticator compatibility.
   const invalidDigits: TotpServiceOptions = { ...settings, digits: 8 };
+  const invalidHmac: TotpServiceOptions = {
+    ...settings,
+    // @ts-expect-error Recovery protection is standard HMAC-SHA256, never an unkeyed digest.
+    recoveryCodeHmac: { ...settings.recoveryCodeHmac, algorithm: 'SHA256' },
+  };
+  const invalidUsage: TotpServiceOptions = {
+    ...settings,
+    // @ts-expect-error Provider deployment classification is explicit and has no implicit test fallback.
+    stateStore: { ...state, usage: 'automatic' },
+  };
   // @ts-expect-error Rotation/disable must include independently verified management authorization.
   service.disable(subject);
   // @ts-expect-error Step acceptance must bind the current factor generation.
   state.acceptStepIfGreater(subject, factor.id, operation);
-  void [common, created, activated, accepted, result, invalidPending, invalidDrift, invalidDigits];
+  void [
+    common,
+    created,
+    activated,
+    accepted,
+    result,
+    invalidPending,
+    invalidDrift,
+    invalidDigits,
+    invalidHmac,
+    invalidUsage,
+  ];
 }
 void contracts;
