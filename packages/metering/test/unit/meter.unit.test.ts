@@ -60,6 +60,62 @@ function fixture() {
   };
 }
 
+test('Background consumers detach request tenant scope and require an independent verified accounting operation', async () => {
+  const f = fixture(),
+    meter = createMeter(f.options),
+    tenant = f.mint('tenant-A'),
+    other = f.mint('tenant-B');
+  const parent = meter.start({
+    tenant,
+    operation: 'request.publisher',
+    requestId: 'publisher-request',
+  });
+  try {
+    await meter.run(parent, async () => {
+      assert.equal(meter.current(), parent);
+      await meter.withoutScope(async () => {
+        assert.equal(meter.current(), undefined);
+        await delay(0);
+        assert.equal(meter.current(), undefined);
+        const background = meter.start({ tenant: other, operation: 'message.consumer' });
+        meter.run(background, () => {
+          background.recordOperation('messaging.publish');
+          background.recordUsage('messaging.client.elapsed', {
+            unit: 'milliseconds',
+            source: 'observed',
+            value: 2,
+          });
+          background.recordUsage('messaging.payload.bytes', {
+            unit: 'bytes',
+            source: 'observed',
+            value: 64,
+          });
+        });
+        background.end('ok');
+      });
+      assert.equal(meter.current(), parent);
+    });
+    parent.end('ok');
+    await meter.flush();
+    const background = f.events.find((entry) => entry.operation === 'message.consumer')!;
+    assert.equal(background.tenantId, 'tenant-B');
+    assert.equal(background.parentOperationId, undefined);
+    assert.equal(background.requestId, undefined);
+    assert.deepEqual(background.counters['messaging.publish'], {
+      unit: 'operations',
+      source: 'observed',
+      value: 1,
+    });
+    assert.equal(
+      f.events.find((entry) => entry.operation === 'request.publisher')!.tenantId,
+      'tenant-A',
+    );
+    assert.throws(() => meter.withoutScope(null as never), { code: 'EK_METER_SESSION' });
+  } finally {
+    await meter.close();
+  }
+});
+
 test('EK-METER-001 immutable tenant events use independent UUIDs, actual duration and registered additive units', async () => {
   const f = fixture();
   const tenant = f.mint('tenant-A');
@@ -567,7 +623,7 @@ test('EK-METER-001 byte bounds reject oversized records and saturated queues wit
   const f = fixture();
   const tenant = f.mint('tenant-A');
   const dimensions = Object.fromEntries(
-    Array.from({ length: 121 }, (_, index) => [
+    Array.from({ length: 118 }, (_, index) => [
       'u.' + 'a'.repeat(70) + String(index).padStart(3, '0'),
       'milliseconds' as const,
     ]),
