@@ -12,6 +12,7 @@ export type {
 } from './ports.js';
 export type { OutboundHttpClient } from './ports.js';
 export type { RedisProvider } from './ports.js';
+export type { DocumentProvider } from './ports.js';
 export type {
   EtcdProvider,
   EtcdValue,
