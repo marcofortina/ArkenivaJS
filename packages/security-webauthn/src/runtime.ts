@@ -9,7 +9,7 @@ import type {
   MfaSubjectContext,
   OperationOptions,
 } from '@arkenivajs/core';
-import { within } from '@arkenivajs/core/support';
+import { copyData, within } from '@arkenivajs/core/support';
 import type { WebAuthnServiceOptions, WebAuthnPolicyAction } from './contracts.js';
 import { createWebAuthnDriver } from './webauthn-driver.js';
 
@@ -161,12 +161,31 @@ function captureRuntime(input: WebAuthnServiceOptions) {
     (options.passwordlessEnabled !== undefined && typeof options.passwordlessEnabled !== 'boolean')
   )
     throw policyError();
-  const driver = createWebAuthnDriver({
+  if (
+    !Array.isArray(options.expectedOrigins) ||
+    options.expectedOrigins.length < 1 ||
+    options.expectedOrigins.length > 64
+  )
+    throw policyError();
+  const driverSettings = copyData({
     rpId: options.rpId,
     rpName: options.rpName,
     expectedOrigins: options.expectedOrigins,
     environment,
   });
+  const driver = createWebAuthnDriver(driverSettings);
+  const ceremonyContext = createHash('sha256')
+    .update(
+      JSON.stringify([
+        'arkenivajs-webauthn-policy-v1',
+        driverSettings.rpId,
+        [...driverSettings.expectedOrigins].sort(),
+        'required',
+        attestation,
+        challengeTtlMs,
+      ]),
+    )
+    .digest('hex');
   const clock =
     options.clock === undefined
       ? Date.now.bind(Date)
@@ -210,6 +229,7 @@ function captureRuntime(input: WebAuthnServiceOptions) {
 
   return Object.freeze({
     rpId: options.rpId,
+    ceremonyContext,
     challengeTtlMs,
     attestation,
     passwordlessEnabled: options.passwordlessEnabled ?? false,
