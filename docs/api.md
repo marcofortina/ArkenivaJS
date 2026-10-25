@@ -58,6 +58,51 @@ See the [configuration example](../examples/configuration/README.md) for complet
 
 `@arkenivajs/security` exports `createAuthService`, `securityPlugin` and the public authentication types. Signature, issuer, audience, time, type and scope checks precede tenant attribution. Runtime provenance rejects cloned or foreign identity/context objects. See the [security reference](../packages/security/README.md) and [executable tenant guide](../examples/oidc-tenants/README.md).
 
+## Shared MFA trust and storage contracts
+
+The following type-only ports are exported by `@arkenivajs/core` and re-exported
+by `@arkenivajs/security`. They introduce no runtime factor implementation or
+database dependency. Persistent adapters and the optional TOTP/WebAuthn services
+remain under development; these interfaces alone do not enable MFA.
+
+`MfaSubjectContext` contains `issuer`, `subject`, `primarySessionId`,
+`authenticatedAt` and an optional verified `tenant`. A trusted server-side
+session authority resolves those values. Structural assignability is not
+authentication: factor implementations must validate ownership, issuer, session
+binding and freshness at runtime. `MfaManagementAuthorization` binds a recent
+authority decision to `enroll`, `replace`, `disable`, `recovery-codes` or `revoke`.
+
+`MfaChallengeRecord` binds one opaque ID/digest to its factor ceremony purpose,
+issuer and optional subject/tenant/session/RP. Its timestamps are UTC ISO strings.
+`MfaStateStore.createChallenge(record, options?)` inserts once and rejects
+duplicates; `claimChallenge({id,purpose,issuer,subject?,tenantId?,primarySessionId?,rpId?,now}, options?)`
+atomically consumes the exact unexpired match or returns `null`.
+`discardChallenge(id, options?)` removes a challenge. Every method is asynchronous.
+Separate reads and deletes cannot satisfy the single-use contract.
+
+`MfaRateLimitStore.checkAndRecord({scopeKey,operation,maxAttempts,windowMs,nowMs}, options?)`
+atomically returns `{allowed,retryAfterMs?}` across instances. Window and retry
+durations are integer milliseconds. An unavailable limiter must fail closed.
+
+`MfaEvidence` describes a short-lived verified `totp`, `recovery-code` or
+`webauthn` result. `MfaEvidenceRecord` additionally requires issuer and primary
+session binding, with optional tenant. `MfaEvidenceStore.recordOnce(record, options?)`
+persists once; `consume({evidenceId,issuer,subject,tenantId?,primarySessionId,now}, options?)`
+atomically returns the matching unexpired record or `null`. The application
+session authority consumes it internally before upgrading assurance. These
+values are never browser bearer credentials and do not issue a cookie or JWT.
+
+`MfaSecretProtector.seal(bytes, {issuer,subject,tenantId?}, options?)` returns a
+`MfaSealedSecret` with `keyId`, `ciphertext`, `nonce` and `tag`; `open(envelope,
+binding, options?)` authenticates the same binding before returning bytes. Use a
+reviewed AEAD/KMS provider, versioned keys and fresh nonces. Secret material must
+never appear in logs, traces, errors or metering.
+
+Store/provider calls accept the existing `OperationOptions` cancellation and
+deadline contract. Persistence outages or uncertain outcomes must use safe
+storage failures, never success evidence. Actual multi-instance atomicity,
+outage handling and encryption require independent implementation tests.
+
 ## Metrics and tracing
 
 `@arkenivajs/telemetry` exports `createTelemetry`, `telemetryPlugin`, `DURATION_BUCKETS_SECONDS` and the public telemetry port. Providers and W3C async context are instance-owned; no process-global SDK is replaced. Metric labels and series, span queues and exporter deadlines are bounded. See the [telemetry reference](../packages/telemetry/README.md) for modes, units, sampling, resource metadata and actual collector integration. The [distributed guide](../examples/distributed-tracing/README.md) runs two HTTP hops with correlated logs and measured process quantities.

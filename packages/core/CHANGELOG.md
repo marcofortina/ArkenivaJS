@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Add type-only shared MFA subject, atomic challenge/limiter, evidence and secret-provider ports.
 - Export the shared literal timeout, metering capacity and event-version constants.
 
 - Add typed errors with immutable metadata and safe external serialization.
