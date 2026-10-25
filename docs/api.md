@@ -98,6 +98,11 @@ binding, options?)` authenticates the same binding before returning bytes. Use a
 reviewed AEAD/KMS provider, versioned keys and fresh nonces. Secret material must
 never appear in logs, traces, errors or metering.
 
+The [PostgreSQL challenge reference](../examples/postgres/mfa-shared-state.md)
+implements the challenge port in an explicitly disposable application example,
+with separate-process atomic-consumption tests. The remaining stores and factor
+services require their own implementation and evidence.
+
 Store/provider calls accept the existing `OperationOptions` cancellation and
 deadline contract. Persistence outages or uncertain outcomes must use safe
 storage failures, never success evidence. Actual multi-instance atomicity,
