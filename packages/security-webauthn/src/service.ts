@@ -73,7 +73,14 @@ function sameCredential(before: WebAuthnCredentialRecord, after: WebAuthnCredent
   if (!Buffer.from(before.publicKey).equals(Buffer.from(after.publicKey))) throw conflict();
 }
 
-/** Optional factor service with caller-owned trust/state providers; it issues no application session. */
+/**
+ * Construct the optional factor service with caller-owned trust/state providers.
+ *
+ * @param options - Stable RP policy and independent authority, shared state, limiter and evidence providers.
+ * @returns The eight factor operations; the application consumes evidence and owns session issuance.
+ * @throws An EK_MFA_POLICY error when required configuration or production/test isolation is invalid.
+ * @remarks EK-R12-MFA-001 and EK-R12-MFA-002 require immutable account handles and versioned durable writes.
+ */
 export function createWebAuthnService(options: WebAuthnServiceOptions): WebAuthnService {
   const runtime = createWebAuthnRuntime(options);
   let activeCalls = 0;
