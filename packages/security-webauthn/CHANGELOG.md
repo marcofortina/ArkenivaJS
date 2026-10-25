@@ -17,3 +17,5 @@
 - Expose the eight-operation factor service with live authority checks, stable
   account handles, versioned state and one-use evidence; keep production acceptance
   gated on durable-store, browser and performance verification.
+- Add controlled Chromium/PostgreSQL acceptance through workspace and packed
+  public artifacts, including signed counterless races across service processes.

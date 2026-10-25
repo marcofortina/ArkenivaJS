@@ -137,6 +137,22 @@ jobs:
           ARKENIVAJS_OTLP_ENDPOINT: http://127.0.0.1:4318
       - run: pnpm --filter @arkenivajs/example-postgres test:integration
       - run: pnpm test:packed:examples --integration postgres
+      - name: Start the pinned disposable browser with a virtual authenticator
+        run: docker compose -p arkenivajs-webauthn-browser -f examples/postgres/test/fixtures/browser/compose.yaml up -d --wait --wait-timeout 40
+      - name: Verify WebAuthn browser interoperability and signed multiprocess zero-counter races
+        run: pnpm --filter @arkenivajs/example-postgres test:browser
+        env:
+          ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE: '1'
+          ARKENIVA_WEBAUTHN_BROWSER_URL: http://127.0.0.1:19222
+          ARKENIVA_WEBAUTHN_BROWSER_ORIGIN: http://localhost:19377
+      - name: Verify browser ceremonies through packed public framework artifacts
+        run: pnpm test:packed:examples --browser postgres
+        env:
+          ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE: '1'
+          ARKENIVA_WEBAUTHN_BROWSER_URL: http://127.0.0.1:19222
+          ARKENIVA_WEBAUTHN_BROWSER_ORIGIN: http://localhost:19377
+      - if: always()
+        run: docker compose -p arkenivajs-webauthn-browser -f examples/postgres/test/fixtures/browser/compose.yaml down
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
