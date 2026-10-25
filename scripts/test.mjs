@@ -2,6 +2,7 @@ import { readdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { testReportArguments } from './test-reports.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const invocation = relative(root, process.cwd()).split(sep).join('/');
 const packagePrefix = /^packages\/[^/]+$/.test(invocation) ? `${invocation}/` : undefined;
@@ -38,5 +39,12 @@ const flags = coverage
       '--test-coverage-branches=85',
     ]
   : [];
-const result = spawnSync(process.execPath, ['--test', ...flags, ...files], { stdio: 'inherit' });
+const label = ((packagePrefix ?? 'workspace-') + kind + (coverage ? '-coverage' : '')).replaceAll(
+  '/',
+  '-',
+);
+const reporting = testReportArguments(label, coverage);
+const result = spawnSync(process.execPath, ['--test', ...flags, ...reporting, ...files], {
+  stdio: 'inherit',
+});
 process.exitCode = result.status ?? 1;
