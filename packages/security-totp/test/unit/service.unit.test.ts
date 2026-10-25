@@ -87,6 +87,32 @@ test('Missing, malformed or request-like factory settings cannot activate a TOTP
     assert.throws(() => createTotpService(value as never), hasCode('EK_MFA_POLICY'));
 });
 
+test('Enabled-state reads enforce the shared attempt decision before accessing factor storage', async () => {
+  const f = runtimeFixture();
+  let allowed = false,
+    reads = 0;
+  const service = createTotpService({
+    ...f.options,
+    rateLimitStore: {
+      async checkAndRecord() {
+        return { allowed };
+      },
+    },
+    stateStore: {
+      ...f.options.stateStore,
+      async getFactor() {
+        reads++;
+        return null;
+      },
+    },
+  });
+  await assert.rejects(service.isEnabled(f.subject), hasCode('EK_MFA_RATE_LIMIT'));
+  assert.equal(reads, 0);
+  allowed = true;
+  assert.equal(await service.isEnabled(f.subject), false);
+  assert.equal(reads, 1);
+});
+
 test('All eight actions require their own authorization before factor or limiter access', async () => {
   const f = runtimeFixture();
   const actions = [

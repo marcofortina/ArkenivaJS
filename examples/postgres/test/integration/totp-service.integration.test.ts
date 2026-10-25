@@ -25,6 +25,25 @@ async function enrolled(f: Fixture) {
 const next = (f: Fixture) => f.setTime((Math.floor(f.clock() / 30000) + 1) * 30000);
 
 test(
+  'Enabled-state read budgets are durable and shared across independent service instances',
+  { timeout: 20000 },
+  async () => {
+    const f = await totpServiceFixture();
+    try {
+      const owner = await f.subject(),
+        other = createTotpService(f.settings);
+      for (let index = 0; index < 5; index++) assert.equal(await f.service.isEnabled(owner), false);
+      await assert.rejects(other.isEnabled(owner), hasCode('EK_MFA_RATE_LIMIT'));
+      await assert.rejects(f.service.isEnabled(owner), hasCode('EK_MFA_RATE_LIMIT'));
+      f.setTime(f.clock() + 60000);
+      assert.equal(await other.isEnabled(owner), false);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
   'Expired and revoked server-owned sessions lose read and verification authority immediately',
   { timeout: 20000 },
   async () => {

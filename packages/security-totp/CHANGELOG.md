@@ -11,3 +11,4 @@
   opaque recovery HMAC backend; default to production and restrict clocks to tests.
 - Bind recovery verifiers to active factors, validate bounded rotation candidates
   and support ten through twenty independent recovery codes.
+- Apply the shared attempt budget to enabled-state reads before factor access.
