@@ -200,3 +200,10 @@ Upstream references: [pool lifecycle](https://node-postgres.com/apis/pool),
 [transactions](https://node-postgres.com/features/transactions),
 [TLS](https://node-postgres.com/features/ssl), and
 [data types](https://node-postgres.com/features/types).
+
+With an optional health collector installed, the plugin performs a fresh
+readonly native readiness probe through its owned client and bounded operation
+scope. Health runs after owner initialization, before inbound listeners activate;
+public provider facades still require application READY. Scoped hook integration
+tests use the actual authenticated disposable server and reject stale callbacks
+and pre-aborted operations. Health never closes the native owner's client.
