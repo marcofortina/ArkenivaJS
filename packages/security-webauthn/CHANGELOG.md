@@ -10,3 +10,5 @@
   until its durable ceremony lifecycle is complete.
 - Add private policy-bound, single-use ceremony claims and bounded browser JSON
   snapshots, with replay, ownership, expiry and hostile-input tests.
+- Add private credential validation and versioned authentication/revocation
+  transitions, including zero-counter races and fail-closed persistence checks.

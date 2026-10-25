@@ -48,6 +48,15 @@ object keys. Extracted identifiers and challenges are explicitly unverified unti
 the upstream signature/RP/origin/UV checks complete. Shared test-map races verify
 the claim protocol; real durable-store and credential-state acceptance remain open.
 
+Private credential helpers validate and snapshot backend metadata before use,
+including a bounded copy of public-key bytes. They compare ownership and optional
+assertion handles, enforce monotonic nonzero counters and keep backup eligibility
+immutable. Every accepted authentication, including `0 → 0`, requires an acknowledged
+version change. Revocation uses the same revision; conflicts require a fresh ceremony
+and never trigger an automatic retry. Invalid receipts or uncertain persistence
+return no success. These row-transition tests use an atomic simulator; production
+acceptance still requires the complete service and shared-database race tests.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
