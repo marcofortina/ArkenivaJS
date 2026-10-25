@@ -55,15 +55,29 @@ export function authenticator() {
       ...(registration ? [Buffer.alloc(16), length, credential, cose] : []),
     ]);
     const common = { id, rawId: id, type: 'public-key', clientExtensionResults: {} };
+    const attestationStatement = new Map<string, number | Uint8Array>();
+    if (registration && overrides.format === 'packed') {
+      attestationStatement.set('alg', -7);
+      attestationStatement.set(
+        'sig',
+        Uint8Array.from(
+          sign(
+            'sha256',
+            Buffer.concat([authData, createHash('sha256').update(clientData).digest()]),
+            privateKey,
+          ),
+        ),
+      );
+    }
     const response = registration
       ? {
           clientDataJSON: clientData.toString('base64url'),
           attestationObject: Buffer.from(
             isoCBOR.encode(
-              new Map<string, string | Uint8Array | Map<string, never>>([
+              new Map<string, string | Uint8Array | Map<string, number | Uint8Array>>([
                 ['fmt', overrides.format ?? 'none'],
                 ['authData', Uint8Array.from(authData)],
-                ['attStmt', new Map<string, never>()],
+                ['attStmt', attestationStatement],
               ]),
             ),
           ).toString('base64url'),

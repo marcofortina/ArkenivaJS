@@ -172,6 +172,7 @@ function captureRuntime(input: WebAuthnServiceOptions) {
     rpName: options.rpName,
     expectedOrigins: options.expectedOrigins,
     environment,
+    attestation,
   });
   const driver = createWebAuthnDriver(driverSettings);
   const ceremonyContext = createHash('sha256')

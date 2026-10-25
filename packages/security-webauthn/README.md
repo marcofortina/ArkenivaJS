@@ -12,6 +12,14 @@ ceremonies without an explicit embedding policy. Browser input is bounded and
 snapshotted before asynchronous verification. Errors contain no response, challenge,
 credential identifier, signature or upstream diagnostic text.
 
+Attestation defaults to `none`; `direct` delegates attestation-statement verification
+to the pinned upstream verifier, including packed self-attestation. Neither option
+establishes enterprise device provenance or hardware binding. Such claims require
+a separately approved trust-root and metadata policy. Each adapter instance admits
+at most eight native verifications, rejects excess work immediately and holds the
+slot until the native promise actually settles. Caller timeout cannot free a slot
+while an underlying verification remains pending.
+
 Registration tests use disposable synthetic authenticators and `none` attestation.
 Authentication tests sign real assertions with ephemeral P-256 keys and verify
 negative origin, RP, challenge, flags, credential and signature cases. These tests
