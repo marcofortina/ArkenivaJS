@@ -209,3 +209,42 @@ reauthentication policy; this fixture supplies neither that workflow nor real
 factor verification. The synthetic producer only exercises the shared trust
 handoff. Factor modules, a real IdP integration and production session lifecycle
 still require their own tests and deployment policy.
+
+## Authenticated encryption and key rotation reference
+
+[src/mfa-secret-protector.ts](src/mfa-secret-protector.ts) implements the shared
+`MfaSecretProtector` SPI with Node's AES-256-GCM. This application-owned fixture
+requires the same explicit disposable marker. It is not a production key manager
+or a factor service. Its factory takes an active version ID and a trusted async
+resolver returning exactly 32 key bytes from an application-selected provider.
+No key is created implicitly, logged or returned through the SPI.
+
+`seal` copies 1–4096 plaintext bytes before asynchronous key retrieval, uses a
+fresh random 12-byte nonce, and returns a version ID plus canonical Base64
+ciphertext, nonce and 16-byte authentication tag. Associated data is a framed,
+versioned tuple containing key ID, issuer, subject and optional tenant. Absence
+of a tenant is distinct from a tenant-bound envelope. Every owner field and
+the key version must match when opening; authenticating the final GCM tag must
+succeed before any plaintext is returned.
+
+A new protector instance selects a new active key version. Existing envelopes
+remain readable while the resolver retains their old key. Removing a key or
+returning an invalid key fails closed; the adapter never silently resets a
+factor. This demonstrates version selection/decryption, not database rekey
+migrations or production KMS authorization. A production deployment must own
+key access, per-key usage limits, rotation, backup and migration policy while
+preserving factor replay state. Random nonces in this bounded fixture do not
+replace those deployment controls.
+
+Inputs are bounded and copied without invoking accessors. Cancellation and
+monotonic deadlines apply to key retrieval; late key results cannot resume
+crypto work after rejection. Owned key/plaintext/intermediate decryption
+buffers are cleared, while provider-owned retained keys remain unchanged.
+The caller owns returned plaintext and must clear it when finished; JavaScript
+does not provide a complete process-memory erasure guarantee.
+
+The service-independent unit suite checks fresh envelopes, every owner binding,
+ciphertext/nonce/tag/version tampering, missing keys, rotation, mutable input
+snapshots, unavailable providers, cancellation, deadlines, late key completion,
+input bounds and safe error serialization. It uses ephemeral synthetic bytes,
+prints no keys or factor material, and leaves PostgreSQL state untouched.
