@@ -45,6 +45,8 @@ export type ErrorCode =
   | 'EK_HTTP_NOT_FOUND'
   | 'EK_HTTP_UPSTREAM'
   | 'EK_HTTP_RATE_LIMIT'
+  | 'EK_HTTP_TLS_CONFIG'
+  | 'EK_HTTP_TLS_CERT'
   | 'EK_AUTH_REQUIRED'
   | 'EK_AUTH_INVALID'
   | 'EK_AUTH_FORBIDDEN'
@@ -160,6 +162,16 @@ export interface DatabaseDefinition {
   readonly endpoints?: readonly string[];
   readonly poolMin?: number;
   readonly poolMax?: number;
+}
+
+/** External startup-only certificate files; private material never belongs in configuration data. */
+export interface ServerTlsFiles {
+  readonly certificateFile: string;
+  readonly privateKeyFile: string;
+  readonly caFile?: string;
+  readonly privateKeyPassphraseEnv?: string;
+  readonly minVersion?: 'TLSv1.2' | 'TLSv1.3';
+  readonly clientCertificate?: 'none' | 'required';
 }
 
 /** ApplicationOptions contract for explicit application composition. */

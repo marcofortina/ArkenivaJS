@@ -69,6 +69,7 @@ export type {
 export type {
   Application,
   ApplicationOptions,
+  ServerTlsFiles,
   LifecycleState,
   Environment,
   Plugin,

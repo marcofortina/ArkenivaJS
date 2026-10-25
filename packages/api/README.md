@@ -43,3 +43,15 @@ share one pending registry call, retained until actual settlement even after a
 logical timeout. Registry cleanup remains the caller's responsibility. Application
 `apiPlugin` obtains health from its declared owner instead of accepting a foreign
 registry. Probe endpoints should be limited to trusted deployment infrastructure.
+
+## TLS material validation
+
+The internal file adapter accepts the shared `ServerTlsFiles` shape and reads at
+most 1 MiB per regular file. It checks PEM certificate validity and uses Node TLS
+to validate encrypted keys and certificate/key matching. Explicit mounted-secret
+symlinks are supported. Private keys and passphrases are excluded from safe errors,
+and temporary buffers are cleared after native context construction.
+
+This helper is not a package-root export. Application-level file-based HTTPS and
+HTTP/2 configuration have separate transport integration requirements; importing
+these types does not enable a listener or replace the existing transport.
