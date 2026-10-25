@@ -198,3 +198,10 @@ notices and redistribution review remain separate from private development check
 Upstream: [Promise and prepared stream API](https://mariadb.com/docs/connectors/mariadb-connector-nodejs/connector-nodejs-promise-api),
 [connector source](https://github.com/mariadb-corporation/mariadb-connector-nodejs),
 [official server image](https://hub.docker.com/_/mariadb).
+
+With an optional health collector installed, the plugin performs a fresh
+readonly native readiness probe through its owned client and bounded operation
+scope. Health runs after owner initialization, before inbound listeners activate;
+public provider facades still require application READY. Scoped hook integration
+tests use the actual authenticated disposable server and reject stale callbacks
+and pre-aborted operations. Health never closes the native owner's client.
