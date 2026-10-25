@@ -30,7 +30,9 @@
     "test:integration:mysql": "node scripts/test.mjs database-mysql-integration",
     "coverage:mysql": "pnpm --filter @arkenivajs/database-mysql coverage",
     "test:integration:mariadb": "node scripts/test.mjs database-mariadb-integration",
-    "coverage:mariadb": "pnpm --filter @arkenivajs/database-mariadb coverage"
+    "coverage:mariadb": "pnpm --filter @arkenivajs/database-mariadb coverage",
+    "test:integration:oracle": "node scripts/test.mjs database-oracle-integration",
+    "coverage:oracle": "pnpm --filter @arkenivajs/database-oracle coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

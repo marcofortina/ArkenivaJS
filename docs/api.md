@@ -86,3 +86,9 @@ pools for `driver: 'mariadb'`. Its bigint results, awaited release, CA/IP/DNS po
 and MariaDB error codes are verified independently. See the
 [MariaDB reference](../packages/database-mariadb/README.md) and
 [runnable MariaDB consumer](../examples/mariadb/README.md).
+
+`oraclePlugin({ mode: 'thin' })` from `@arkenivajs/database-oracle` registers
+independent native Oracle pools. Its named binds, exact NUMBER text, bounded
+ResultSets, native LOB ownership and optional process-wide Thick mode are described
+in the [Oracle reference](../packages/database-oracle/README.md).
+**Oracle adapter contract-tested with mocks; live compatibility not verified**.

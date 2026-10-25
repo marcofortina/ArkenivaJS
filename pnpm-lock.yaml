@@ -390,6 +390,22 @@ importers:
         specifier: 3.24.6
         version: 3.24.6(@types/node@22.20.5)
 
+  packages/database-oracle:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/database':
+        specifier: workspace:*
+        version: link:../database
+      oracledb:
+        specifier: 26.0.0
+        version: 26.0.0
+    devDependencies:
+      '@types/oracledb':
+        specifier: 26.0.0
+        version: 26.0.0
+
   packages/database-postgres:
     dependencies:
       '@arkenivajs/core':
@@ -762,6 +778,9 @@ packages:
 
   '@types/node@22.20.5':
     resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
+
+  '@types/oracledb@26.0.0':
+    resolution: {integrity: sha512-+i/QLxN0k2S5AZLohesnRgrp5uHhjjJf+sMbAkstfurPBtKq/i4fJ8lI3lSQYLraS3mV10oknrr1hrOAYotrLg==}
 
   '@types/pg-cursor@2.7.2':
     resolution: {integrity: sha512-m3xT8bVFCvx98LuzbvXyuCdT/Hjdd/v8ml4jL4K1QF70Y8clOfCFdgoaEB1FWdcSwcpoFYZTJQaMD9/GQ27efQ==}
@@ -1166,6 +1185,10 @@ packages:
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
+
+  oracledb@26.0.0:
+    resolution: {integrity: sha512-ywUqFidj/mPjRjfpOQdzcXT98lhiJzavPCbyPF9JYivcgrpHx7ENj4ZGQDclrpGXeozUBLc5BNXV7yj5qTMxDw==}
+    engines: {node: '>=14.17'}
 
   p-limit@3.1.0:
     resolution: {integrity: sha512-TYOanM3wGwNGsZN2cVTYPArw454xnXj5qmWF1bEoAc4+cU/ol7GVh7odevjp1FNHduHc3KZMcFduxU5Xc6uJRQ==}
@@ -1639,6 +1662,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/oracledb@26.0.0':
+    dependencies:
+      '@types/node': 22.20.5
+
   '@types/pg-cursor@2.7.2':
     dependencies:
       '@types/node': 22.20.5
@@ -2104,6 +2131,8 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
       word-wrap: 1.2.5
+
+  oracledb@26.0.0: {}
 
   p-limit@3.1.0:
     dependencies:
