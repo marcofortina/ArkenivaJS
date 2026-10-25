@@ -49,7 +49,7 @@ This integration fragment requires the application's `reportFailure` and
 and receives an abort signal with a one-second budget. A rejected, synchronous
 or overdue strategy makes the owner unhealthy and starts cleanup. Raw causes
 are private developer diagnostics. See the disposable fixture for secure
-configuration for executable application code.
+configuration and the [complete consumer example](../../examples/messaging/README.md) for executable application code.
 
 ## Connection and authority
 

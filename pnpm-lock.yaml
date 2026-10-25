@@ -296,6 +296,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-mariadb
 
+  examples/messaging:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
+
   examples/metering:
     dependencies:
       '@arkenivajs/api':
