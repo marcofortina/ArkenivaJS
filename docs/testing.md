@@ -49,3 +49,11 @@ condition. Only the named CodeQL job in the security workflow may request its
 narrow security-event upload permission. Structural validation complements
 upstream tag/commit verification; it cannot prove that an arbitrary SHA has been
 reviewed or that a remote workflow executed successfully.
+
+The security workflow also configures CodeQL's JavaScript/TypeScript
+`security-extended` analysis on main pushes, weekly runs and explicit dispatch.
+Only that job receives security-event upload permission. Its findings are
+available through GitHub code scanning after the workflow actually runs;
+workflow configuration alone is not evidence of a successful analysis. An
+intended release requires the relevant remote security status and findings to
+be reviewed alongside local tests, dependency audit and redacted secret scans.
