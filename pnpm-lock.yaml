@@ -403,6 +403,12 @@ importers:
       '@arkenivajs/database-postgres':
         specifier: workspace:*
         version: link:../../packages/database-postgres
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
 
   examples/redis:
     dependencies:

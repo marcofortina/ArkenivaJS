@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
-    "@arkenivajs/database-postgres": "workspace:*"
+    "@arkenivajs/database-postgres": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "jose": "6.2.13"
   },
   "license": "AGPL-3.0-or-later"
 }
