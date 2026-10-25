@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
+# Owner-approved historical RFC 6238 public test vector; no current-tree exception.
+fc0a86f0f54e0fdecb8951944c7065fd454f4245:packages/security-totp/test/unit/service.unit.test.ts:generic-api-key:229
