@@ -8,6 +8,7 @@
     "metering": "node metering.mjs",
     "sql": "node sql.mjs",
     "postgres": "node postgres.mjs",
+    "http": "node http.mjs",
     "test": "node --test test/*.unit.test.mjs",
     "test:integration": "node --test test/http.integration.test.mjs"
   },

@@ -50,3 +50,116 @@ Server CPU, network bytes, GC pauses and exporter drops remain unobserved.
 Tracing, metrics and metering are disabled. This short, single-repetition component
 comparison has `releaseGate:false`; it does not replace the dedicated four-mode
 HTTP/authentication/database measurements and soak runs required before release.
+
+## Matched HTTP, authentication and PostgreSQL workloads
+
+See the [server equivalence contract](http-worker.md),
+[statistical method](analysis.md) and [private tool installation](runtime.md)
+for independently testable components.
+
+The `http` command compares the same three GET routes in four isolated server
+processes. `/json` is public, `/authenticated` verifies an actual RS256 JWT and
+scope, and `/database` additionally executes a parameterized PostgreSQL query.
+Every successful response is exactly 128 bytes. The native baseline uses Fastify,
+Ajv, JOSE, Pino and `pg`/`pg-cursor` directly, including certificate verification,
+pool maximum two, session reset and bounded result fetching. The framework modes
+use public package entries for the same work. Standard tracing samples at 0.1;
+detailed tracing samples at 1 and records a V8 CPU profile at 10 ms intervals.
+Both instrumented modes export verified tenant usage to private JSONL files and
+send telemetry to the real disposable collector. Framework mode omits those two
+plugins; baseline mode uses the underlying libraries directly.
+
+First validate identity failures, actual database work, safe output and cleanup:
+
+```sh
+pnpm --filter @arkenivajs/benchmark-foundation test
+python3 packages/database-postgres/test/fixtures/run.py /private/postgres/environment.json pnpm --filter @arkenivajs/benchmark-foundation test:integration
+```
+
+The integration command also requires `ARKENIVAJS_OTLP_ENDPOINT` pointing at the
+[disposable OTel collector](../../packages/telemetry/test/fixtures/compose.yaml).
+It fails when infrastructure is absent; it never substitutes mocked queries.
+
+### Install load tools inside a disposable Linux x64 VM
+
+Use Python 3.12 or later. The installer creates a new private directory outside
+Git, verifies pinned SHA-256 archives for Node 24.22.1 and k6 2.3.0, and installs
+Corepack 0.36.0 within that directory. It changes no system packages. Archive
+extraction has path, file-count and size bounds; existing targets are rejected.
+Keep the source checkout inside the same VM for execution and build it with its
+frozen lockfile before running the benchmark.
+
+```sh
+python3 tools/benchmark/prepare-runtime.py /private/benchmark-tools
+export PATH="/private/benchmark-tools/node-v24.22.1-linux-x64/bin:/private/benchmark-tools/corepack/node_modules/.bin:$PATH"
+export ARKENIVA_BENCHMARK_K6=/private/benchmark-tools/k6-v2.3.0-linux-amd64/k6
+export ARKENIVAJS_OTLP_ENDPOINT=http://127.0.0.1:4318
+pnpm install --frozen-lockfile
+pnpm build
+python3 packages/database-postgres/test/fixtures/run.py /private/postgres/environment.json node tools/benchmark/http.mjs /private/http-smoke --smoke
+```
+
+k6 is an external AGPL-3.0 development executable, never a runtime dependency or
+part of a package archive. Node retains its MIT and bundled dependency notices;
+Corepack is MIT. Official artifacts and license texts remain in the private tool
+directory. Load-tool usage reporting is disabled explicitly. Review current
+upstream security information before updating tool pins.
+
+### Long comparisons and soak
+
+The default campaign uses five independent repetitions of all four modes in a
+seeded randomized order: 60 seconds of warmup and 180 seconds of measured load
+per run. Each route receives 50 requests/second with 25 preallocated and maximum
+virtual users. Offered load stays fixed when responses slow down; errors,
+dropped iterations, incorrect response bytes and observed exporter failures
+fail the run. These checks do not establish maximum sustainable capacity.
+
+Long runs require a clean committed checkout, `ARKENIVA_BENCHMARK_RUNNER=disposable-vm`,
+at least 5 GiB of free artifact space, and `ARKENIVA_BENCHMARK_FIXTURE_METADATA`
+pointing to a protected JSON description of actual fixture image digests and
+resource limits. Supply measured infrastructure metadata without credentials.
+`ARKENIVA_BENCHMARK_SERVER_CPU` and `ARKENIVA_BENCHMARK_LOAD_CPU` optionally pin
+the owned processes through Linux `taskset`; the report records those choices.
+Give each command a new output directory outside Git:
+
+```sh
+export ARKENIVA_BENCHMARK_RUNNER=disposable-vm
+export ARKENIVA_BENCHMARK_FIXTURE_METADATA=/private/fixture-metadata.json
+python3 packages/database-postgres/test/fixtures/run.py /private/postgres/environment.json node tools/benchmark/http.mjs /private/http-campaign
+python3 packages/database-postgres/test/fixtures/run.py /private/postgres/environment.json node tools/benchmark/http.mjs /private/http-soak --soak
+```
+
+The separate soak warms up for 60 seconds, then measures STANDARD mode for one
+hour. Campaign minimum load time is 80 minutes; soak minimum load time is 61
+minutes, plus process preparation and final flush. `--smoke` runs only one
+repetition with one second of warmup and three measured seconds and must not
+be presented as long-run evidence.
+
+### Evidence and interpretation
+
+Each protected run retains compressed raw k6 JSON, summaries, application logs,
+meter events, a server resource time series and, in detailed mode, a CPU profile.
+`environment.json` records the exact commit, versions, OS, affinity, limits,
+workload and explicit coverage gaps. Short-lived token configuration files are
+removed after each load phase. `report.json` and `summary.csv` retain measured
+results; partial failures leave an explicit failure record. No artifacts belong
+in the product checkout or Git history.
+
+Latency percentiles describe client HTTP send/wait/receive time; raw k6 output
+also retains connection/blocking observations. RSS and heap are sampled once
+per second; short peaks can be missed. Pool waiting and logger/meter queue maxima
+are sampled, not exhaustive histories. CPU, GC, memory and event-loop values
+belong to the server process across all three route classes; they cannot be
+assigned exactly to a request or tenant. The CPU interval includes measured
+load-process preparation and graceful completion. Export flush and CPU-profile
+shutdown are outside that CPU interval. Client bytes are observed application
+traffic rather than billed egress or complete packet measurements.
+
+Comparisons resample whole paired repetitions 10,000 times with a fixed seed,
+report 95% percentile confidence intervals, and expose baseline variation.
+They do not treat thousands of requests as independent infrastructure trials.
+Physical host contention and virtualization remain reported limitations. All
+reports use `releaseGate:false`: preliminary relative budgets and near-zero
+latency absolute budgets require calibration and explicit approval before they
+can become release gates. A successful command proves its recorded checks and
+measurements, without asserting production capacity or a regression budget.
