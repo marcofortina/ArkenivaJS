@@ -387,6 +387,34 @@ importers:
         specifier: workspace:*
         version: link:../http
 
+  packages/cache:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@arkenivajs/database-redis':
+        specifier: workspace:*
+        version: link:../database-redis
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/metering':
+        specifier: workspace:*
+        version: link:../metering
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+      redis:
+        specifier: 6.3.0
+        version: 6.3.0(@opentelemetry/api@1.10.0)
+
   packages/config:
     dependencies:
       '@arkenivajs/core':
