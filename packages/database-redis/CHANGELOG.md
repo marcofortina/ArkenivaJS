@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Add an owned readonly readiness hook for optional health collectors without relaxing public facade lifecycle guards.
+
 - Add the optional native Redis provider with strict TLS/ACL configuration,
   scoped UTF-8 values, NX/millisecond TTL, exact safe counters and Pub/Sub counts.
 - Bound commands and results, expose explicit native ownership and surface

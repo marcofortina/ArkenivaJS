@@ -24,7 +24,7 @@ export interface RedisObservationPorts {
   readonly telemetry?: Telemetry;
   readonly meter?: UsageMeter;
 }
-type Operation = 'get' | 'set' | 'del' | 'increment' | 'publish';
+type Operation = 'get' | 'set' | 'del' | 'increment' | 'publish' | 'ping';
 
 function options(input: OperationOptions = {}): { timeoutMs: number; signal?: AbortSignal } {
   if (
@@ -204,6 +204,11 @@ export class RedisConnection implements RedisProvider {
       }
     })();
     return this.starting;
+  }
+
+  /** Readiness uses the actual scoped native PING and the same owned cancellation/admission as other readonly calls. */
+  async health(input?: OperationOptions): Promise<boolean> {
+    return (await this.run('ping', false, input, (client) => client.ping())) === 'PONG';
   }
 
   private run<T>(
