@@ -38,7 +38,9 @@
     "test:integration:etcd": "node scripts/test.mjs database-etcd-integration",
     "coverage:etcd": "pnpm --filter @arkenivajs/database-etcd coverage",
     "test:integration:mongodb": "node scripts/test.mjs database-mongodb-integration",
-    "coverage:mongodb": "pnpm --filter @arkenivajs/database-mongodb coverage"
+    "coverage:mongodb": "pnpm --filter @arkenivajs/database-mongodb coverage",
+    "test:integration:cache": "node scripts/test.mjs cache-integration",
+    "coverage:cache": "pnpm --filter @arkenivajs/cache coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -197,6 +197,8 @@ jobs:
         run: docker compose -f packages/database-redis/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:redis
       - run: pnpm --filter @arkenivajs/example-redis test:integration
+      - run: pnpm coverage:cache
+      - run: pnpm --filter @arkenivajs/example-cache test:integration
       - if: always() && env.REDIS_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-redis/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.REDIS_FIXTURE_DIRECTORY != ''
