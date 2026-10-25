@@ -1,0 +1,93 @@
+name: arkenivajs-mongodb-test
+x-server: &server
+  image: ${ARKENIVA_MONGODB_IMAGE:?A verified MongoDB image is required}
+  user: '999:999'
+  entrypoint: ['mongod']
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  mem_limit: 768m
+  cpus: 1
+  pids_limit: 256
+  environment:
+    HOME: /tmp/home
+  tmpfs:
+    - /tmp:uid=999,gid=999,mode=0700,size=67108864
+  healthcheck:
+    test:
+      - CMD
+      - mongosh
+      - mongodb://localhost:27017/admin?directConnection=true
+      - --quiet
+      - --norc
+      - --tls
+      - --tlsCAFile
+      - /fixture/ca.crt
+      - --eval
+      - const c=JSON.parse(require('fs').readFileSync('/fixture/health.json','utf8')); if(!db.auth(c.username,c.password))quit(1); if(db.adminCommand({ping:1}).ok!==1)quit(1);
+    interval: 2s
+    timeout: 10s
+    retries: 90
+services:
+  mongodb:
+    <<: *server
+    command:
+      - --bind_ip_all
+      - --port=27017
+      - --dbpath=/data/db
+      - --replSet=arkeniva
+      - --keyFile=/fixture/replica.key
+      - --auth
+      - --tlsMode=requireTLS
+      - --tlsCertificateKeyFile=/fixture/server.pem
+      - --tlsCAFile=/fixture/ca.crt
+      - --tlsAllowConnectionsWithoutCertificates
+      - --wiredTigerCacheSizeGB=0.25
+      - --oplogSize=64
+      - --quiet
+    ports: ['${MONGODB_FIXTURE_BIND_ADDRESS:-127.0.0.1}:27018:27017']
+    volumes:
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/server.pem:/fixture/server.pem:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/replica.key:/fixture/replica.key:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/health.json:/fixture/health.json:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/data-server:/data/db
+  wrong-san:
+    <<: *server
+    command:
+      - --bind_ip_all
+      - --port=27017
+      - --dbpath=/data/db
+      - --replSet=arkeniva
+      - --keyFile=/fixture/replica.key
+      - --auth
+      - --tlsMode=requireTLS
+      - --tlsCertificateKeyFile=/fixture/server.pem
+      - --tlsCAFile=/fixture/ca.crt
+      - --tlsAllowConnectionsWithoutCertificates
+      - --wiredTigerCacheSizeGB=0.25
+      - --oplogSize=64
+      - --quiet
+    extra_hosts: ['wrong.invalid:127.0.0.1']
+    ports: ['${MONGODB_FIXTURE_BIND_ADDRESS:-127.0.0.1}:27019:27017']
+    volumes:
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/wrong-san.pem:/fixture/server.pem:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/replica.key:/fixture/replica.key:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/health.json:/fixture/health.json:ro
+      - ${MONGODB_FIXTURE_DIRECTORY:?}/data-wrong-san:/data/db
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - mongodb://wrong.invalid:27017/admin?directConnection=true
+        - --quiet
+        - --norc
+        - --tls
+        - --tlsCAFile
+        - /fixture/ca.crt
+        - --eval
+        - const c=JSON.parse(require('fs').readFileSync('/fixture/health.json','utf8')); if(!db.auth(c.username,c.password))quit(1); if(db.adminCommand({ping:1}).ok!==1)quit(1);
+      interval: 2s
+      timeout: 10s
+      retries: 90
