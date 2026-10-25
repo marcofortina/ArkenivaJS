@@ -102,3 +102,73 @@ leases. Its native handle is the actual `Etcd3` SDK instance. See the
 [etcd reference](../packages/database-etcd/README.md) and
 [executable consumer](../examples/etcd/README.md) for mTLS/ACL configuration,
 bounded recovery, unknown write outcomes and resource cleanup.
+
+## Redis
+
+`redisPlugin()` from `@arkenivajs/database-redis` installs a separate
+`RedisProvider` for the explicitly configured root database definition.
+`get`, `set`, `del`, `increment` and `publish` retain native Redis semantics;
+`set` reports whether NX/expiration options were accepted, and a publication's
+subscriber count does not imply durable delivery. `native()` is an explicit
+escape hatch with reduced portable validation/measurement coverage. See the
+[Redis reference](../packages/database-redis/README.md) and
+[executable consumer](../examples/redis/README.md).
+
+## MongoDB documents
+
+`mongodbPlugin()` from `@arkenivajs/database-mongodb` installs `app.mongo`.
+The portable document port exposes bounded `findOne`, `findMany`, `insertOne`,
+`updateOne`, `deleteOne`, `aggregate` and `withTransaction`. Actual native
+BSON/session semantics are retained; application DTOs must explicitly convert
+ObjectId, Decimal128 and int64 before JSON output. A transaction requires a
+replica set and is never blindly replayed. See the
+[MongoDB reference](../packages/database-mongodb/README.md) and
+[customer consumer](../examples/mongodb/README.md).
+
+## Checked JSON cache
+
+`cachePlugin(options?)` from `@arkenivajs/cache` wraps an explicitly installed
+Redis provider. `get<T>` returns checked JSON or null; `set<T>` captures data
+before submission and accepts a positive millisecond TTL; `delete` returns
+whether a value was actually removed. The default TTL is 30,000 ms. Schema
+bounds reject unsupported data instead of executing custom serialization.
+`tenantCache(cache, verifier, context)` binds keys to an application-verified
+tenant and rejects attempts to address another namespace. See the
+[cache reference](../packages/cache/README.md) and
+[complete example](../examples/cache/README.md).
+
+## Health and readiness
+
+`healthPlugin(options?)` from `@arkenivajs/health` installs `app.health`.
+`live()` reports local process liveness. `ready()` checks bounded dependency
+probes and returns safe failing names; concurrent requests share probe work.
+Timed-out native probes remain owned until their actual settlement. HTTP
+`/readyz` returns 503 for unavailable dependencies while `/livez` can remain 200.
+See the [health reference](../packages/health/README.md) and
+[HTTP/Redis readiness service](../examples/health/README.md).
+
+## Optional Core NATS messaging
+
+`messagingPlugin(options)` and `createNatsBus(options, operation?)` from
+`@arkenivajs/messaging` require verified TLS, scoped credentials and an explicit
+asynchronous error policy. `publish<T>` captures checked JSON and returns a
+UUID plus `acknowledged:false` for Core NATS. A successful communication round
+trip is not proof of durable storage or subscriber acceptance. Interrupted
+submitted publications can have an unknown outcome and are not replayed.
+`subscribe<T>` returns an idempotently closable subscription; handler errors
+reach the configured policy. Background consumers never receive trusted tenant
+state from wire JSON and must establish their own metering authority.
+See the [messaging reference](../packages/messaging/README.md),
+[strict package compatibility check](../packages/messaging/compat/README.md)
+and [executable consumer](../examples/messaging/README.md).
+
+## Generated declarations and distributable artifacts
+
+`pnpm docs:build` renders the complete exported symbol/type reference from
+actual package sources and checks local documentation links. Its output is
+`.build/api/index.html`. Package-specific references above describe behavior,
+limits, defaults, errors, cancellation and measurement coverage beyond the
+signatures. `pnpm test:packed:examples` separately installs real package archives
+in a private temporary consumer, recompiles example source/tests against those
+public declarations and executes their suites. See the
+[learning path](learning-path.md) for prerequisites and live examples.
