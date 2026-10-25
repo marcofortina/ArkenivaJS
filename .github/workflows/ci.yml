@@ -25,6 +25,8 @@ jobs:
       - run: corepack enable && corepack install
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      - name: Enforce Oracle mock contracts without a live compatibility claim
+        run: pnpm coverage:oracle
       - run: pnpm audit --audit-level=high
 
   telemetry-integration:
