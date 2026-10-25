@@ -26,14 +26,40 @@ export const APPLICATION_SCHEMA = object(
       },
       ['name', 'version', 'environment'],
     ),
-    http: object(
-      {
-        host: string,
-        port: { type: 'integer', minimum: 1, maximum: 65535 },
-        requestTimeoutMs: positiveInteger,
-      },
-      ['host', 'port'],
-    ),
+    http: {
+      oneOf: [
+        object(
+          {
+            protocol: { const: 'http' },
+            host: string,
+            port: { type: 'integer', minimum: 0, maximum: 65535 },
+            requestTimeoutMs: positiveInteger,
+          },
+          ['host', 'port'],
+        ),
+        object(
+          {
+            protocol: { const: 'https' },
+            host: string,
+            port: { type: 'integer', minimum: 0, maximum: 65535 },
+            requestTimeoutMs: positiveInteger,
+            http2: { type: 'boolean' },
+            tls: object(
+              {
+                certificateFile: string,
+                privateKeyFile: string,
+                caFile: string,
+                privateKeyPassphraseEnv: { type: 'string', pattern: '^[A-Z_][A-Z0-9_]*$' },
+                minVersion: { enum: ['TLSv1.2', 'TLSv1.3'] },
+                clientCertificate: { enum: ['none', 'required'] },
+              },
+              ['certificateFile', 'privateKeyFile'],
+            ),
+          },
+          ['protocol', 'host', 'port', 'tls'],
+        ),
+      ],
+    },
     logging: object(
       { level: { enum: ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] } },
       ['level'],

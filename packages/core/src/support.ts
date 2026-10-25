@@ -147,7 +147,7 @@ export function mergeData<T extends Record<string, unknown>>(base: T, update: Pa
 }
 
 const secretKey =
-  /^(password|authorization|cookie|token|clientSecret|secret|accessToken|refreshToken|apiKey|connectionString)$/i;
+  /^(password|authorization|cookie|token|clientSecret|secret|accessToken|refreshToken|apiKey|connectionString|privateKeyFile|privateKeyPassphraseEnv)$/i;
 
 /** Remove secret fields at every nesting level, including explicit schema paths. */
 export function redactData<T>(input: T, paths: readonly string[] = [], prefix = ''): T {

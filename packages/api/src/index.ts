@@ -3,6 +3,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { Server as NativeTlsServer, type TlsOptions } from 'node:tls';
+import { validateServerTlsFiles, withServerTls } from './server-tls.js';
 import Fastify from 'fastify';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import swagger from '@fastify/swagger';
@@ -21,6 +23,7 @@ import type {
   MeterSession,
   MeterResultStatus,
   HealthRegistry,
+  ServerTlsFiles,
 } from '@arkenivajs/core';
 import {
   copyData,
@@ -67,7 +70,9 @@ export interface ApiOptions {
   readonly readinessTimeoutMs?: number;
   readonly isReady?: () => boolean;
   readonly onObservation?: (event: ApiObservation) => void;
-  readonly tls?: { readonly key: string; readonly cert: string };
+  readonly protocol?: 'http' | 'https';
+  readonly http2?: boolean;
+  readonly tls?: { readonly key: string; readonly cert: string } | ServerTlsFiles;
 }
 /** Managed standalone servers expose their actual bound address and bounded cleanup. */
 export interface ManagedApiServer extends ApiServer {
@@ -84,6 +89,8 @@ export interface ManagedApiServer extends ApiServer {
 }
 type Auth = NonNullable<Application['auth']>;
 const SERVICES = Symbol('api.services');
+/** Application composition owns listener selection; standalone servers retain explicit start semantics. */
+const listenerModes = new WeakMap<ManagedApiServer, (enabled: boolean) => void>();
 type InternalApi = ManagedApiServer & {
   [SERVICES](
     logger: Logger,
@@ -207,10 +214,53 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   for (const callback of [options.isReady, options.onObservation])
     if (callback !== undefined && typeof callback !== 'function')
       throw invalid('Invalid API callback');
+  const tls = options.tls === undefined ? undefined : freezeData(copyData(options.tls));
+  if (
+    (options.protocol !== undefined && !['http', 'https'].includes(options.protocol)) ||
+    (options.protocol === 'http' && tls !== undefined) ||
+    (options.protocol === 'https' && tls === undefined) ||
+    (options.http2 !== undefined && (typeof options.http2 !== 'boolean' || tls === undefined)) ||
+    (port === 0 && options.service.environment !== 'test')
+  )
+    throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid HTTP transport selection' });
+  if (options.http2 === true)
+    throw new KitError({
+      code: 'EK_UNSUPPORTED_CAPABILITY',
+      message: 'HTTP/2 transport is not available',
+    });
+  let tlsFiles: Readonly<ServerTlsFiles> | undefined;
+  let nativeTls: TlsOptions | undefined;
+  if (tls !== undefined) {
+    if (!tls || typeof tls !== 'object' || Array.isArray(tls))
+      throw new KitError({
+        code: 'EK_HTTP_TLS_CONFIG',
+        message: 'Invalid server TLS configuration',
+      });
+    if ('certificateFile' in tls) {
+      tlsFiles = validateServerTlsFiles(tls);
+      nativeTls = {
+        minVersion: tlsFiles.minVersion ?? 'TLSv1.2',
+        requestCert: tlsFiles.clientCertificate === 'required',
+        rejectUnauthorized: true,
+      };
+    } else {
+      if (
+        Object.keys(tls).some((key) => key !== 'key' && key !== 'cert') ||
+        !('key' in tls) ||
+        !('cert' in tls) ||
+        typeof tls.key !== 'string' ||
+        typeof tls.cert !== 'string' ||
+        tls.key.length > 1048576 ||
+        tls.cert.length > 1048576
+      )
+        throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid legacy TLS material' });
+      nativeTls = { key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' };
+    }
+  }
   options = Object.freeze({
     ...options,
     service: freezeData(copyData(options.service)),
-    ...(options.tls ? { tls: Object.freeze({ ...options.tls }) } : {}),
+    ...(tls === undefined ? {} : { tls }),
   });
   let logger = options.logger,
     auth = options.auth;
@@ -219,6 +269,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
   let health = options.health;
   let readinessProbe: ReturnType<HealthRegistry['ready']> | undefined;
   let state: 'created' | 'starting' | 'ready' | 'closing' | 'closed' = 'created';
+  let bindListener = true;
   let starting: Promise<void> | undefined, closing: Promise<void> | undefined;
   let document: Readonly<Record<string, unknown>> | undefined;
   const counters = { completed: 0, failed: 0, observerFailures: 0 };
@@ -279,11 +330,7 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       return503OnClosing: false,
       onProtoPoisoning: 'error',
       onConstructorPoisoning: 'error',
-      ...(options.tls
-        ? {
-            https: { key: options.tls.key, cert: options.tls.cert, minVersion: 'TLSv1.2' as const },
-          }
-        : {}),
+      ...(nativeTls === undefined ? {} : { https: nativeTls }),
     });
   } catch (cause) {
     throw new KitError({
@@ -615,6 +662,17 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         );
       state = 'starting';
       starting = within(async () => {
+        if (bindListener && tlsFiles) {
+          const native = server.server;
+          if (!(native instanceof NativeTlsServer))
+            throw new KitError({
+              code: 'EK_HTTP_TLS_CONFIG',
+              message: 'The selected server cannot load a TLS context',
+            });
+          await withServerTls(tlsFiles, (material) => native.setSecureContext(material));
+          if (operation.signal?.aborted || state !== 'starting')
+            throw new KitError({ code: 'EK_ABORTED', message: 'API activation aborted' });
+        }
         await server.register(swagger, {
           openapi: {
             openapi: '3.1.0',
@@ -823,7 +881,17 @@ export function createApi(options: ApiOptions): ManagedApiServer {
         };
         operation.signal?.addEventListener('abort', abort, { once: true });
         try {
-          await server.listen({ host, port });
+          if (bindListener) {
+            try {
+              await server.listen({ host, port });
+            } catch (cause) {
+              throw new KitError({
+                code: 'EK_HTTP_LISTEN',
+                message: 'HTTP listener could not bind',
+                cause,
+              });
+            }
+          }
           if (operation.signal?.aborted || state === 'closed' || state === 'closing') {
             abort();
             throw new KitError({ code: 'EK_ABORTED', message: 'API activation aborted' });
@@ -866,6 +934,10 @@ export function createApi(options: ApiOptions): ManagedApiServer {
       return closing;
     },
   };
+  listenerModes.set(api, (enabled) => {
+    registering();
+    bindListener = enabled;
+  });
   return Object.freeze(api);
 }
 
@@ -910,17 +982,19 @@ export function apiPlugin(options: ApiPluginOptions = {}): ComposablePlugin {
     dependencies: ['logging', 'api-health', ...(options.dependencies ?? [])],
     [SUPPORT_PLUGINS]: [healthSupport],
     [PREPARE_PLUGIN](context) {
-      return new Map([
-        [
-          COMPONENTS.api,
-          createApi({
-            ...options,
-            service: context.options.service,
-            ...(context.options.http ?? {}),
-            isReady: () => context.state() === 'READY' && (options.isReady?.() ?? true),
-          }),
-        ],
-      ]);
+      if (options.tls !== undefined && context.options.http !== undefined)
+        throw new KitError({
+          code: 'EK_HTTP_TLS_CONFIG',
+          message: 'Application TLS must use its explicit HTTPS configuration',
+        });
+      const api = createApi({
+        ...options,
+        service: context.options.service,
+        ...(context.options.http ?? {}),
+        isReady: () => context.state() === 'READY' && (options.isReady?.() ?? true),
+      });
+      listenerModes.get(api)!(context.options.http !== undefined);
+      return new Map([[COMPONENTS.api, api]]);
     },
     init(context) {
       const api = context.require<InternalApi>(COMPONENTS.api);

@@ -14,3 +14,6 @@
 - Capture optional scoped health hooks and order collectors after initialized owners without exposing foreign private components.
 
 - Add the external server TLS file-reference contract and sanitized TLS configuration/material errors.
+
+- Add discriminated HTTP/HTTPS configuration, test-only ephemeral ports and
+  redaction of private key file/passphrase references.
