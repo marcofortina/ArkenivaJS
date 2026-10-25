@@ -37,40 +37,50 @@ for independently tested challenge, limiter and evidence adapters.
 
 ## Trusted runtime configuration
 
-`TotpServiceOptions` requires an explicit framework `environment`, a
-`TotpTrustPolicy`, `recoveryCodeHmac` and the four storage/protection providers.
-Every provider and trust policy declares `usage:'production'|'test-only'`;
-production rejects every test-only declaration. This classification does not
-prove durability or authorization: concrete adapters still require their own
-atomicity, failure and runtime-provenance conformance tests.
+`TotpServiceOptions` requires `subjectAuthority`, `recoveryHmac` and the four
+storage/protection providers. `environment` defaults to `production`. Providers
+may declare `usage:'production'|'test-only'`; production rejects explicit test-only
+adapters. The HMAC provider must declare `securityLevel:'production'` in production.
+Declarations alone cannot establish durability or authorization: concrete adapters
+require independent atomicity, failure, secret-management and provenance tests.
 
-`trustPolicy.resolveSubject(subject, operation, options?)` must ask the
-application's real primary authority to revalidate session, authenticated
-tenant and owner, returning its immutable context or `null`. The service checks
-the exact issuer/account/session/tenant binding. A TypeScript brand, copied
-object or caller-supplied account ID establishes no provenance.
-`trustPolicy.authorize(subject, {action,authorization?}, options?)` independently
-checks permission and sufficiently strong recent authentication for enrollment,
-replacement, disabling and recovery-code management. Enrollment/replacement
-require authority-owned proof even though the API has no caller grant argument.
-Disabling/recovery additionally require the existing management authorization;
-its fields alone cannot establish authority. Primary authentication for those
-sensitive operations is bounded to five minutes and supplied management grants
-to one minute; the application can enforce a stricter policy.
+`subjectAuthority.resolveSubject(subject, options?)` must consult the application's
+real primary authority to revalidate the session, issuer, authenticated tenant and
+owner, returning its immutable context. The service rejects subject substitution.
+A TypeScript brand, copied object or caller-supplied account ID establishes no trust.
+`subjectAuthority.authorize({action,subject,authorization?}, options?)` must reject
+denied actions; successful authorization resolves without a value. It runs before
+factor/limiter access for **every** operation, including QR and enabled-state reads.
+Actions are `begin-enrollment`, `read-enrollment-qr`, `confirm-enrollment`, `verify`,
+`is-enabled`, `disable`, `generate-recovery-codes` and `verify-recovery-code`.
 
-`recoveryCodeHmac` selects exactly `algorithm:'HMAC-SHA256'` and a versioned
-external `keyProvider`. `currentKeyId(options?)` chooses a new set's version;
-`resolveKey(keyId, options?)` obtains 32–64 secure key bytes. Version IDs use
-1–64 ASCII letters, digits, underscores or hyphens. Retain old versions while
-their unused codes remain valid. The framework computes a framed HMAC bound to
-version, issuer, subject and tenant. Provider-owned keys are never changed;
-owned copies are cleared after use. Database state contains keyed hashes only.
+The authority independently enforces sufficiently strong recent authentication for
+enrollment, replacement and management. It must recheck the current transition at
+confirmation, since another activation may turn enrollment into replacement.
+Disabling/regeneration additionally require an independently verified management
+grant; its fields alone do not confer authority. Sensitive primary authentication
+is bounded to five minutes and supplied management grants to one minute; an
+application may require stricter freshness. Authority failures fail closed;
+explicit denials use sanitized `EK_AUTH_FORBIDDEN`/`EK_MFA_ASSURANCE_REQUIRED`.
 
-`clock?:()=>number` accepts trusted integer epoch milliseconds at construction
-in test/development. Production forbids this override and captures the system
-clock; the deployment must maintain trustworthy synchronized time. Request
-arguments cannot choose the clock, environment or provider. Provider operations
-obey cancellation/deadlines, and late results cannot initiate subsequent work.
+`recoveryHmac` uses exactly `algorithm:'HMAC-SHA256'`. `createVerifier(input)` returns
+a version/key-ID-qualified opaque keyed verifier. `candidateVerifiers(input)` returns
+one through eight distinct opaque verifiers for approved current/retained keys.
+The input contains issuer, subject, optional tenant, the **server-retrieved active
+factor ID**, and plaintext code. The backend must use unambiguous domain separation
+and external secret-managed keys with at least 256 bits of entropy. It may use a
+KMS MAC operation: the framework never requests raw HMAC keys. Retain old versions
+while their unused codes remain valid; retiring a key invalidates those codes.
+Missing keys, duplicate/oversized candidates and provider failures reject safely.
+Only opaque verifiers reach the state store; provider errors and verifier values
+are excluded from public errors and telemetry.
+
+`clock?:TotpClock` supplies `nowEpochMs():number` only with `environment:'test'`.
+Production and development reject injected clocks. Otherwise the service captures
+the host wall clock; deployment operators must synchronize it. Every reading must
+be a finite nonnegative integer epoch millisecond value. Request arguments cannot
+select clock, environment or providers. Provider operations obey deadlines and
+cancellation; late results cannot initiate subsequent work.
 
 ## Service operations and persistence
 
@@ -82,8 +92,8 @@ obey cancellation/deadlines, and late results cannot initiate subsequent work.
 | `verify(subject, code, options?)`                         | Verify the six-digit proof and generation-bound durable step CAS, then persist one-use evidence before returning it.                                                |
 | `isEnabled(subject, options?)`                            | Resolve the current verified owner and inspect its active factor.                                                                                                   |
 | `disable(subject, authorization, options?)`               | Independently authorize recent management proof and atomically revoke an existing factor, pending state and recovery set.                                           |
-| `generateRecoveryCodes(subject, authorization, options?)` | Authorize management, issue ten independent 256-bit random codes and atomically replace the stored keyed-hash set before returning plaintext once.                  |
-| `verifyRecoveryCode(subject, code, options?)`             | Resolve the primary owner, obtain the code's retained HMAC key version, consume its exact owner-bound hash atomically and persist evidence.                         |
+| `generateRecoveryCodes(subject, authorization, options?)` | Authorize management, issue 10–20 independent 256-bit random codes and atomically replace the stored keyed-hash set before returning plaintext once.                |
+| `verifyRecoveryCode(subject, code, options?)`             | Resolve the primary owner, obtain bounded versioned candidates, consume its exact factor/owner-bound verifier atomically and persist evidence.                      |
 
 TOTP defaults stay SHA1/30 seconds/six digits with ±1 step; `driftSteps:0`
 selects the exact interval. Enrollment TTL defaults to 300000 ms, bounded to
@@ -98,8 +108,9 @@ attempts count, and provider outage never skips the limit. Primary authenticatio
 and authorization run before factor access. Caller deadlines/cancellation apply
 to every provider, with no automatic write retry.
 
-Recovery plaintext uses `keyVersion.base64urlRandomBytes`; only a framed,
-owner-bound versioned HMAC is stored. Rotation retains old external keys while
+Recovery plaintext is canonical base64url encoding of 32 independent random bytes.
+`recoveryCodeCount` defaults to 10 and accepts only integers 10 through 20.
+Only a factor/owner-bound versioned HMAC verifier is stored. Rotation retains old external keys while
 old unused codes remain valid. Regeneration and factor replacement/revocation
 invalidate earlier sets. Missing keys or an uncertain write never produce a
 success result. A consumed OTP/recovery proof stays spent if evidence persistence

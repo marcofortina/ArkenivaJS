@@ -12,10 +12,12 @@ export type {
   TotpService,
   TotpComponentPolicy,
   TotpComponent,
-  TotpOperation,
-  TotpTrustPolicy,
-  TotpRecoveryKeyProvider,
-  TotpRecoveryCodeHmacProvider,
+  TotpPolicyAction,
+  TotpPolicyRequest,
+  TotpTrustedSubjectAuthority,
+  TotpRecoveryProofInput,
+  TotpRecoveryHmacProvider,
+  TotpClock,
 } from './contracts.js';
 export type {
   OperationOptions,

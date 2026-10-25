@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import { createHmac } from 'node:crypto';
 import { KitError } from '@arkenivajs/core';
 import type {
   MfaManagementAuthorization,
@@ -9,7 +8,7 @@ import type {
   OperationOptions,
 } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
-import type { TotpServiceOptions, TotpOperation, TotpTrustPolicy } from './contracts.js';
+import type { TotpServiceOptions, TotpPolicyAction, TotpRecoveryProofInput } from './contracts.js';
 
 export const policyError = () =>
   new KitError({ code: 'EK_MFA_POLICY', message: 'Invalid or insufficient TOTP security policy' });
@@ -47,21 +46,23 @@ export function instant(value: unknown): number {
   if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== value) throw policyError();
   return parsed;
 }
-export function keyId(value: unknown): asserts value is string {
-  text(value, 64);
-  if (/[^A-Za-z0-9_-]/.test(value)) throw policyError();
-}
-function method<T extends (...args: never[]) => unknown>(object: object, name: string): T {
+function property(object: object, name: string): unknown {
+  if (!object || typeof object !== 'object') throw policyError();
   let current: object | null = object;
   while (current) {
     const descriptor = Object.getOwnPropertyDescriptor(current, name);
     if (descriptor) {
-      if (!('value' in descriptor) || typeof descriptor.value !== 'function') throw policyError();
-      return descriptor.value.bind(object) as T;
+      if (!('value' in descriptor)) throw policyError();
+      return descriptor.value;
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
-  throw policyError();
+  return undefined;
+}
+function method<T extends (...args: never[]) => unknown>(object: object, name: string): T {
+  const value = property(object, name);
+  if (typeof value !== 'function') throw policyError();
+  return value.bind(object) as T;
 }
 function component<T extends object>(
   value: T,
@@ -69,15 +70,14 @@ function component<T extends object>(
   environment: string,
 ): T {
   if (!value || typeof value !== 'object') throw policyError();
-  const usage = Object.getOwnPropertyDescriptor(value, 'usage');
+  const usage = property(value, 'usage');
   if (
-    !usage ||
-    !('value' in usage) ||
-    !['production', 'test-only'].includes(usage.value) ||
-    (environment === 'production' && usage.value !== 'production')
+    usage !== undefined &&
+    (!['production', 'test-only'].includes(usage as string) ||
+      (environment === 'production' && usage !== 'production'))
   )
     throw policyError();
-  const result: Record<string, unknown> = { usage: usage.value };
+  const result: Record<string, unknown> = {};
   for (const name of methods) result[name] = method(value, name);
   return Object.freeze(result) as T;
 }
@@ -127,8 +127,8 @@ export function createTotpRuntime(input: TotpServiceOptions) {
   const options = data(input, [
     'issuer',
     'environment',
-    'trustPolicy',
-    'recoveryCodeHmac',
+    'subjectAuthority',
+    'recoveryHmac',
     'stateStore',
     'rateLimitStore',
     'secretProtector',
@@ -138,22 +138,32 @@ export function createTotpRuntime(input: TotpServiceOptions) {
     'digits',
     'driftSteps',
     'enrollmentTtlMs',
+    'recoveryCodeCount',
   ]) as unknown as TotpServiceOptions;
+  const environment = options.environment === undefined ? 'production' : options.environment;
+  const driftSteps = options.driftSteps === undefined ? 1 : options.driftSteps,
+    enrollmentTtlMs = options.enrollmentTtlMs === undefined ? 300000 : options.enrollmentTtlMs,
+    recoveryCodeCount = options.recoveryCodeCount === undefined ? 10 : options.recoveryCodeCount;
   text(options.issuer, 128);
   if (
     options.issuer.trim() !== options.issuer ||
-    !['production', 'development', 'test'].includes(options.environment) ||
+    !['production', 'development', 'test'].includes(environment) ||
     (options.periodSeconds !== undefined && options.periodSeconds !== 30) ||
     (options.digits !== undefined && options.digits !== 6) ||
-    ![0, 1].includes(options.driftSteps ?? 1) ||
-    !Number.isSafeInteger(options.enrollmentTtlMs ?? 300000) ||
-    (options.enrollmentTtlMs ?? 300000) < 1 ||
-    (options.enrollmentTtlMs ?? 300000) > 300000 ||
-    (options.clock !== undefined &&
-      (typeof options.clock !== 'function' || options.environment === 'production'))
+    ![0, 1].includes(driftSteps) ||
+    !Number.isSafeInteger(enrollmentTtlMs) ||
+    enrollmentTtlMs < 1 ||
+    enrollmentTtlMs > 300000 ||
+    !Number.isSafeInteger(recoveryCodeCount) ||
+    recoveryCodeCount < 10 ||
+    recoveryCodeCount > 20 ||
+    (options.clock !== undefined && environment !== 'test')
   )
     throw policyError();
-  const clock = options.clock ?? Date.now.bind(Date);
+  const clock =
+    options.clock === undefined
+      ? Date.now.bind(Date)
+      : method<() => number>(options.clock, 'nowEpochMs');
   const now = () => {
     let value: number;
     try {
@@ -182,28 +192,47 @@ export function createTotpRuntime(input: TotpServiceOptions) {
       'replaceRecoveryHashes',
       'consumeRecoveryHash',
     ],
-    options.environment,
+    environment,
   );
-  const limiter = component(options.rateLimitStore, ['checkAndRecord'], options.environment);
-  const protector = component(options.secretProtector, ['seal', 'open'], options.environment);
-  const evidence = component(options.evidenceStore, ['recordOnce', 'consume'], options.environment);
-  const trust = component(
-    options.trustPolicy,
-    ['resolveSubject', 'authorize'],
-    options.environment,
-  );
-  const hmac = data(options.recoveryCodeHmac, ['algorithm', 'keyProvider']);
-  if (hmac.algorithm !== 'HMAC-SHA256') throw policyError();
-  const keys = component(
-    hmac.keyProvider as TotpServiceOptions['recoveryCodeHmac']['keyProvider'],
-    ['currentKeyId', 'resolveKey'],
-    options.environment,
-  );
+  const limiter = component(options.rateLimitStore, ['checkAndRecord'], environment);
+  const protector = component(options.secretProtector, ['seal', 'open'], environment);
+  const evidence = component(options.evidenceStore, ['recordOnce', 'consume'], environment);
+  const trust = component(options.subjectAuthority, ['resolveSubject', 'authorize'], environment);
+  const algorithm = property(options.recoveryHmac, 'algorithm'),
+    securityLevel = property(options.recoveryHmac, 'securityLevel');
+  if (
+    algorithm !== 'HMAC-SHA256' ||
+    !['production', 'test-only'].includes(securityLevel as string) ||
+    (environment === 'production' && securityLevel !== 'production')
+  )
+    throw policyError();
+  const hmac = Object.freeze({
+    createVerifier: method<TotpServiceOptions['recoveryHmac']['createVerifier']>(
+      options.recoveryHmac,
+      'createVerifier',
+    ),
+    candidateVerifiers: method<TotpServiceOptions['recoveryHmac']['candidateVerifiers']>(
+      options.recoveryHmac,
+      'candidateVerifiers',
+    ),
+  });
+  const verifier = (value: unknown, input: TotpRecoveryProofInput): string => {
+    if (
+      typeof value !== 'string' ||
+      value.length < 1 ||
+      value.length > 1024 ||
+      /[^\x21-\x7e]/.test(value) ||
+      value.includes(input.code)
+    )
+      throw storageError();
+    return value;
+  };
 
   return Object.freeze({
     issuer: options.issuer,
-    driftSteps: options.driftSteps ?? 1,
-    enrollmentTtlMs: options.enrollmentTtlMs ?? 300000,
+    recoveryCodeCount,
+    driftSteps,
+    enrollmentTtlMs,
     state,
     limiter,
     protector,
@@ -240,6 +269,12 @@ export function createTotpRuntime(input: TotpServiceOptions) {
             check();
             if (cause instanceof KitError && ['EK_ABORTED', 'EK_TIMEOUT'].includes(cause.code))
               throw cause;
+            if (
+              kind === 'policy' &&
+              cause instanceof KitError &&
+              ['EK_AUTH_FORBIDDEN', 'EK_MFA_ASSURANCE_REQUIRED'].includes(cause.code)
+            )
+              throw new KitError({ code: cause.code, message: 'MFA operation is not authorized' });
             throw kind === 'policy' ? policyError() : storageError();
           }
           check();
@@ -261,16 +296,9 @@ export function createTotpRuntime(input: TotpServiceOptions) {
         controller.abort();
       }
     },
-    async resolve(
-      subject: MfaSubjectContext,
-      operation: TotpOperation,
-      call: TotpCall,
-    ): Promise<MfaSubjectContext> {
+    async resolve(subject: MfaSubjectContext, call: TotpCall): Promise<MfaSubjectContext> {
       const requested = subjectData(subject);
-      const resolved = await call.call(
-        () => trust.resolveSubject(subject, operation, call.options),
-        'policy',
-      );
+      const resolved = await call.call(() => trust.resolveSubject(subject, call.options), 'policy');
       if (!resolved || !Object.isFrozen(resolved))
         throw new KitError({
           code: 'EK_AUTH_FORBIDDEN',
@@ -284,19 +312,29 @@ export function createTotpRuntime(input: TotpServiceOptions) {
     },
     async authorize(
       subject: MfaSubjectContext,
-      action: Parameters<TotpTrustPolicy['authorize']>[1]['action'],
+      action: TotpPolicyAction,
       authorization: MfaManagementAuthorization | undefined,
       call: TotpCall,
     ): Promise<void> {
       const at = call.now();
-      if ((action === 'disable' || action === 'recovery-codes') && authorization === undefined)
+      const sensitive = [
+        'begin-enrollment',
+        'read-enrollment-qr',
+        'confirm-enrollment',
+        'disable',
+        'generate-recovery-codes',
+      ].includes(action);
+      if (
+        (action === 'disable' || action === 'generate-recovery-codes') &&
+        authorization === undefined
+      )
         throw policyError();
-      if (at - instant(subject.authenticatedAt) > 300000) throw policyError();
+      if (sensitive && at - instant(subject.authenticatedAt) > 300000) throw policyError();
       if (authorization !== undefined) {
         const grant = data(authorization, ['action', 'subject', 'trustedSessionId', 'verifiedAt']);
         const time = instant(grant.verifiedAt);
         if (
-          grant.action !== action ||
+          grant.action !== (action === 'generate-recovery-codes' ? 'recovery-codes' : action) ||
           grant.subject !== subject.subject ||
           grant.trustedSessionId !== subject.primarySessionId ||
           time > at ||
@@ -307,58 +345,47 @@ export function createTotpRuntime(input: TotpServiceOptions) {
       const permitted = await call.call(
         () =>
           trust.authorize(
-            subject,
-            { action, ...(authorization === undefined ? {} : { authorization }) },
+            Object.freeze({
+              subject,
+              action,
+              ...(authorization === undefined ? {} : { authorization }),
+            }),
             call.options,
           ),
         'policy',
       );
-      if (permitted !== true) throw policyError();
+      if (permitted !== undefined) throw policyError();
       const completed = call.now();
       if (
-        completed - instant(subject.authenticatedAt) > 300000 ||
+        (sensitive && completed - instant(subject.authenticatedAt) > 300000) ||
         (authorization !== undefined && completed - instant(authorization.verifiedAt) > 60000)
       )
         throw policyError();
     },
-    async activeRecoveryKey(call: TotpCall): Promise<string> {
-      const version = await call.call(() => keys.currentKeyId(call.options));
-      keyId(version);
-      return version;
+    async recoveryVerifier(input: TotpRecoveryProofInput, call: TotpCall): Promise<string> {
+      return verifier(
+        await call.call(() => hmac.createVerifier(Object.freeze(input), call.options)),
+        input,
+      );
     },
-    async recoveryHash(
-      subject: MfaSubjectContext,
-      version: string,
-      code: string,
+    async recoveryCandidates(
+      input: TotpRecoveryProofInput,
       call: TotpCall,
-    ): Promise<string> {
-      keyId(version);
-      const provided = await call.call(() => keys.resolveKey(version, call.options));
-      if (!(provided instanceof Uint8Array) || provided.byteLength < 32 || provided.byteLength > 64)
-        throw storageError();
-      const owned = Buffer.from(provided);
-      try {
-        call.check();
-        const digest = createHmac('sha256', owned)
-          .update(
-            JSON.stringify([
-              'arkenivajs-totp-recovery-v1',
-              version,
-              subject.issuer,
-              subject.subject,
-              subject.tenant?.tenantId ?? null,
-              code,
-            ]),
-          )
-          .digest('hex');
-        call.check();
-        return version + ':' + digest;
-      } catch (cause) {
-        if (cause instanceof KitError) throw cause;
-        throw storageError();
-      } finally {
-        owned.fill(0);
-      }
+    ): Promise<readonly string[]> {
+      return call.call(async () => {
+        const values = await hmac.candidateVerifiers(Object.freeze(input), call.options);
+        if (!Array.isArray(values)) throw storageError();
+        const length = values.length;
+        if (!Number.isSafeInteger(length) || length < 1 || length > 8) throw storageError();
+        const result: string[] = [];
+        for (let index = 0; index < length; index++) {
+          const field = Object.getOwnPropertyDescriptor(values, String(index));
+          if (!field || !('value' in field)) throw storageError();
+          result.push(verifier(field.value, input));
+        }
+        if (new Set(result).size !== result.length) throw storageError();
+        return Object.freeze(result);
+      });
     },
   });
 }

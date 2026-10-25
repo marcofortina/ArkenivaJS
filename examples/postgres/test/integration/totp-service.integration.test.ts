@@ -25,6 +25,133 @@ async function enrolled(f: Fixture) {
 const next = (f: Fixture) => f.setTime((Math.floor(f.clock() / 30000) + 1) * 30000);
 
 test(
+  'Expired and revoked server-owned sessions lose read and verification authority immediately',
+  { timeout: 20000 },
+  async () => {
+    const f = await totpServiceFixture();
+    try {
+      const { owner, pending } = await enrolled(f);
+      f.expireSession(owner);
+      await assert.rejects(f.service.isEnabled(owner), hasCode('EK_AUTH_FORBIDDEN'));
+      await assert.rejects(
+        f.service.getQrCodeImage(owner, pending.enrollmentId),
+        hasCode('EK_AUTH_FORBIDDEN'),
+      );
+      const current = await f.subject();
+      assert.equal(await f.service.isEnabled(current), true);
+      f.revokeSession(current);
+      await assert.rejects(f.service.verify(current, '123456'), hasCode('EK_AUTH_FORBIDDEN'));
+      await assert.rejects(
+        f.service.verifyRecoveryCode(current, 'A'.repeat(43)),
+        hasCode('EK_AUTH_FORBIDDEN'),
+      );
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
+  'Configured twenty-code recovery sets require one-use authority and remain factor-bound under rotation',
+  { timeout: 20000 },
+  async () => {
+    const f = await totpServiceFixture();
+    try {
+      const { owner, seed } = await enrolled(f);
+      next(f);
+      const proof = await f.service.verify(
+        owner,
+        await generate({ secret: seed, epoch: Math.floor(f.clock() / 1000) }),
+      );
+      const grant = await f.management(owner, 'recovery-codes', proof.evidenceId);
+      const service = createTotpService({ ...f.settings, recoveryCodeCount: 20 });
+      const results = await Promise.allSettled([
+        service.generateRecoveryCodes(owner, grant),
+        service.generateRecoveryCodes(owner, grant),
+      ]);
+      assert.equal(results.filter((value) => value.status === 'fulfilled').length, 1);
+      const accepted = results.find((value) => value.status === 'fulfilled');
+      if (!accepted || accepted.status !== 'fulfilled')
+        throw new Error('Expected authorized recovery set');
+      const codes = accepted.value;
+      assert.equal(codes.length, 20);
+      assert.equal(new Set(codes).size, 20);
+      assert.equal(
+        codes.every((code) => /^[A-Za-z0-9_-]{43}$/.test(code)),
+        true,
+      );
+      const changed = createTotpService({
+        ...f.settings,
+        stateStore: {
+          ...f.settings.stateStore,
+          async getFactor(subject, options) {
+            const factor = await f.state.getFactor(subject, options);
+            return factor ? { ...factor, id: 'another-active-factor' } : null;
+          },
+        },
+      });
+      await assert.rejects(changed.verifyRecoveryCode(owner, codes[0]!), hasCode('EK_MFA_INVALID'));
+      f.rotateRecoveryKey();
+      assert.equal((await service.verifyRecoveryCode(owner, codes[0]!)).method, 'recovery-code');
+      f.removeRecoveryKey('first');
+      await assert.rejects(service.verifyRecoveryCode(owner, codes[1]!), hasCode('EK_MFA_INVALID'));
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
+  'Malformed or unavailable HMAC candidate providers never consume durable recovery state',
+  { timeout: 20000 },
+  async () => {
+    const f = await totpServiceFixture();
+    try {
+      const { owner } = await enrolled(f);
+      let consumes = 0;
+      for (const values of [[], Array(9).fill('v1:key:hash'), ['duplicate', 'duplicate']]) {
+        const service = createTotpService({
+          ...f.settings,
+          recoveryHmac: {
+            ...f.settings.recoveryHmac,
+            async candidateVerifiers() {
+              return values;
+            },
+          },
+          stateStore: {
+            ...f.settings.stateStore,
+            async consumeRecoveryHash() {
+              consumes++;
+              return true;
+            },
+          },
+        });
+        await assert.rejects(
+          service.verifyRecoveryCode(owner, 'A'.repeat(43)),
+          hasCode('EK_MFA_STORAGE'),
+        );
+      }
+      const failed = createTotpService({
+        ...f.settings,
+        recoveryHmac: {
+          ...f.settings.recoveryHmac,
+          async candidateVerifiers() {
+            throw new Error('Sensitive synthetic HMAC diagnostic');
+          },
+        },
+      });
+      await assert.rejects(failed.verifyRecoveryCode(owner, 'A'.repeat(43)), (error) => {
+        assert.equal(JSON.stringify(error).includes('Sensitive synthetic'), false);
+        return hasCode('EK_MFA_STORAGE')(error);
+      });
+      assert.equal(consumes, 0);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
   'An intervening activation cannot turn approved enrollment into unauthorized replacement',
   { timeout: 20000 },
   async () => {
@@ -157,13 +284,13 @@ test(
       next(f);
       const script = `
       import {createApplication,KitError} from '@arkenivajs/core';import {postgresPlugin} from '@arkenivajs/database-postgres';import {createTotpService} from '@arkenivajs/security-totp';
-      import {createPostgresTotpStateStore} from './dist/totp-state-store.js';import {createPostgresMfaRateLimitStore} from './dist/mfa-rate-limit-store.js';import {createPostgresMfaEvidenceStore} from './dist/mfa-evidence-store.js';import {createDisposableMfaSecretProtector} from './dist/mfa-secret-protector.js';
+      import {createPostgresTotpStateStore} from './dist/totp-state-store.js';import {createPostgresMfaRateLimitStore} from './dist/mfa-rate-limit-store.js';import {createPostgresMfaEvidenceStore} from './dist/mfa-evidence-store.js';import {createDisposableMfaSecretProtector} from './dist/mfa-secret-protector.js';import {createDisposableRecoveryHmacProvider} from './dist/mfa-recovery-hmac.js';
       const {schema,owner,clock,phase}=JSON.parse(process.argv[1]);const freeze=value=>{if(value&&typeof value==='object'){for(const field of Object.values(value))freeze(field);Object.freeze(value);}return value;};freeze(owner);
       const app=await createApplication({service:{name:'totp-service-worker',version:'1.0.0',environment:'test'},plugins:[postgresPlugin()],databases:{main:{driver:'postgresql',connectionStringEnv:'DATABASE_URL',poolMax:2}}});let encryptionKey,recoveryKey;
       try{await app.start();const input=new Promise(resolve=>{let text='';process.stdin.on('data',chunk=>{text+=String(chunk);if(text.length>4096)throw new Error('Worker input exceeds its bound');});process.stdin.once('end',()=>resolve(JSON.parse(text)));});console.log(JSON.stringify({ready:true}));const payload=await input;encryptionKey=Buffer.from(payload.encryptionKey,'base64');recoveryKey=Buffer.from(payload.recoveryKey,'base64');
         // The closed parent authority channel supplies this preauthenticated fixture context; clones remain unowned.
         const approved=new WeakSet([owner]), state=createPostgresTotpStateStore(app.sql,'main',schema,()=>clock), limiter=createPostgresMfaRateLimitStore(app.sql,'main',schema), evidence=createPostgresMfaEvidenceStore(app.sql,'main',schema), protector=createDisposableMfaSecretProtector('encryption-first',async()=>encryptionKey);
-        const service=createTotpService({issuer:'Synthetic Company',environment:'test',clock:()=>clock,stateStore:state,rateLimitStore:{...limiter,usage:'test-only'},evidenceStore:{...evidence,usage:'test-only'},secretProtector:{...protector,usage:'test-only'},trustPolicy:{usage:'test-only',async resolveSubject(subject){return approved.has(subject)?subject:null;},async authorize(){return false;}},recoveryCodeHmac:{algorithm:'HMAC-SHA256',keyProvider:{usage:'test-only',async currentKeyId(){return payload.version;},async resolveKey(version){if(version!==payload.version)throw new Error('Unknown worker key');return recoveryKey;}}}});
+        const service=createTotpService({issuer:'Synthetic Company',environment:'test',clock:{nowEpochMs:()=>clock},stateStore:state,rateLimitStore:{...limiter,usage:'test-only'},evidenceStore:{...evidence,usage:'test-only'},secretProtector:{...protector,usage:'test-only'},subjectAuthority:{usage:'test-only',async resolveSubject(subject){if(!approved.has(subject))throw new KitError({code:'EK_AUTH_FORBIDDEN',message:'Unowned worker context'});return subject;},async authorize({subject,action}){if(!approved.has(subject)||action!==(phase==='otp'?'verify':'verify-recovery-code'))throw new KitError({code:'EK_AUTH_FORBIDDEN',message:'Worker action denied'});}},recoveryHmac:createDisposableRecoveryHmacProvider(async()=>({current:payload.version,allowed:[payload.version]}),async()=>recoveryKey)});
         try{if(phase==='otp')await service.verify(owner,payload.code);else await service.verifyRecoveryCode(owner,payload.code);console.log(JSON.stringify({result:true}));}catch(error){if(error instanceof KitError&&['EK_MFA_REPLAY','EK_MFA_INVALID'].includes(error.code))console.log(JSON.stringify({result:false}));else throw error;}
       }catch(error){console.error(JSON.stringify(error instanceof KitError?error.toSafeJSON():{code:'EK_INTERNAL'}));process.exitCode=1;}finally{encryptionKey?.fill(0);recoveryKey?.fill(0);await app.stop();process.stdin.destroy();}
     `;
@@ -276,7 +403,7 @@ test(
       f.approveReauthentication(owner, 'replace');
       const replacement = await f.service.beginEnrollment(owner);
       assert.equal((await f.state.getFactor(owner))!.id, pending.enrollmentId);
-      f.setTime(Date.parse(replacement.expiresAt));
+      f.setTime(Date.parse(replacement.expiresAt) + 1);
       await assert.rejects(
         f.service.getQrCodeImage(owner, replacement.enrollmentId),
         hasCode('EK_MFA_POLICY'),
@@ -394,10 +521,13 @@ test(
         hasCode('EK_MFA_INVALID'),
       );
       f.rotateRecoveryKey();
-      assert.equal((await f.service.verifyRecoveryCode(owner, codes[1]!)).method, 'recovery-code');
-      const replacement = await f.service.generateRecoveryCodes(owner, grant);
+      const rotatedProof = await f.service.verifyRecoveryCode(owner, codes[1]!);
+      assert.equal(rotatedProof.method, 'recovery-code');
+      await assert.rejects(f.service.generateRecoveryCodes(owner, grant), hasCode('EK_MFA_POLICY'));
+      const freshGrant = await f.management(owner, 'recovery-codes', rotatedProof.evidenceId);
+      const replacement = await f.service.generateRecoveryCodes(owner, freshGrant);
       assert.equal(
-        replacement.every((code) => code.startsWith('second.')),
+        replacement.every((code) => /^[A-Za-z0-9_-]{43}$/.test(code)),
         true,
       );
       await assert.rejects(

@@ -112,7 +112,9 @@ outage handling and encryption require independent implementation tests.
 
 The optional [TOTP package](../packages/security-totp/README.md) exports
 `createTotpService(options)` and its lifecycle/storage types. Its explicit
-application authority resolves ownership and authorizes sensitive management.
+application `subjectAuthority` resolves ownership and authorizes every named action.
+Its required `recoveryHmac` returns opaque factor-bound verifiers without exporting
+keys; the optional environment defaults to production and clock injection is test-only.
 The service uses upstream TOTP verification, durable generation-bound replay CAS,
 external-key HMAC-SHA256 recovery and persisted single-use assurance evidence.
 It does not issue a session; production requires independently verified providers.
