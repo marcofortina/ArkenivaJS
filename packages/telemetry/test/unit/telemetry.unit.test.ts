@@ -521,6 +521,23 @@ test('EK-DB-004 root database names permit bounded pool metrics and fixed SQL op
         'db.operation.name': operation,
       });
     }
+    for (const operation of [
+      'findOne',
+      'findMany',
+      'insertOne',
+      'updateOne',
+      'deleteOne',
+      'aggregate',
+      'withTransaction',
+    ]) {
+      await app.telemetry.withSpan('db.client.operation', () => 1, {
+        attributes: { 'db.system.name': 'mongodb', 'db.operation.name': operation },
+      });
+      app.telemetry.recordHistogram('db.client.operation.duration', 0.001, {
+        'db.system.name': 'mongodb',
+        'db.operation.name': operation,
+      });
+    }
     app.telemetry.recordHistogram('arkenivajs.db.pool.acquire.duration', 0.001, {
       pool: 'main',
       driver: 'postgresql',
@@ -559,6 +576,9 @@ test('EK-DB-004 root database names permit bounded pool metrics and fixed SQL op
       'etcd',
       'grantLease',
       'compareAndSwap',
+      'mongodb',
+      'findMany',
+      'withTransaction',
     ])
       assert.ok(body.includes(expected));
     assert.equal((app.telemetry as ManagedTelemetry).stats().exportFailures, 0);
