@@ -194,6 +194,18 @@ importers:
         specifier: 2.9.1
         version: 2.9.1
 
+  examples/cache:
+    dependencies:
+      '@arkenivajs/cache':
+        specifier: workspace:*
+        version: link:../../packages/cache
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-redis':
+        specifier: workspace:*
+        version: link:../../packages/database-redis
+
   examples/configuration:
     dependencies:
       '@arkenivajs/config':
