@@ -237,6 +237,7 @@ function faultyProviderFixture() {
     factor,
     pending,
     grant,
+    seed,
     code: () => generate({ secret: seed, epoch: Math.floor(f.options.clock!.nowEpochMs() / 1000) }),
   };
 }
@@ -288,7 +289,7 @@ test('Pending metadata, invalid proof and refused atomic transitions fail withou
     await Promise.all(
       [-30, 0, 30].map((delta) =>
         generate({
-          secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',
+          secret: x.seed,
           epoch: Math.floor(x.f.options.clock!.nowEpochMs() / 1000) + delta,
         }),
       ),
