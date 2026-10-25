@@ -4,6 +4,19 @@
 export { KitError } from './errors.js';
 export type { ErrorCode, KitErrorOptions } from './contracts.js';
 export type { ConfigService, OperationOptions } from './contracts.js';
+export type {
+  MfaSubjectContext,
+  MfaMethod,
+  MfaEvidence,
+  MfaManagementAuthorization,
+  MfaChallengeRecord,
+  MfaStateStore,
+  MfaRateLimitStore,
+  MfaEvidenceRecord,
+  MfaEvidenceStore,
+  MfaSealedSecret,
+  MfaSecretProtector,
+} from './mfa.js';
 export type { Telemetry, MeasureOptions } from './ports.js';
 export type {
   UsageMeter,

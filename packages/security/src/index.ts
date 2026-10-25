@@ -22,6 +22,17 @@ export type {
   TenantId,
   VerifiedTenantContext,
   MfaAssurance,
+  MfaSubjectContext,
+  MfaMethod,
+  MfaEvidence,
+  MfaManagementAuthorization,
+  MfaChallengeRecord,
+  MfaStateStore,
+  MfaRateLimitStore,
+  MfaEvidenceRecord,
+  MfaEvidenceStore,
+  MfaSealedSecret,
+  MfaSecretProtector,
 } from '@arkenivajs/core';
 /** Trust policy is captured at construction and is never inferred from a request. */
 export interface AuthOptions {
