@@ -10,3 +10,4 @@
 - Audit committed reloads with a safe fallback for failed diagnostic sinks.
 - Preserve long operation deadlines without native timer overflow.
 - Compose resource-free facades before startup and activate listeners after resource initialization.
+- Capture optional scoped health hooks and order collectors after initialized owners without exposing foreign private components.
