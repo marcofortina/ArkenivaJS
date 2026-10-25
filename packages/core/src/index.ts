@@ -13,6 +13,13 @@ export type {
 export type { OutboundHttpClient } from './ports.js';
 export type { RedisProvider } from './ports.js';
 export type {
+  EtcdProvider,
+  EtcdValue,
+  EtcdWatchEvent,
+  EtcdWatchHandle,
+  EtcdLease,
+} from './ports.js';
+export type {
   SqlValue,
   SqlBindings,
   SqlStatement,
