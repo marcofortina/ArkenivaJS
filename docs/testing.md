@@ -32,3 +32,11 @@ access. Use disposable external output locations,
 retain reports according to the CI retention policy, and never commit raw
 quality artifacts or secrets. Without the variable, the existing ordinary
 reporter behavior and file selection remain unchanged.
+
+CI enables these reports independently on Node 22, 24 and 26 and retains the
+report directory and JSON dependency audit for 14 days through a pinned artifact
+action. Reporting is retained on failed runs as well; it never makes a failing
+check successful. The PostgreSQL jobs additionally run all four HTTP benchmark
+equivalence modes against actual disposable PostgreSQL and OTel services.
+These are short correctness checks; they do not run the long performance
+campaign or one-hour soak, and they do not claim a performance budget result.

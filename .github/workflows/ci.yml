@@ -10,6 +10,9 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARKENIVA_TEST_REPORT_DIRECTORY: ${{ runner.temp }}/arkenivajs-test-reports
     strategy:
       fail-fast: false
       matrix:
@@ -25,11 +28,22 @@ jobs:
       - run: corepack enable && corepack install
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      - name: Verify benchmark statistics and the synthetic identity fixture
+        run: pnpm --filter @arkenivajs/benchmark-foundation test
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim
         run: pnpm coverage:oracle
-      - run: pnpm audit --audit-level=high
+      - name: Retain dependency audit evidence and fail on high or critical findings
+        run: pnpm audit --audit-level=high --json > "$ARKENIVA_TEST_REPORT_DIRECTORY/dependency-audit.json"
+      - name: Retain unit, contract, coverage and audit evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-node-${{ matrix.node }}
+          path: ${{ env.ARKENIVA_TEST_REPORT_DIRECTORY }}
+          retention-days: 14
+          if-no-files-found: error
 
   telemetry-integration:
     runs-on: ubuntu-latest
@@ -108,13 +122,21 @@ jobs:
         run: python3 packages/database-postgres/test/fixtures/prepare.py "$RUNNER_TEMP/postgres-fixture" --github-env "$GITHUB_ENV"
       - name: Start verified PostgreSQL and the negative certificate fixture
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
+      - name: Start an independently owned benchmark telemetry collector
+        run: docker compose -p arkenivajs-benchmark-otel -f packages/telemetry/test/fixtures/compose.yaml up -d
       - run: pnpm coverage:postgres
+      - name: Verify all four HTTP modes against real PostgreSQL and telemetry
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration
+        env:
+          ARKENIVAJS_OTLP_ENDPOINT: http://127.0.0.1:4318
       - run: pnpm --filter @arkenivajs/example-postgres test:integration
       - run: pnpm test:packed:examples --integration postgres
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml down
+      - if: always() && env.PG_FIXTURE_DIRECTORY != ''
+        run: docker compose -p arkenivajs-benchmark-otel -f packages/telemetry/test/fixtures/compose.yaml down
 
   mysql-integration:
     runs-on: ubuntu-latest
