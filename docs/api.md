@@ -110,6 +110,11 @@ deadline contract. Persistence outages or uncertain outcomes must use safe
 storage failures, never success evidence. Actual multi-instance atomicity,
 outage handling and encryption require independent implementation tests.
 
+The optional [TOTP package](../packages/security-totp/README.md) currently
+exports its lifecycle/storage types. Its private upstream compatibility adapter
+is tested independently; the service factory, durable factor lifecycle and
+production activation are still under development.
+
 ## Metrics and tracing
 
 `@arkenivajs/telemetry` exports `createTelemetry`, `telemetryPlugin`, `DURATION_BUCKETS_SECONDS` and the public telemetry port. Providers and W3C async context are instance-owned; no process-global SDK is replaced. Metric labels and series, span queues and exporter deadlines are bounded. See the [telemetry reference](../packages/telemetry/README.md) for modes, units, sampling, resource metadata and actual collector integration. The [distributed guide](../examples/distributed-tracing/README.md) runs two HTTP hops with correlated logs and measured process quantities.
