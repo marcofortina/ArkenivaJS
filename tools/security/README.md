@@ -41,3 +41,8 @@ synthetic credential committed and then deleted still fails the history scan,
 with redaction verified. Dirty and shallow input is rejected. The synthetic
 pattern has no provider account or external validity and never enters product
 Git history.
+
+The security workflow checks a complete checkout on main pushes, weekly runs
+and explicit dispatch. It runs these negative tests before scanning product
+history and retains redacted evidence for 14 days. A failed scanner or missing
+report remains a failed job.

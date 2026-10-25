@@ -1,0 +1,36 @@
+name: security
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  secret-history:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ARKENIVA_SECURITY_DISPOSABLE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify actual detection, history coverage and redaction
+        run: python3 tools/security/test.py
+      - name: Scan all reachable source history with the pinned restricted scanner
+        run: python3 tools/security/run.py "$GITHUB_WORKSPACE" "$RUNNER_TEMP/secret-scan"
+      - name: Retain redacted scan evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: redacted-secret-history
+          path: ${{ runner.temp }}/secret-scan
+          retention-days: 14
+          if-no-files-found: error
