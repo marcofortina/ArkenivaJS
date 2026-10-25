@@ -18,7 +18,18 @@ It scans all reachable history, mounts source read-only, disables container
 networking, drops Linux capabilities, applies CPU/memory/process limits, and
 runs with the invoking user's UID/GID. Docker is never installed by the script.
 Credentials are redacted in scanner output and reports. Inline suppression
-comments are ignored; findings cannot be converted into success by the wrapper.
+comments are ignored; unreviewed findings cannot be converted into success by the wrapper.
+
+The owner-approved [public-vector review](reviewed-public-vectors.json) identifies
+exactly one immutable commit/file/rule/line fingerprint for the published
+[RFC 6238 Appendix B SHA1 test seed](https://www.rfc-editor.org/rfc/rfc6238.html#appendix-B).
+The tool verifies its tracked policy, historical source-line SHA-256 and decoded
+public fixture before passing that exact fingerprint to Gitleaks. A changed
+fingerprint, rule, source line or standard fails validation. No source path or
+scanner rule is excluded. The summary records the reviewed fingerprint separately
+from remaining findings. History stays intact, and every other finding still
+fails the gate. Toy repositories without this review use an explicit empty
+ignore file; implicit repository ignore discovery cannot broaden the exception.
 
 `findings.json`, `scanner.log` and `summary.json` remain in a private external
 directory. The summary identifies exact source SHA, scanner/image, commit count,
@@ -45,6 +56,10 @@ synthetic credential committed and then deleted still fails the history scan,
 with redaction verified. Dirty and shallow input is rejected. The synthetic
 pattern has no provider account or external validity and never enters product
 Git history.
+
+Additional negative checks clone the clean product history, verify the public
+fixture review, then add a separate synthetic credential that must still fail
+with redaction. Changing the approved fingerprint must fail before scanning.
 
 The security workflow checks a complete checkout on main pushes, weekly runs
 and explicit dispatch. It runs these negative tests before scanning product

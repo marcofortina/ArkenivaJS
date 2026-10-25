@@ -66,6 +66,40 @@ class ScannerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             scan(shallow, self.directory / "shallow-results")
 
+    def test_owner_review_does_not_hide_another_secret(self):
+        source = Path(__file__).resolve().parents[2]
+        reviewed = self.directory / "reviewed-repository"
+        subprocess.run(["git", "clone", "--no-hardlinks", "--branch", "main",
+                        str(source), str(reviewed)], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        original = self.repository
+        self.repository = reviewed
+        try:
+            self.git("config", "user.name", "Disposable security fixture")
+            self.git("config", "user.email", "security@example.test")
+            good = self.directory / "reviewed-results"
+            self.assertEqual(scan(reviewed, good), 0)
+            summary = json.loads((good / "summary.json").read_text())
+            self.assertEqual(len(summary["reviewedPublicVectorFingerprints"]), 1)
+            token = "ghp_" + hashlib.sha256(b"Separate synthetic detection fixture").hexdigest()[:36]
+            (reviewed / "synthetic-credential.txt").write_text("token=" + token + "\n")
+            self.commit("Add independent synthetic detection fixture")
+            output = self.directory / "separate-results"
+            self.assertEqual(scan(reviewed, output), 1)
+            findings = json.loads((output / "findings.json").read_text())
+            self.assertTrue(any(item["RuleID"] == "github-pat" for item in findings))
+            for path in output.iterdir():
+                self.assertNotIn(token, path.read_text())
+            policy = reviewed / "tools/security/reviewed-public-vectors.json"
+            document = json.loads(policy.read_text())
+            document["fingerprint"] = document["fingerprint"].replace("generic-api-key", "github-pat")
+            policy.write_text(json.dumps(document) + "\n")
+            self.commit("Try an unapproved fingerprint change")
+            with self.assertRaises(ValueError):
+                scan(reviewed, self.directory / "unapproved-results")
+        finally:
+            self.repository = original
+
 
 if __name__ == "__main__":
     unittest.main()

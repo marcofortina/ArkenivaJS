@@ -1,0 +1,6 @@
+{
+  "standard": "RFC6238-SHA1",
+  "fingerprint": "fc0a86f0f54e0fdecb8951944c7065fd454f4245:packages/security-totp/test/unit/service.unit.test.ts:generic-api-key:229",
+  "sourceLineSha256": "4d761ef03ad4d4ef3835681d75fc776e033cf47dd10844dc6e2fa8108a84b8f7",
+  "reference": "https://www.rfc-editor.org/rfc/rfc6238.html#appendix-B"
+}
