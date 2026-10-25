@@ -27,7 +27,9 @@ The runner reads its environment mapping without echoing URLs or passwords.
 `--github-env "$GITHUB_ENV"` appends variables to GitHub's protected job environment
 and masks the random application password for CI; it is unnecessary locally.
 
-The exact PostgreSQL 18.6 image digest is pinned in `compose.yaml`. Both containers
+PostgreSQL 18.6 is the default; `--server-major 17` selects PostgreSQL 17.11.
+Both exact image digests are reviewed and pinned in `prepare.py`, with the
+existing 18.6 fallback retained in `compose.yaml`. Both containers
 run unprivileged with dropped capabilities, no privilege escalation, bounded CPU,
 memory and process counts. The administrative bootstrap password stays in a
 mounted file. Tests use a separate role without superuser, database creation or
@@ -40,6 +42,22 @@ loopback. A client outside the VM needs a private copy of `ca.crt` and URLs whos
 `sslrootcert` points at that client's copy; never disable verification to cross
 the VM boundary. The tests verify failures from an untrusted CA, a wrong SAN and
 a wrong password separately.
+
+To run the second reviewed server on the same disposable VM, choose a new
+private directory and distinct ports. Use the private environment runner for
+Compose so the selected image, data layout and port mapping stay consistent:
+
+```sh
+python3 packages/database-postgres/test/fixtures/prepare.py "$PG_FIXTURE_DIRECTORY" --server-major 17 --port 15434 --wrong-san-port 15435
+python3 packages/database-postgres/test/fixtures/run.py "$PG_FIXTURE_DIRECTORY/environment.json" docker compose -p arkenivajs-postgres17-test -f packages/database-postgres/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
+python3 packages/database-postgres/test/fixtures/run.py "$PG_FIXTURE_DIRECTORY/environment.json" pnpm coverage:postgres
+python3 packages/database-postgres/test/fixtures/run.py "$PG_FIXTURE_DIRECTORY/environment.json" docker compose -p arkenivajs-postgres17-test -f packages/database-postgres/test/fixtures/compose.yaml down
+```
+
+Do not reuse data or a fixture directory across server majors. Unsupported
+majors, privileged/invalid/equal ports and destinations inside Git are rejected
+before credentials are created. Check these input guards without starting a
+service using `python3 packages/database-postgres/test/fixtures/test_prepare.py`.
 
 Missing endpoint variables fail the live suite. The explicit disposable marker is
 mandatory: tests create owned schemas and terminate their own backend during a
