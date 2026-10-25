@@ -19,6 +19,22 @@ exercise the upstream primitive; durable replay protection, account-handle polic
 credential state CAS, browser integration and a complete factor service have
 separate acceptance requirements.
 
+The private service boundary validates the complete credential-store and trusted
+authority interfaces, captures provider methods at construction and rejects
+test-only providers in production. Production is the default; only test instances
+may inject a clock. Every call has a 30-second default deadline, with explicit
+timeouts limited to integer milliseconds from 1 through 120,000. Provider failures,
+late results and cancellation cannot grant permission or expose provider diagnostics.
+
+Session-bound operations require fresh runtime identity resolution and their own
+authorization decision. Registration requires authentication within five minutes;
+revocation also requires an independently authorized grant verified within one minute.
+Attempt limits use SHA-256-scoped RP/account/tenant buckets: five attempts per minute
+for each account/action, twenty per minute for each anonymous RP/action. Anonymous
+passwordless resolution is opt-in and follows cryptographic credential verification;
+it does not require an existing session. These boundaries are tested internally;
+the package still exposes no complete factor-service factory.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
