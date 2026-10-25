@@ -34,6 +34,47 @@ There is no implicit database driver, browser client or production memory store.
 See the [shared PostgreSQL reference](../../examples/postgres/mfa-shared-state.md)
 for independently tested challenge, limiter and evidence adapters.
 
+## Trusted runtime configuration
+
+`TotpServiceOptions` requires an explicit framework `environment`, a
+`TotpTrustPolicy`, `recoveryCodeHmac` and the four storage/protection providers.
+Every provider and trust policy declares `usage:'production'|'test-only'`;
+production rejects every test-only declaration. This classification does not
+prove durability or authorization: concrete adapters still require their own
+atomicity, failure and runtime-provenance conformance tests.
+
+`trustPolicy.resolveSubject(subject, operation, options?)` must ask the
+application's real primary authority to revalidate session, authenticated
+tenant and owner, returning its immutable context or `null`. The service checks
+the exact issuer/account/session/tenant binding. A TypeScript brand, copied
+object or caller-supplied account ID establishes no provenance.
+`trustPolicy.authorize(subject, {action,authorization?}, options?)` independently
+checks permission and sufficiently strong recent authentication for enrollment,
+replacement, disabling and recovery-code management. Enrollment/replacement
+require authority-owned proof even though the API has no caller grant argument.
+Disabling/recovery additionally require the existing management authorization;
+its fields alone cannot establish authority. Primary authentication for those
+sensitive operations is bounded to five minutes and supplied management grants
+to one minute; the application can enforce a stricter policy.
+
+`recoveryCodeHmac` selects exactly `algorithm:'HMAC-SHA256'` and a versioned
+external `keyProvider`. `currentKeyId(options?)` chooses a new set's version;
+`resolveKey(keyId, options?)` obtains 32–64 secure key bytes. Version IDs use
+1–64 ASCII letters, digits, underscores or hyphens. Retain old versions while
+their unused codes remain valid. The framework computes a framed HMAC bound to
+version, issuer, subject and tenant. Provider-owned keys are never changed;
+owned copies are cleared after use. Database state contains keyed hashes only.
+
+`clock?:()=>number` accepts trusted integer epoch milliseconds at construction
+in test/development. Production forbids this override and captures the system
+clock; the deployment must maintain trustworthy synchronized time. Request
+arguments cannot choose the clock, environment or provider. Provider operations
+obey cancellation/deadlines, and late results cannot initiate subsequent work.
+
+The public service factory remains unavailable while durable lifecycle wiring
+is completed. These runtime contracts and guards do not by themselves activate
+a factor or issue an authentication session.
+
 Trusted subject/management policy, factor-specific durable state, protection and
 key rotation, distributed limits, evidence persistence, QR delivery, recovery,
 end-to-end guides and release checks remain necessary before activation. TOTP

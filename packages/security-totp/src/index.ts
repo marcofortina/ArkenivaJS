@@ -9,6 +9,12 @@ export type {
   TotpEnrollment,
   TotpConfirmation,
   TotpService,
+  TotpComponentPolicy,
+  TotpComponent,
+  TotpOperation,
+  TotpTrustPolicy,
+  TotpRecoveryKeyProvider,
+  TotpRecoveryCodeHmacProvider,
 } from './contracts.js';
 export type {
   OperationOptions,
