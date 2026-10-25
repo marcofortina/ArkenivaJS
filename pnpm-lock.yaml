@@ -406,6 +406,9 @@ importers:
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../../packages/security
+      '@arkenivajs/security-totp':
+        specifier: workspace:*
+        version: link:../../packages/security-totp
       jose:
         specifier: 6.2.13
         version: 6.2.13
