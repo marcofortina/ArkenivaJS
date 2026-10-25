@@ -99,10 +99,11 @@ reviewed AEAD/KMS provider, versioned keys and fresh nonces. Secret material mus
 never appear in logs, traces, errors or metering.
 
 The [PostgreSQL state reference](../examples/postgres/mfa-shared-state.md)
-implements the challenge and shared limiter ports in an explicitly disposable
-application example, with separate-process consumption and quota-contention
-tests. The evidence store and factor services require their own implementation
-and evidence.
+implements the challenge, shared limiter and single-use evidence ports in an
+explicitly disposable application example, with separate-process consumption
+and quota-contention tests. Evidence retains consumed tombstones to prevent
+re-recording after use. Actual factor verification and session issuance remain
+separate responsibilities.
 
 Store/provider calls accept the existing `OperationOptions` cancellation and
 deadline contract. Persistence outages or uncertain outcomes must use safe

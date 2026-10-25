@@ -49,5 +49,5 @@ database-enforced tenant isolation with PostgreSQL row-level security.
 
 The same disposable fixture also exercises the
 [shared MFA state adapters](mfa-shared-state.md), including exact owner/session
-matching, one-time consumption and bounded rate quotas across independent Node processes. This
+matching, one-time challenge/evidence consumption and bounded rate quotas across independent Node processes. This
 application-owned reference does not implement a factor verifier or issue a session.
