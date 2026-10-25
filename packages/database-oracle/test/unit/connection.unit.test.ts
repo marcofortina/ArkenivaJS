@@ -471,7 +471,7 @@ test('EK-DB-004 Oracle reports observed latency with correct units and isolates 
   assert.ok(missing.includes('driver_bytes_unavailable'));
   const elapsed = histograms.find((row) => row.name === 'db.client.operation.duration')!.value;
   assert.equal(usage[0]!.unit, 'milliseconds');
-  assert.equal(usage[0]!.value, elapsed * 1000);
+  assert.equal(elapsed, usage[0]!.value / 1000);
   mock.connection.native();
   assert.ok(missing.includes('not_instrumented'));
   await mock.connection.close();
