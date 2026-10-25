@@ -8,18 +8,20 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node --test dist-test/unit/*.test.js",
     "test:integration": "node --test dist-test/integration/*.test.js",
+    "test:browser": "node --test dist-test/browser/*.test.js",
     "start": "node dist/main.js"
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/database-postgres": "workspace:*",
     "@arkenivajs/security": "workspace:*",
-    "jose": "6.2.13",
     "@arkenivajs/security-totp": "workspace:*",
-    "@arkenivajs/security-webauthn": "workspace:*"
+    "@arkenivajs/security-webauthn": "workspace:*",
+    "jose": "6.2.13"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
+    "@simplewebauthn/browser": "14.0.0",
     "otplib": "13.5.0"
   }
 }

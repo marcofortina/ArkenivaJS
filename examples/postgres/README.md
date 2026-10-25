@@ -56,3 +56,5 @@ The [WebAuthn credential reference](webauthn-state.md) adds stable account handl
 database-owned revisions and cross-process counter/revocation concurrency using
 the same named SQL provider. It remains explicitly test-only until application-owned
 production storage policy and the separate factor acceptance gates are satisfied.
+The [controlled browser suite](webauthn-browser.md) exercises the public factor service
+with the pinned browser SDK, a virtual authenticator and this shared SQL state.

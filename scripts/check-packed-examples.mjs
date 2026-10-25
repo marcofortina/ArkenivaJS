@@ -13,10 +13,11 @@ const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-packed-examples-'));
 await chmod(directory, 0o700);
 const args = process.argv.slice(2);
 assert.ok(
-  args.length === 0 || (args.length === 2 && args[0] === '--integration'),
-  'Use --integration EXAMPLE for an explicitly configured live suite',
+  args.length === 0 || (args.length === 2 && ['--integration', '--browser'].includes(args[0])),
+  'Use --integration EXAMPLE or --browser EXAMPLE for an explicitly configured live suite',
 );
 const selected = args[1];
+const selectedScript = args[0] === '--browser' ? 'test:browser' : 'test:integration';
 if (selected) assert.match(selected, /^[a-z][a-z0-9-]*$/);
 function execute(command, arguments_, cwd) {
   const result = spawnSync(command, arguments_, { cwd, stdio: 'inherit', timeout: 180000 });
@@ -50,7 +51,10 @@ try {
       manifest = JSON.parse(await readFile(join(original, 'package.json'), 'utf8'));
     assert.ok(manifest.scripts.test, 'Every example needs an executable test');
     if (selected)
-      assert.ok(manifest.scripts['test:integration'], 'The selected example has no live suite');
+      assert.ok(
+        manifest.scripts[selectedScript],
+        'The selected example has no requested live suite',
+      );
     await mkdir(target, { recursive: true, mode: 0o700 });
     await cp(join(original, 'dist'), join(target, 'dist'), { recursive: true, errorOnExist: true });
     await cp(join(original, 'dist-test'), join(target, 'dist-test'), {
@@ -76,7 +80,7 @@ try {
         dependencies[name] = version;
       }
     }
-    examples.push({ target, script: manifest.scripts[selected ? 'test:integration' : 'test'] });
+    examples.push({ target, script: manifest.scripts[selected ? selectedScript : 'test'] });
   }
   assert.ok(examples.length > 0, 'No executable examples selected');
   await writeFile(

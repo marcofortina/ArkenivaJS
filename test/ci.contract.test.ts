@@ -47,6 +47,23 @@ test('PostgreSQL compatibility covers both reviewed servers on every supported N
     'pnpm --filter @arkenivajs/benchmark-foundation test:integration',
     'pnpm --filter @arkenivajs/example-postgres test:integration',
     'pnpm test:packed:examples --integration postgres',
+    'pnpm --filter @arkenivajs/example-postgres test:browser',
+    'pnpm test:packed:examples --browser postgres',
   ])
     assert.ok(commands.includes(gate), 'Every PostgreSQL/Node pair must run ' + gate);
+  const browser = job.steps.find(
+    (step: { run?: string }) =>
+      step.run === 'pnpm --filter @arkenivajs/example-postgres test:browser',
+  );
+  assert.equal(browser.env.ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE, '1');
+  const fixture = parse(
+    readFileSync('examples/postgres/test/fixtures/browser/compose.yaml', 'utf8'),
+  ).services.chromium;
+  assert.match(
+    fixture.image,
+    /^mcr\.microsoft\.com\/playwright:v1\.64\.0-noble@sha256:[a-f0-9]{64}$/,
+  );
+  assert.equal(fixture.read_only, true);
+  assert.equal(fixture.network_mode, 'host');
+  assert.ok(fixture.command.includes('--remote-debugging-address=127.0.0.1'));
 });

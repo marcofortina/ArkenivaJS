@@ -105,7 +105,10 @@ pnpm --filter @arkenivajs/security-webauthn test
 Tests use ephemeral P-256 authenticators with real signatures, malformed proofs,
 origin/RP/UP/UV failures, trusted-authority negatives, atomic simulators, counter and
 revocation races, provider outages and bounded admission. Durable database and real
-browser acceptance are separate gates. The browser package is absent from runtime
+browser acceptance are separate gates. The executable
+[PostgreSQL/browser guide](../../examples/postgres/webauthn-browser.md) covers actual
+Chromium ceremonies and two full service processes contending on real SQL state.
+The browser package is absent from runtime
 dependencies; USB/HID drivers and browser APIs remain outside this Node.js module.
 See [upstream documentation](https://simplewebauthn.dev/docs/packages/server) and
 [third-party notices](THIRD_PARTY_NOTICES.md).
