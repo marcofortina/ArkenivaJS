@@ -12,3 +12,5 @@
   snapshots, with replay, ownership, expiry and hostile-input tests.
 - Add private credential validation and versioned authentication/revocation
   transitions, including zero-counter races and fail-closed persistence checks.
+- Delegate direct attestation to the pinned verifier and bound concurrent native
+  verification work without an implicit queue.

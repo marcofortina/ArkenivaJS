@@ -28,6 +28,7 @@ export interface WebAuthnDriverSettings {
   readonly rpName: string;
   readonly expectedOrigins: readonly string[];
   readonly environment?: Environment;
+  readonly attestation?: 'none' | 'direct';
 }
 
 function record(value: unknown): asserts value is Record<string, unknown> {
@@ -55,7 +56,9 @@ function challenge(value: string): void {
 function snapshot(settings: WebAuthnDriverSettings) {
   const { rpId, rpName, expectedOrigins } = settings;
   const environment = settings.environment === undefined ? 'production' : settings.environment;
+  const attestation = settings.attestation === undefined ? 'none' : settings.attestation;
   if (
+    !['none', 'direct'].includes(attestation) ||
     !['production', 'development', 'test'].includes(environment) ||
     typeof rpId !== 'string' ||
     rpId.length > 253 ||
@@ -97,13 +100,14 @@ function snapshot(settings: WebAuthnDriverSettings) {
     return origin;
   });
   if (new Set(origins).size !== origins.length) throw policyError();
-  return Object.freeze({ rpId, rpName, origins: Object.freeze(origins) });
+  return Object.freeze({ rpId, rpName, origins: Object.freeze(origins), attestation });
 }
 
 /** Parse bounded browser JSON before invoking the upstream verifier; no object getters are accepted. */
 function response(
   text: string,
   registration: boolean,
+  attestationPolicy: 'none' | 'direct',
 ): RegistrationResponseJSON | AuthenticationResponseJSON {
   if (
     typeof text !== 'string' ||
@@ -129,8 +133,8 @@ function response(
   if (registration) {
     const encoded = base64(value.response.attestationObject, 524288);
     const attestation = decodeAttestationObject(Uint8Array.from(Buffer.from(encoded, 'base64url')));
-    // This primitive implements default none attestation only; device provenance is a separate policy.
-    if (attestation.get('fmt') !== 'none') throw invalid();
+    // Default none policy rejects extra attestation; direct verification stays with the upstream SDK.
+    if (attestationPolicy === 'none' && attestation.get('fmt') !== 'none') throw invalid();
     if (
       value.response.transports !== undefined &&
       (!Array.isArray(value.response.transports) ||
@@ -158,6 +162,20 @@ export function createWebAuthnDriver(settings: WebAuthnDriverSettings) {
   } catch {
     throw policyError();
   }
+  let activeVerifications = 0;
+  const boundedVerification = async <T>(work: () => Promise<T>): Promise<T> => {
+    if (activeVerifications >= 8)
+      throw new KitError({
+        code: 'EK_MFA_RATE_LIMIT',
+        message: 'WebAuthn verification capacity reached',
+      });
+    activeVerifications++;
+    try {
+      return await work();
+    } finally {
+      activeVerifications--;
+    }
+  };
   return Object.freeze({
     async registrationOptions(userHandle: Uint8Array, excluded: readonly string[] = []) {
       try {
@@ -177,7 +195,7 @@ export function createWebAuthnDriver(settings: WebAuthnDriverSettings) {
           userID: Uint8Array.from(userHandle),
           challenge: randomBytes(32),
           timeout: 300000,
-          attestationType: 'none',
+          attestationType: policy.attestation,
           supportedAlgorithmIDs: [...algorithms],
           authenticatorSelection: { userVerification: 'required', residentKey: 'preferred' },
           excludeCredentials: ids,
@@ -207,75 +225,82 @@ export function createWebAuthnDriver(settings: WebAuthnDriverSettings) {
       }
     },
     async verifyRegistration(text: string, expectedChallenge: string) {
-      try {
-        challenge(expectedChallenge);
-        const parsed = response(text, true) as RegistrationResponseJSON;
-        const result = await verifyRegistrationResponse({
-          response: parsed,
-          expectedChallenge,
-          expectedOrigin: [...policy.origins],
-          expectedRPID: policy.rpId,
-          requireUserPresence: true,
-          requireUserVerification: true,
-          supportedAlgorithmIDs: [...algorithms],
-        });
-        if (
-          !result.verified ||
-          !result.registrationInfo.userVerified ||
-          result.registrationInfo.credential.id !== parsed.id
-        )
+      return boundedVerification(async () => {
+        try {
+          challenge(expectedChallenge);
+          const parsed = response(text, true, policy.attestation) as RegistrationResponseJSON;
+          const result = await verifyRegistrationResponse({
+            response: parsed,
+            expectedChallenge,
+            expectedOrigin: [...policy.origins],
+            expectedRPID: policy.rpId,
+            requireUserPresence: true,
+            requireUserVerification: true,
+            supportedAlgorithmIDs: [...algorithms],
+          });
+          if (
+            !result.verified ||
+            !result.registrationInfo.userVerified ||
+            result.registrationInfo.credential.id !== parsed.id
+          )
+            throw invalid();
+          const info = result.registrationInfo;
+          return {
+            credential: {
+              ...info.credential,
+              publicKey: Uint8Array.from(info.credential.publicKey),
+            },
+            backupEligible: info.credentialDeviceType === 'multiDevice',
+            backedUp: info.credentialBackedUp,
+          };
+        } catch {
           throw invalid();
-        const info = result.registrationInfo;
-        return {
-          credential: { ...info.credential, publicKey: Uint8Array.from(info.credential.publicKey) },
-          backupEligible: info.credentialDeviceType === 'multiDevice',
-          backedUp: info.credentialBackedUp,
-        };
-      } catch {
-        throw invalid();
-      }
+        }
+      });
     },
     async verifyAuthentication(
       text: string,
       expectedChallenge: string,
       stored: WebAuthnCredential,
     ) {
-      try {
-        challenge(expectedChallenge);
-        const parsed = response(text, false) as AuthenticationResponseJSON;
-        if (
-          base64(stored.id, 1024) !== parsed.id ||
-          !(stored.publicKey instanceof Uint8Array) ||
-          stored.publicKey.length < 1 ||
-          stored.publicKey.length > 16384 ||
-          !Number.isSafeInteger(stored.counter) ||
-          stored.counter < 0 ||
-          stored.counter > 0xffffffff
-        )
+      return boundedVerification(async () => {
+        try {
+          challenge(expectedChallenge);
+          const parsed = response(text, false, policy.attestation) as AuthenticationResponseJSON;
+          if (
+            base64(stored.id, 1024) !== parsed.id ||
+            !(stored.publicKey instanceof Uint8Array) ||
+            stored.publicKey.length < 1 ||
+            stored.publicKey.length > 16384 ||
+            !Number.isSafeInteger(stored.counter) ||
+            stored.counter < 0 ||
+            stored.counter > 0xffffffff
+          )
+            throw invalid();
+          const credential = {
+            id: stored.id,
+            publicKey: Uint8Array.from(stored.publicKey),
+            counter: stored.counter,
+          };
+          const result = await verifyAuthenticationResponse({
+            response: parsed,
+            expectedChallenge,
+            expectedOrigin: [...policy.origins],
+            expectedRPID: policy.rpId,
+            credential,
+            requireUserVerification: true,
+          });
+          if (!result.verified || !result.authenticationInfo.userVerified) throw invalid();
+          const info = result.authenticationInfo;
+          return {
+            newCounter: info.newCounter,
+            backupEligible: info.credentialDeviceType === 'multiDevice',
+            backedUp: info.credentialBackedUp,
+          };
+        } catch {
           throw invalid();
-        const credential = {
-          id: stored.id,
-          publicKey: Uint8Array.from(stored.publicKey),
-          counter: stored.counter,
-        };
-        const result = await verifyAuthenticationResponse({
-          response: parsed,
-          expectedChallenge,
-          expectedOrigin: [...policy.origins],
-          expectedRPID: policy.rpId,
-          credential,
-          requireUserVerification: true,
-        });
-        if (!result.verified || !result.authenticationInfo.userVerified) throw invalid();
-        const info = result.authenticationInfo;
-        return {
-          newCounter: info.newCounter,
-          backupEligible: info.credentialDeviceType === 'multiDevice',
-          backedUp: info.credentialBackedUp,
-        };
-      } catch {
-        throw invalid();
-      }
+        }
+      });
     },
   });
 }

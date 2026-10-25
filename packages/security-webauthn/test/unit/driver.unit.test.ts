@@ -18,6 +18,68 @@ const hasCode = (code: string) => (error: unknown) =>
 const invalid = hasCode('EK_MFA_INVALID');
 const proof = () => randomBytes(32).toString('base64url');
 
+test('Direct attestation delegates valid packed self-attestation to the upstream verifier', async () => {
+  const device = authenticator(),
+    driver = createWebAuthnDriver({ ...settings(), attestation: 'direct' });
+  const options = await driver.registrationOptions(randomBytes(32));
+  assert.equal(options.attestation, 'direct');
+  const value = device.registration(options.challenge, { format: 'packed' });
+  assert.equal(
+    (await driver.verifyRegistration(JSON.stringify(value), options.challenge)).credential.id,
+    device.id,
+  );
+  assert.equal(
+    (
+      await driver.verifyRegistration(
+        JSON.stringify(device.registration(options.challenge)),
+        options.challenge,
+      )
+    ).credential.id,
+    device.id,
+  );
+  await assert.rejects(
+    createWebAuthnDriver(settings()).verifyRegistration(JSON.stringify(value), options.challenge),
+    invalid,
+  );
+  await assert.rejects(
+    driver.verifyRegistration(
+      JSON.stringify(device.registration(options.challenge, { format: 'unknown' })),
+      options.challenge,
+    ),
+    invalid,
+  );
+  const corrupted = structuredClone(value);
+  assert.ok(corrupted.response.attestationObject);
+  const bytes = Buffer.from(corrupted.response.attestationObject, 'base64url');
+  bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
+  corrupted.response.attestationObject = bytes.toString('base64url');
+  await assert.rejects(
+    driver.verifyRegistration(JSON.stringify(corrupted), options.challenge),
+    invalid,
+  );
+  assert.throws(
+    () => createWebAuthnDriver({ ...settings(), attestation: 'indirect' as never }),
+    hasCode('EK_MFA_POLICY'),
+  );
+});
+
+test('Native verification admission is bounded without queueing and releases capacity after completion', async () => {
+  const device = authenticator(),
+    driver = createWebAuthnDriver(settings()),
+    challenge = proof();
+  const text = JSON.stringify(device.authentication(challenge));
+  const stored = { id: device.id, publicKey: device.publicKey, counter: 0 };
+  const results = await Promise.allSettled(
+    Array.from({ length: 9 }, () => driver.verifyAuthentication(text, challenge, stored)),
+  );
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 8);
+  const rejected = results.find((result) => result.status === 'rejected');
+  assert.ok(rejected?.status === 'rejected' && hasCode('EK_MFA_RATE_LIMIT')(rejected.reason));
+  assert.equal((await driver.verifyAuthentication(text, challenge, stored)).newCounter, 1);
+  await assert.rejects(driver.verifyAuthentication('{}', challenge, stored), invalid);
+  assert.equal((await driver.verifyAuthentication(text, challenge, stored)).newCounter, 1);
+});
+
 test('Option generation uses fresh 256-bit challenges and mandatory verification without browser dependencies', async () => {
   const driver = createWebAuthnDriver(settings());
   const handle = randomBytes(32),
