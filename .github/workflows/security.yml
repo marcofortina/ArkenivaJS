@@ -34,6 +34,18 @@ jobs:
         run: node tools/security/supply-chain.mjs "$RUNNER_TEMP/supply-chain"
       - name: Retain dependency audit evidence and reject high or critical findings
         run: pnpm audit --audit-level=high --json > "$RUNNER_TEMP/supply-chain/dependency-audit.json"
+      - name: Verify package content and legal notice rejection cases
+        run: pnpm test:package-contents
+      - name: Rebuild and inspect actual private package archives
+        run: python3 -B tools/security/package_contents.py "$RUNNER_TEMP/package-contents"
+      - name: Retain package contents and checksums for the exact checked-out commit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: private-package-contents
+          path: ${{ runner.temp }}/package-contents
+          retention-days: 14
+          if-no-files-found: error
       - name: Retain supply-chain evidence for the exact checked-out commit
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

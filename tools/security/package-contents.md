@@ -48,3 +48,9 @@ replace packed-consumer tests, vulnerability and complete-history secret scans,
 dependency license review, native platform/live-service checks, benchmark and
 soak gates, mandatory remote CI, publisher identity or scope ownership checks.
 Keep unrun gates explicitly pending.
+
+The security workflow runs the rejection fixtures and rebuilds/inspects archives
+from its clean checkout on Node 24. It retains archives, full command logs and
+the per-file report for 14 days using the pinned artifact action. This job has
+read-only repository permissions and performs no publication. A workflow
+definition becomes execution evidence only after the actual run succeeds.
