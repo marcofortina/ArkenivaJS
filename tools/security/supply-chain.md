@@ -62,3 +62,8 @@ Database servers, container images, operating-system packages, external tools
 and optional native runtime libraries require their own reviewed inventories.
 It does not authorize publication or replace vulnerability scanning, live
 compatibility checks, public API review and the other release gates.
+
+The `security` workflow runs the input/graph guards, creates this evidence from
+the clean checked-out commit, runs the high/critical dependency audit gate and
+retains the resulting artifacts for 14 days. It uses read-only repository
+permissions and does not install an additional SBOM tool or publish packages.

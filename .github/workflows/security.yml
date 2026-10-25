@@ -14,6 +14,34 @@ concurrency:
   group: security-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  supply-chain:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile
+      - name: Verify dependency-graph and private-output failure guards
+        run: pnpm test:supply-chain
+      - name: Retain exact dependency inventory and per-project SPDX documents
+        run: node tools/security/supply-chain.mjs "$RUNNER_TEMP/supply-chain"
+      - name: Retain dependency audit evidence and reject high or critical findings
+        run: pnpm audit --audit-level=high --json > "$RUNNER_TEMP/supply-chain/dependency-audit.json"
+      - name: Retain supply-chain evidence for the exact checked-out commit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-inventory-and-spdx
+          path: ${{ runner.temp }}/supply-chain
+          retention-days: 14
+          if-no-files-found: error
   secret-history:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest

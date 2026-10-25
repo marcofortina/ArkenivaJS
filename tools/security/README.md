@@ -1,5 +1,9 @@
 # Isolated secret-history scanning
 
+The [dependency inventory and SPDX guide](supply-chain.md) describes the separate
+supply-chain job and its private reproducible artifacts. Secret scanning remains
+an independent required check.
+
 Run `run.py` only inside a disposable VM or CI runner with Docker available.
 The source repository must be clean and non-shallow; partial history or
 uncommitted input is rejected. The output directory must be new, outside Git,
