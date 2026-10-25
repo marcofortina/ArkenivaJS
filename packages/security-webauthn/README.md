@@ -35,6 +35,19 @@ passwordless resolution is opt-in and follows cryptographic credential verificat
 it does not require an existing session. These boundaries are tested internally;
 the package still exposes no complete factor-service factory.
 
+The private ceremony protocol stores a SHA-256 challenge digest bound to the RP,
+origin set, required verification, attestation and TTL policy. Claims also bind the
+exact operation, issuer, account, tenant and primary session. A failed proof consumes
+its claimed ceremony; a retry needs a fresh one. Passwordless ceremonies use a
+separate anonymous namespace and cannot claim a session-bound ceremony. Changing
+security configuration invalidates unfinished challenges from the previous policy.
+
+Browser JSON snapshots are limited to 1 MiB, 4,096 values and 16 nesting levels.
+They reject accessors, custom prototypes, serialization hooks, cycles and unsafe
+object keys. Extracted identifiers and challenges are explicitly unverified until
+the upstream signature/RP/origin/UV checks complete. Shared test-map races verify
+the claim protocol; real durable-store and credential-state acceptance remain open.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm build

@@ -96,6 +96,21 @@ test('WebAuthn rejects invalid configuration and getters without executing them'
     hasCode('EK_MFA_POLICY'),
   );
   assert.equal(reads, 0);
+  for (const length of [1, 65]) {
+    const origins = new Array<string>(length).fill('https://example.test');
+    Object.defineProperty(origins, '0', {
+      get() {
+        reads++;
+        throw new Error('Untrusted origin getter');
+      },
+      enumerable: true,
+    });
+    assert.throws(
+      () => createWebAuthnRuntime({ ...f.options, expectedOrigins: origins }),
+      hasCode('EK_MFA_POLICY'),
+    );
+  }
+  assert.equal(reads, 0);
   const proxy = new Proxy(
     {},
     {
