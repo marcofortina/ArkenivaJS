@@ -227,6 +227,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/telemetry
 
+  examples/etcd:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-etcd':
+        specifier: workspace:*
+        version: link:../../packages/database-etcd
+
   examples/hello-http:
     dependencies:
       '@arkenivajs/api':

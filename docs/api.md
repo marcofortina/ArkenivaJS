@@ -92,3 +92,13 @@ independent native Oracle pools. Its named binds, exact NUMBER text, bounded
 ResultSets, native LOB ownership and optional process-wide Thick mode are described
 in the [Oracle reference](../packages/database-oracle/README.md).
 **Oracle adapter contract-tested with mocks; live compatibility not verified**.
+
+## etcd key-value resources
+
+`etcdPlugin()` from `@arkenivajs/database-etcd` installs `app.etcd` for one root
+database definition. The provider exposes raw bytes, exact bigint metadata,
+atomic compare-and-swap, closable watch iteration and explicitly renewed owned
+leases. Its native handle is the actual `Etcd3` SDK instance. See the
+[etcd reference](../packages/database-etcd/README.md) and
+[executable consumer](../examples/etcd/README.md) for mTLS/ACL configuration,
+bounded recovery, unknown write outcomes and resource cleanup.
