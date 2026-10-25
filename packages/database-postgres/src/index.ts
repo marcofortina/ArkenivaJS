@@ -74,6 +74,12 @@ export function postgresPlugin(): Plugin {
         throw cause;
       }
     },
+    async health(context, options) {
+      const pools = applications.get(context);
+      if (!pools?.length) return false;
+      for (const pool of pools) if ((await pool.ping(options)) !== true) return false;
+      return true;
+    },
     async close(context) {
       const pools = applications.get(context) ?? [];
       applications.delete(context);
