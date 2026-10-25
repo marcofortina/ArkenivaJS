@@ -171,3 +171,41 @@ without consuming a challenge/evidence or granting an attempt. A healthy
 application sharing the tables verifies that the failed operations changed no
 state. This tests unavailable/closed providers without stopping the shared test
 database. It is not a database-server failover or network-partition claim.
+
+## Verified primary identity and application authority
+
+The executable
+[authority test](test/integration/mfa-authority.integration.test.ts) connects the
+durable evidence adapter to actual OIDC verification. A disposable loopback
+issuer signs test tokens using a fresh private key retained in its closure.
+`createAuthService` validates signature, issuer, audience and lifetime. The
+application derives tenant ownership with `auth.tenantFrom(identity)`, requires
+a signed primary session ID and primary authentication within five minutes,
+and builds `MfaSubjectContext` from those verified values. Cloning an identity
+does not preserve runtime provenance. No request user ID or tenant header is
+used as an authenticated account.
+
+Only the application's authority consumes the stored evidence for that exact
+issuer/account/tenant/session. Wrong ownership, stale/future primary
+authentication and replay cannot produce a step-up. The original identity
+stays single-factor. After successful consumption, the **test application
+issuer**, not a framework factor or store, signs a new token bound to the
+same owner and original primary authentication time. No token is logged or
+returned by an HTTP endpoint.
+
+The verifier explicitly maps that fixture issuer's exact `acr` value
+`urn:example:local-mfa` and a factor verification timestamp within one minute.
+Missing, unknown, stale or future claims fail closed. Claims merely named
+`mfa`/`amr` are ignored. The new token must be verified again before
+`auth.requireAssurance(identity, 'mfa')` succeeds. TOTP-class evidence cannot
+authorize phishing-resistant assurance; cloned identities remain rejected.
+
+The application also demonstrates a strict management policy: every enroll,
+replace, disable, recovery-code or revoke decision needs the current verified
+owner, `mfa:manage` scope, recent primary authentication and recent MFA. This
+illustrates an already-enrolled account's management authorization. Initial
+enrollment bootstrap/account recovery needs a separately approved application
+reauthentication policy; this fixture supplies neither that workflow nor real
+factor verification. The synthetic producer only exercises the shared trust
+handoff. Factor modules, a real IdP integration and production session lifecycle
+still require their own tests and deployment policy.
