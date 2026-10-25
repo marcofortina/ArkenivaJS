@@ -5,3 +5,5 @@ packages:
 allowBuilds:
   # Thin mode needs no install hook or Oracle Client setup.
   oracledb@26.0.0: false
+  # The reviewed protobuf runtime is complete without its version-scheme warning hook.
+  protobufjs@7.6.6: false

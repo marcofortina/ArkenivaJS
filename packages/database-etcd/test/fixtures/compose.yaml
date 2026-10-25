@@ -1,0 +1,103 @@
+name: arkenivajs-etcd-test
+services:
+  etcd:
+    image: ${ARKENIVA_ETCD_IMAGE:?A verified etcd image is required}
+    user: '65532:65532'
+    command:
+      - /usr/local/bin/etcd
+      - --name=fixture
+      - --data-dir=/data
+      - --listen-client-urls=https://0.0.0.0:2379
+      - --advertise-client-urls=https://localhost:2379
+      - --listen-peer-urls=http://127.0.0.1:2380
+      - --initial-advertise-peer-urls=http://127.0.0.1:2380
+      - --initial-cluster=fixture=http://127.0.0.1:2380
+      - --cert-file=/fixture/server.crt
+      - --key-file=/fixture/server.key
+      - --trusted-ca-file=/fixture/ca.crt
+      - --client-cert-auth=true
+      - --tls-min-version=TLS1.2
+      - --quota-backend-bytes=67108864
+      - --max-request-bytes=1572864
+      - --max-txn-ops=128
+      - --log-level=warn
+    ports: ['${ETCD_FIXTURE_BIND_ADDRESS:-127.0.0.1}:12379:2379']
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    volumes:
+      - ${ETCD_FIXTURE_DIRECTORY:?}/server.crt:/fixture/server.crt:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/server.key:/fixture/server.key:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/health.crt:/fixture/health.crt:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/health.key:/fixture/health.key:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/data-server:/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          '/usr/local/bin/etcdctl',
+          '--endpoints=https://localhost:2379',
+          '--cacert=/fixture/ca.crt',
+          '--cert=/fixture/health.crt',
+          '--key=/fixture/health.key',
+          'endpoint',
+          'health',
+        ]
+      interval: 1s
+      timeout: 5s
+      retries: 90
+  wrong-san:
+    image: ${ARKENIVA_ETCD_IMAGE:?A verified etcd image is required}
+    user: '65532:65532'
+    command:
+      - /usr/local/bin/etcd
+      - --name=fixture
+      - --data-dir=/data
+      - --listen-client-urls=https://0.0.0.0:2379
+      - --advertise-client-urls=https://wrong.invalid:2379
+      - --listen-peer-urls=http://127.0.0.1:2380
+      - --initial-advertise-peer-urls=http://127.0.0.1:2380
+      - --initial-cluster=fixture=http://127.0.0.1:2380
+      - --cert-file=/fixture/server.crt
+      - --key-file=/fixture/server.key
+      - --trusted-ca-file=/fixture/ca.crt
+      - --client-cert-auth=true
+      - --tls-min-version=TLS1.2
+      - --quota-backend-bytes=67108864
+      - --max-request-bytes=1572864
+      - --max-txn-ops=128
+      - --log-level=warn
+    extra_hosts: ['wrong.invalid:127.0.0.1']
+    ports: ['${ETCD_FIXTURE_BIND_ADDRESS:-127.0.0.1}:12380:2379']
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    volumes:
+      - ${ETCD_FIXTURE_DIRECTORY:?}/wrong-san.crt:/fixture/server.crt:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/wrong-san.key:/fixture/server.key:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/server-ca.crt:/fixture/ca.crt:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/health.crt:/fixture/health.crt:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/health.key:/fixture/health.key:ro
+      - ${ETCD_FIXTURE_DIRECTORY:?}/data-wrong-san:/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          '/usr/local/bin/etcdctl',
+          '--endpoints=https://wrong.invalid:2379',
+          '--cacert=/fixture/ca.crt',
+          '--cert=/fixture/health.crt',
+          '--key=/fixture/health.key',
+          'endpoint',
+          'health',
+        ]
+      interval: 1s
+      timeout: 5s
+      retries: 90
