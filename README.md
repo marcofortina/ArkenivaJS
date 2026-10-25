@@ -48,3 +48,6 @@ session transactions with verified commit and rollback.
 
 The [JSON cache consumer](examples/cache/README.md) demonstrates checked values,
 finite expiration, actual deletion outcomes and explicit business DTO validation.
+
+The [health service](examples/health/README.md) demonstrates process liveness,
+safe HTTP readiness, optional actual Redis probes and graceful shutdown.

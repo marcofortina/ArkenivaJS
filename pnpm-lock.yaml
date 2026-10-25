@@ -248,6 +248,24 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-etcd
 
+  examples/health:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-redis':
+        specifier: workspace:*
+        version: link:../../packages/database-redis
+      '@arkenivajs/health':
+        specifier: workspace:*
+        version: link:../../packages/health
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+
   examples/hello-http:
     dependencies:
       '@arkenivajs/api':

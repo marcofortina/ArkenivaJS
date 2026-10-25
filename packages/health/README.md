@@ -23,6 +23,8 @@ await app.start();
 ```
 
 Use the Redis adapter's [verified TLS and scoped account policy](../database-redis/README.md).
+The [executable consumer](../../examples/health/README.md) includes signal-driven
+shutdown and an explicit disposable Redis option.
 
 ## Readiness and liveness
 
