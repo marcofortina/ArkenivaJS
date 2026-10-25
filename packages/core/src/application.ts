@@ -7,12 +7,20 @@ import type {
   PluginContext,
   Logger,
   ConfigService,
+  OperationOptions,
 } from './contracts.js';
 import { KitError } from './errors.js';
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from './defaults.js';
 import { ConfigStore, copyData, freezeData, within } from './support.js';
 import { APPLICATION_SCHEMA, SEMVER_PATTERN } from './application-schema.js';
-import { PREPARE_PLUGIN, ACTIVATE_PLUGIN, DRAIN_PLUGIN, SUPPORT_PLUGINS } from './composition.js';
+import {
+  PREPARE_PLUGIN,
+  ACTIVATE_PLUGIN,
+  DRAIN_PLUGIN,
+  SUPPORT_PLUGINS,
+  HEALTH_PROBES,
+} from './composition.js';
+import type { PluginHealthProbe } from './composition.js';
 import type { ComposablePlugin, SupportPluginFactory } from './composition.js';
 
 /** EK-CORE-002: explicit capability keys; no optional adapters load implicitly. */
@@ -68,6 +76,7 @@ function capturePlugin(plugin: Plugin): ComposablePlugin {
     !new RegExp(SEMVER_PATTERN).test(plugin.version) ||
     typeof plugin.init !== 'function' ||
     typeof plugin.close !== 'function' ||
+    (composition.health !== undefined && typeof composition.health !== 'function') ||
     (composition[PREPARE_PLUGIN] !== undefined &&
       typeof composition[PREPARE_PLUGIN] !== 'function') ||
     (composition[ACTIVATE_PLUGIN] !== undefined &&
@@ -91,6 +100,7 @@ function capturePlugin(plugin: Plugin): ComposablePlugin {
     version: plugin.version,
     init: plugin.init.bind(plugin),
     close: plugin.close.bind(plugin),
+    ...(composition.health ? { health: composition.health.bind(plugin) } : {}),
     ...(composition[PREPARE_PLUGIN]
       ? { [PREPARE_PLUGIN]: composition[PREPARE_PLUGIN].bind(plugin) }
       : {}),
@@ -243,8 +253,25 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
         }
       : {}),
   });
+  const expanded = expandSupport(
+    roots,
+    Object.freeze({ ...wiring, plugins: Object.freeze(roots) }),
+  );
+  const probeOwners = expanded.filter((plugin) => plugin.health).map((plugin) => plugin.id);
   const plugins = ordered(
-    expandSupport(roots, Object.freeze({ ...wiring, plugins: Object.freeze(roots) })),
+    expanded.map((plugin) =>
+      plugin.capabilities.has('health')
+        ? Object.freeze({
+            ...plugin,
+            dependencies: Object.freeze([
+              ...new Set([
+                ...(plugin.dependencies ?? []),
+                ...probeOwners.filter((owner) => owner !== plugin.id),
+              ]),
+            ]),
+          })
+        : plugin,
+    ),
   );
   for (const capability of Object.keys(COMPONENTS)) {
     if (plugins.filter((plugin) => plugin.capabilities.has(capability)).length > 1)
@@ -388,6 +415,11 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
                     code: 'EK_LIFECYCLE_STATE',
                     message: 'Provider registry is frozen',
                   });
+                if (key === APPLICATION_SIGNAL || key === HEALTH_PROBES)
+                  throw new KitError({
+                    code: 'EK_PLUGIN_DEPENDENCY',
+                    message: 'Kernel services cannot be replaced by a plugin',
+                  });
                 if (values.has(key))
                   throw new KitError({
                     code: 'EK_PLUGIN_DUPLICATE',
@@ -397,6 +429,44 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
               },
               require<T>(key: symbol): T {
                 if (key === APPLICATION_SIGNAL) return controller.signal as T;
+                if (key === HEALTH_PROBES) {
+                  if (!plugin.capabilities.has('health'))
+                    throw new KitError({
+                      code: 'EK_PLUGIN_DEPENDENCY',
+                      message: 'Health probes require the health capability',
+                    });
+                  const probes: readonly PluginHealthProbe[] = Object.freeze(
+                    started
+                      .filter((entry) => entry.plugin.health && entry.plugin.id !== plugin.id)
+                      .map((entry) =>
+                        Object.freeze({
+                          name: 'plugin.' + entry.plugin.id,
+                          check: async (options: OperationOptions) => {
+                            const available = () =>
+                              started.includes(entry) && ['INITIALIZING', 'READY'].includes(state);
+                            if (!available())
+                              throw new KitError({
+                                code: 'EK_RESOURCE_CLOSED',
+                                message: 'Health probe owner is not available',
+                              });
+                            const result = await entry.plugin.health!(entry.context, options);
+                            if (!available())
+                              throw new KitError({
+                                code: 'EK_RESOURCE_CLOSED',
+                                message: 'Health probe owner stopped before completion',
+                              });
+                            if (typeof result !== 'boolean')
+                              throw new KitError({
+                                code: 'EK_HEALTH_NOT_READY',
+                                message: 'Plugin returned invalid readiness evidence',
+                              });
+                            return result;
+                          },
+                        }),
+                      ),
+                  );
+                  return probes as T;
+                }
                 const entry = values.get(key);
                 if (
                   !entry ||

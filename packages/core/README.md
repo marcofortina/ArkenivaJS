@@ -52,3 +52,13 @@ Adapter authors can use `instrumentOperation(telemetry,name,attributes,work,onFa
 Root `security.assuranceResolver` is executable, immutable trust policy. Construction captures the callback separately from validated configuration data and exposes it only through immutable plugin options. Configuration getters, serialized snapshots and reloads do not carry executable callbacks; security changes require application reconstruction. Other functions or accessors in configuration remain invalid. Assurance policy startup failures retain `EK_MFA_POLICY` after owned resources are cleaned up.
 
 Adapters can declare pure synchronous metadata factories through `SUPPORT_PLUGINS` in the composition SPI. The kernel resolves each factory identity once per application after root data validates, then applies the normal duplicate id/capability checks, dependency ordering, preparation and reverse cleanup. The requesting plugin must explicitly list each returned support id in `dependencies`; the extension grants no access to undeclared providers. It allows a group of SQL drivers to share one application-owned coordinator while retaining zero-argument driver factories and one `app.sql` facade. It performs no native-driver discovery and must not open resources in the support factory. Support graphs are bounded; asynchronous or malformed factories fail before initialization. Distinct factories returning the same id are conflicts, rather than permission to overwrite a provider. No mutable process-global service registry is needed.
+
+`ComposablePlugin.health(context, operation)` is an optional readonly owner probe.
+The kernel orders a declared health collector after all probe owners, including
+expanded support plugins. Only the health capability can require the immutable
+`HEALTH_PROBES` list from the support entry point. Each callback invokes its
+owner's captured hook with that owner's original scoped context; it grants no
+access to foreign component values. Callback results must be boolean, and late
+results from stopped owners reject. Neither `HEALTH_PROBES` nor
+`APPLICATION_SIGNAL` can be overwritten by a plugin. The separate
+health integration owns probe deadlines and readiness policy.
