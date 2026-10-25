@@ -320,6 +320,15 @@ importers:
         specifier: 6.2.13
         version: 6.2.13
 
+  examples/oracle:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-oracle':
+        specifier: workspace:*
+        version: link:../../packages/database-oracle
+
   examples/postgres:
     dependencies:
       '@arkenivajs/core':
