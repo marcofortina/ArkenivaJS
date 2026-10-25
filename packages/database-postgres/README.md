@@ -170,7 +170,7 @@ resource attribution to a tenant.
 
 ## Verification
 
-Current local live evidence covers PostgreSQL **18.6**, Linux x86-64 in an isolated
+Current local live evidence covers PostgreSQL **17.11 and 18.6**, Linux x86-64 in an isolated
 VM, Node **22.23.4 / 24.22.1 / 26.12.1**, and the dependency versions above. The application role is
 not a superuser and cannot create databases or roles. Other server/runtime claims
 require their own passing integration evidence.
@@ -186,14 +186,16 @@ constraints, rollback, pinned connections, mutable-value capture, TLS and
 cancellation, plus distinct commit-acknowledgment fault scenarios.
 
 The [disposable TLS fixture](test/fixtures/README.md) reproduces the server setup
-and negative certificate endpoint in an isolated VM or CI runner. CI executes
-the combined 95% line/branch coverage gate on all three supported Node versions.
+and negative certificate endpoint in an isolated VM or CI runner. CI is configured
+to run the combined 95% line/branch coverage gate, HTTP benchmark equivalence and
+packed consumer examples for both server majors on all three supported Node versions.
 The [orders example](../../examples/postgres/README.md) builds against the actual
 packages and verifies exact values, duplicate rejection and rollback on that server.
 
-| Driver                      | Server          | Node                      | Platform               | Live verification date |
-| --------------------------- | --------------- | ------------------------- | ---------------------- | ---------------------- |
-| pg 8.23.1, pg-cursor 2.22.1 | PostgreSQL 18.6 | 22.23.4, 24.22.1, 26.12.1 | Linux x86-64, QEMU/KVM | 2026-10-24             |
+| Driver                      | Server           | Node                      | Platform               | Live verification date |
+| --------------------------- | ---------------- | ------------------------- | ---------------------- | ---------------------- |
+| pg 8.23.1, pg-cursor 2.22.1 | PostgreSQL 18.6  | 22.23.4, 24.22.1, 26.12.1 | Linux x86-64, QEMU/KVM | 2026-10-24             |
+| pg 8.23.1, pg-cursor 2.22.1 | PostgreSQL 17.11 | 22.23.4, 24.22.1, 26.12.1 | Linux x86-64, QEMU/KVM | 2026-10-25             |
 
 Upstream references: [pool lifecycle](https://node-postgres.com/apis/pool),
 [cursors](https://node-postgres.com/apis/cursor),

@@ -22,3 +22,31 @@ test('CI runs only on main pushes with immutable official Actions and read-only 
   assert.deepEqual(parse(workflow).on, { push: { branches: ['main'] } });
   assert.ok(!workflow.includes('continue-on-error'));
 });
+
+test('PostgreSQL compatibility covers both reviewed servers on every supported Node line', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+  const job = workflow.jobs['postgres-integration'];
+  assert.deepEqual(job.strategy.matrix, {
+    node: ['22.23.4', '24.22.1', '26.12.1'],
+    postgres: ['17', '18'],
+  });
+  assert.equal(job.strategy['fail-fast'], false);
+  const commands = (job.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  const guards = commands.indexOf(
+    'python3 packages/database-postgres/test/fixtures/test_prepare.py',
+  );
+  const preparation = commands.findIndex((command) =>
+    command.startsWith('python3 packages/database-postgres/test/fixtures/prepare.py '),
+  );
+  assert.ok(guards >= 0 && preparation > guards);
+  assert.ok(commands[preparation]?.includes('--server-major "${{ matrix.postgres }}"'));
+  for (const gate of [
+    'pnpm coverage:postgres',
+    'pnpm --filter @arkenivajs/benchmark-foundation test:integration',
+    'pnpm --filter @arkenivajs/example-postgres test:integration',
+    'pnpm test:packed:examples --integration postgres',
+  ])
+    assert.ok(commands.includes(gate), 'Every PostgreSQL/Node pair must run ' + gate);
+});
