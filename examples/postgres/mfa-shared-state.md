@@ -1,9 +1,9 @@
-# Durable MFA challenge reference adapter
+# Durable MFA state reference adapters
 
 This application-owned example implements `MfaStateStore` against real
-PostgreSQL. It demonstrates shared atomic state before the optional factor
+PostgreSQL, with a shared `MfaRateLimitStore`. It demonstrates shared atomic state before the optional factor
 services are available. It does not verify a factor, issue a session or implement
-the evidence, rate-limit, TOTP-factor or WebAuthn-credential stores.
+the evidence, TOTP-factor or WebAuthn-credential stores.
 
 ## Setup and execution
 
@@ -77,3 +77,38 @@ storage failure requires restoring the verified fixture; never disable TLS
 verification. Tests and logs print no DSN, factor secret or credential material.
 Future factor modules still require their own verifier, replay/counter/recovery,
 secret protection, distributed rate-limit, evidence-handoff and end-to-end tests.
+
+## Shared atomic attempt limiter
+
+[src/mfa-rate-limit-store.ts](src/mfa-rate-limit-store.ts) implements the shared
+`MfaRateLimitStore` port. Create its table with
+`createPostgresMfaRateLimitTable(sql, connection, schema)` and obtain the adapter
+with `createPostgresMfaRateLimitStore(sql, connection, schema)`. It uses the same
+explicitly disposable fixture, cleanup and cancellation/error policies above.
+
+`checkAndRecord({scopeKey,operation,maxAttempts,windowMs,nowMs}, options?)` performs
+one `INSERT ... ON CONFLICT ... RETURNING` transition. Its primary key is a
+SHA-256 digest of a versioned JSON-framed scope/operation tuple, avoiding index
+size failures for long Unicode keys and storage of raw account scope strings.
+This digest is a lookup key, never authentication evidence. Derive the original
+strings and the time from trusted server policy;
+request parameters cannot choose another account's scope or a weaker limit.
+The text bounds above apply. Capacity/window/time must be safe JavaScript
+integers, capacity/window positive and time nonnegative. Capacity plus one and
+time plus window must remain safe integers. PostgreSQL BIGINT storage and
+explicit bigint comparisons preserve the values without narrowing to 32 bits.
+
+A granted attempt returns `{allowed:true}`. Exhaustion returns
+`{allowed:false,retryAfterMs}`. The counter saturates at capacity plus one;
+it is a bounded limiter state, not an exact audit count of every rejected call.
+The window resets only at its original end. Different capacity/window settings
+for the same active bucket fail with `EK_MFA_POLICY` rather than reopening quota;
+changed policy may take effect after the existing window expires. A backward
+clock jump conservatively exhausts the existing bucket until its original end.
+Storage failures never grant an attempt.
+
+The same integration command tests independent scope/operation buckets, exact
+boundary/reset/retry values, conflicting active policies, clock rollback and two
+separate Node processes contending for one capacity-three bucket. Ten attempts
+collectively receive exactly three grants. Unknown/noninteger/overflowing
+inputs are rejected before SQL, and backend errors remain safe and fail closed.
