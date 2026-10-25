@@ -4,3 +4,6 @@
 
 - Add Fastify routes, strict request/response schemas, OpenAPI 3.1, safe middleware stages and graceful listener lifecycle.
 - Use optional declared dependency health for bounded, shared HTTP readiness while preserving local liveness and safe status-only responses.
+
+- Add private bounded TLS-file validation and native key/certificate checks with
+  temporary-buffer cleanup and real HTTPS/client-certificate tests.
