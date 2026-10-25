@@ -51,7 +51,8 @@ export function mfaId(value: unknown): asserts value is string {
 /** Restrict test DDL and queries to a fixed table in a caller-owned random namespace. */
 export function mfaTable(
   schema: string,
-  suffix: 'challenges' | 'rate_limits' | 'evidence',
+  suffix:
+    'challenges' | 'rate_limits' | 'evidence' | 'totp_accounts' | 'totp_pending' | 'totp_recovery',
 ): string {
   if (process.env.ARKENIVA_POSTGRES_DISPOSABLE !== '1')
     throw new KitError({
@@ -61,7 +62,14 @@ export function mfaTable(
   if (
     typeof schema !== 'string' ||
     !/^mfa_[a-f0-9]{24}$/.test(schema) ||
-    !['challenges', 'rate_limits', 'evidence'].includes(suffix)
+    ![
+      'challenges',
+      'rate_limits',
+      'evidence',
+      'totp_accounts',
+      'totp_pending',
+      'totp_recovery',
+    ].includes(suffix)
   )
     throw mfaPolicyError();
   return schema + '.mfa_' + suffix;

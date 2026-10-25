@@ -248,3 +248,47 @@ ciphertext/nonce/tag/version tampering, missing keys, rotation, mutable input
 snapshots, unavailable providers, cancellation, deadlines, late key completion,
 input bounds and safe error serialization. It uses ephemeral synthetic bytes,
 prints no keys or factor material, and leaves PostgreSQL state untouched.
+
+## Durable TOTP factor state
+
+[src/totp-state-store.ts](src/totp-state-store.ts) implements the complete
+`TotpStateStore` SPI using three additional owned PostgreSQL tables. It is
+explicitly classified `usage:'test-only'` and requires the disposable marker;
+production TOTP configuration rejects this fixture. It supplies real shared
+SQL atomicity for tests, not a production migration or deployment package.
+
+Pending enrollment inserts once with its exact owner, primary session,
+expiration and observed factor generation. Consumed IDs remain tombstones.
+An account row lock serializes activation, replacement, revocation and recovery
+set changes. Activation validates the pending generation and ownership, installs
+the encrypted factor and accepted timestep, consumes all pending enrollments
+and removes the old recovery set in one transaction. A replacement keeps the
+old active factor until that transaction commits. The factor service must
+authorize enrollment/replacement independently before these store operations.
+
+`acceptStepIfGreater` is one conditional update bound to issuer, account,
+tenant, active factor ID and generation. It advances the exact stored step
+only if greater. Body metadata and independent SQL columns are compared on
+reads; corrupt ownership/generation/step data cannot be returned as a valid
+factor. Key migration must preserve ID, generation and accepted step.
+
+Recovery replacement deletes and inserts the complete keyed-hash set in one
+transaction. Consumption uses the same owner lock and an atomic deletion;
+revocation invalidates the factor, pending enrollments and recovery set together.
+Owner and hash lookup indexes use SHA-256 over framed/bounded values, retaining
+exact owner/hash predicates. These lookup digests are not authentication or a
+substitute for the service's external-key HMAC. No recovery plaintext, TOTP
+seed or encryption/HMAC key belongs in these tables.
+
+The fixture bounds replacement sets to 100 distinct keyed hashes. An empty set
+explicitly clears recovery state; the service must issue at least ten random
+codes. It accepts a trusted construction-time test clock for deterministic
+pending expiration. No request can choose the clock.
+
+The integration suite uses real signed primary identities and verifies owner,
+tenant and session mismatch, expiry, stale generations, replacement/revocation,
+metadata corruption and rollback after a real SQL trigger failure following
+recovery deletion. Two separate Node processes contend for enrollment activation,
+the same OTP step and the same recovery hash; each transition has exactly one
+winner. These are storage transitions; actual OTP verification and service
+authorization require the additional factor-service tests.
