@@ -6,7 +6,11 @@ test('CI runs only on main pushes with immutable official Actions and read-only 
   const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
   const pins = [...workflow.matchAll(/uses: (actions\/[a-z-]+)@([a-f0-9]+)/g)];
   const uniqueActions = new Set(pins.map((pin) => pin[1]));
-  assert.deepEqual([...uniqueActions].sort(), ['actions/checkout', 'actions/setup-node']);
+  assert.deepEqual([...uniqueActions].sort(), [
+    'actions/checkout',
+    'actions/setup-node',
+    'actions/upload-artifact',
+  ]);
   for (const name of uniqueActions) {
     assert.equal(new Set(pins.filter((pin) => pin[1] === name).map((pin) => pin[2])).size, 1);
   }
