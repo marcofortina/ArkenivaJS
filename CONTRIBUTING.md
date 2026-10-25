@@ -2,6 +2,9 @@
 
 Use Node.js 24 and the exact pnpm version in `package.json`. The compatibility workflow also runs on Node.js 22 and 26. Install with `pnpm install --frozen-lockfile`; use `pnpm verify` before proposing a change. The command checks formatting, lint, builds, types, unit/contract/property coverage, executable guides, API documentation and smoke behavior.
 
+See the [compatibility policy](docs/compatibility.md) for configured architecture
+checks and the evidence required before claiming another platform is supported.
+
 All source comments, JSDoc/TSDoc, developer-facing errors, technical product documentation and Git commit messages must be written in English. Keep public ESM exports explicit, TypeScript strict and dependencies within their owning packages. Add each driver only to its own adapter. Avoid import-time resource creation and required mutable global singletons.
 
 A public behavior change includes its meaningful positive, negative, failure and cancellation tests. Parser and state-machine changes need seeded property tests. Rebuild before running examples. Maintain package READMEs, the API reference and a runnable consumer example with expected output and cleanup. Product error messages and log tests must use fake credentials and verify their redaction.
