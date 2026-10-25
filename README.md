@@ -35,3 +35,6 @@ native driver, bigint result values and explicit JSON transport conversion.
 The [Oracle exact-number consumer](examples/oracle/README.md) demonstrates named
 binds and lossless JSON DTOs. Oracle is contract-tested with mocks; live
 compatibility remains unverified and real execution requires explicit opt-in.
+
+The [Redis cache consumer](examples/redis/README.md) demonstrates scoped UTF-8
+values, actual NX outcomes, millisecond expiration, exact counters and cleanup.
