@@ -46,3 +46,8 @@ The fixed `demo` tenant is tutorial data. A multitenant HTTP handler must obtain
 tenant identity from verified authentication and enforce its data-access policy.
 The adapter integration suite additionally verifies JWT rejection before SQL and
 database-enforced tenant isolation with PostgreSQL row-level security.
+
+The same disposable fixture also exercises the
+[shared MFA challenge adapter](mfa-shared-state.md), including exact owner/session
+matching and one-time consumption by two independent Node processes. This
+application-owned reference does not implement a factor verifier or issue a session.
