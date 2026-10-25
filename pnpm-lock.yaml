@@ -592,6 +592,22 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/health:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../api
+      '@arkenivajs/database-redis':
+        specifier: workspace:*
+        version: link:../database-redis
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+
   packages/http:
     dependencies:
       '@arkenivajs/core':
