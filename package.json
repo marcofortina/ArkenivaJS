@@ -36,7 +36,9 @@
     "test:integration:redis": "node scripts/test.mjs database-redis-integration",
     "coverage:redis": "pnpm --filter @arkenivajs/database-redis coverage",
     "test:integration:etcd": "node scripts/test.mjs database-etcd-integration",
-    "coverage:etcd": "pnpm --filter @arkenivajs/database-etcd coverage"
+    "coverage:etcd": "pnpm --filter @arkenivajs/database-etcd coverage",
+    "test:integration:mongodb": "node scripts/test.mjs database-mongodb-integration",
+    "coverage:mongodb": "pnpm --filter @arkenivajs/database-mongodb coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
