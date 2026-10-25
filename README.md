@@ -38,3 +38,6 @@ compatibility remains unverified and real execution requires explicit opt-in.
 
 The [Redis cache consumer](examples/redis/README.md) demonstrates scoped UTF-8
 values, actual NX outcomes, millisecond expiration, exact counters and cleanup.
+
+The [etcd configuration consumer](examples/etcd/README.md) demonstrates raw bytes,
+exact revisions, CAS contention, resumable watches and explicitly renewed leases.

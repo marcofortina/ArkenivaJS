@@ -75,7 +75,7 @@ bigint metadata as decimal strings. Arbitrary binary data remains binary.
 
 CAS uses the native atomic transaction and exact decimal revision strings. It
 never rounds through a JavaScript number, invokes a transaction callback or
-replays a failed mutation.
+replays a failed mutation. See the [executable consumer](../../examples/etcd/README.md).
 
 ## Watch recovery and lease ownership
 

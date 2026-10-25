@@ -21,6 +21,7 @@ python3 packages/database-etcd/test/fixtures/bootstrap.py /private/runtime/etcd-
 python3 packages/database-etcd/test/fixtures/run.py /private/runtime/etcd-fixture/environment.json docker compose -f packages/database-etcd/test/fixtures/compose.yaml ps
 pnpm build
 python3 packages/database-etcd/test/fixtures/run.py /private/runtime/etcd-fixture/environment.json pnpm coverage:etcd
+python3 packages/database-etcd/test/fixtures/run.py /private/runtime/etcd-fixture/environment.json pnpm --filter @arkenivajs/example-etcd test:integration
 python3 packages/database-etcd/test/fixtures/run.py /private/runtime/etcd-fixture/environment.json docker compose -f packages/database-etcd/test/fixtures/compose.yaml down
 ```
 
