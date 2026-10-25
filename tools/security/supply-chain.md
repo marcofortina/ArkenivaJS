@@ -57,6 +57,10 @@ identifies the exact reviewed declaration patch and its SHA-256. Both belong in
 the retained build evidence. Package archive hashes and contents require the
 independent package checks.
 
+Use the [package archive verifier](package-contents.md) to rebuild and retain
+actual archive contents, export targets and per-file checksums from a clean
+checkout. It complements these dependency inventories.
+
 The evidence describes resolved JavaScript dependencies and known local patches.
 Database servers, container images, operating-system packages, external tools
 and optional native runtime libraries require their own reviewed inventories.
