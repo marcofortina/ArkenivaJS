@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { execFileSync } from 'node:child_process';
-import { generateKeyPairSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer, request } from 'node:https';
 import type { Server } from 'node:https';
@@ -80,12 +80,12 @@ export async function createSecretFixture(authorization: {
     privateKey = await readFile(keyFile);
     certificate = await readFile(certificateFile);
     const signing = generateKeyPairSync('ed25519');
-    values.set('encryption', { bytes: randomBytes(32), keyVersion: 'fixture-encryption-v1' });
+    values.set('encryption', { bytes: randomBytes(32), keyVersion: randomUUID() });
     values.set('previous', { bytes: randomBytes(32), keyVersion: 'fixture-unused-v0' });
     values.set('hmac', { bytes: randomBytes(32), keyVersion: 'fixture-hmac-v1' });
     values.set('signing', {
       bytes: signing.privateKey.export({ format: 'der', type: 'pkcs8' }),
-      keyVersion: 'fixture-signing-v1',
+      keyVersion: randomUUID(),
     });
     server = createServer(
       { key: privateKey, cert: certificate, minVersion: 'TLSv1.3', maxHeaderSize: 4096 },

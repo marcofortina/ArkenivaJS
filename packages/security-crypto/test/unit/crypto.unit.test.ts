@@ -8,6 +8,7 @@ import {
   createHmac,
   generateKeyPairSync,
   randomBytes,
+  randomUUID,
   sign,
   verify,
 } from 'node:crypto';
@@ -37,8 +38,8 @@ function fixture() {
   const ed = generateKeyPairSync('ed25519'),
     ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const values = new Map<string, SecretValue>([
-    ['encryption', { bytes: randomBytes(32), keyVersion: 'encryption-v1' }],
-    ['old-encryption', { bytes: randomBytes(32), keyVersion: 'encryption-v0' }],
+    ['encryption', { bytes: randomBytes(32), keyVersion: randomUUID() }],
+    ['old-encryption', { bytes: randomBytes(32), keyVersion: randomUUID() }],
     ['hmac', { bytes: randomBytes(32), keyVersion: 'hmac-v1' }],
     ['ed', { bytes: ed.privateKey.export({ format: 'der', type: 'pkcs8' }), keyVersion: 'ed-v1' }],
     ['ec', { bytes: ec.privateKey.export({ format: 'der', type: 'pkcs8' }), keyVersion: 'ec-v1' }],
@@ -76,7 +77,7 @@ test('EK-STD-SEC-009 authenticated envelopes preserve exact bytes and reject tam
     const envelope = await crypto.encrypt(plaintext, 'encryption', aad);
     assert.equal(envelope.version, 1);
     assert.equal(envelope.algorithm, 'AES-256-GCM');
-    assert.equal(envelope.keyId, 'encryption-v1');
+    assert.equal(envelope.keyId, f.values.get('encryption')!.keyVersion);
     assert.equal(envelope.nonce.length, 12);
     assert.equal(envelope.tag.length, 16);
     assert.deepEqual(await crypto.decrypt(envelope, 'encryption', aad), original);
@@ -157,7 +158,8 @@ test('EK-STD-SEC-009 fresh nonces are unique and provider rotations retain only 
     const previous = f.values.get('encryption')!,
       envelope = await crypto.encrypt(Buffer.from('retained'), 'encryption');
     f.values.set('old-encryption', previous);
-    f.values.set('encryption', { bytes: randomBytes(32), keyVersion: 'encryption-v2' });
+    f.values.set('encryption', { bytes: randomBytes(32), keyVersion: randomUUID() });
+    assert.notEqual(f.values.get('encryption')!.keyVersion, previous.keyVersion);
     await assert.rejects(crypto.decrypt(envelope, 'encryption'), code('EK_CRYPTO_KEY_UNAVAILABLE'));
     assert.equal(
       Buffer.from(await crypto.decrypt(envelope, 'old-encryption')).toString(),
