@@ -96,6 +96,9 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'mail.operation',
+  'mail.outcome',
+  'mail.error',
   'compression.operation',
   'compression.outcome',
   'codes.operation',
@@ -125,6 +128,22 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'mail.operation': ['send', 'verify'],
+  'mail.outcome': ['ok', 'partial', 'rejected', 'error'],
+  'mail.error': [
+    'none',
+    'config',
+    'connection',
+    'tls',
+    'auth',
+    'envelope',
+    'message',
+    'stream',
+    'timeout',
+    'cancelled',
+    'closed',
+    'other',
+  ],
   'compression.operation': ['gzip', 'gunzip', 'create_zip', 'iterate_zip'],
   'compression.outcome': ['ok', 'error', 'cancelled'],
   'codes.operation': ['encode', 'decode'],
@@ -191,6 +210,10 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'mail.duration.ms': 'ms',
+  'mail.attachment.bytes': 'By',
+  'mail.accepted.recipients': '{recipient}',
+  'mail.rejected.recipients': '{recipient}',
   'compression.duration.ms': 'ms',
   'compression.compressed.bytes': 'By',
   'compression.expanded.bytes': 'By',

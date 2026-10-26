@@ -1,0 +1,23 @@
+{
+  "name": "@arkenivajs/example-mail",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/*.test.js",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/mail": "workspace:*"
+  },
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "smtp-server": "3.21.1",
+    "mailparser": "3.12.4"
+  },
+  "license": "AGPL-3.0-or-later"
+}
