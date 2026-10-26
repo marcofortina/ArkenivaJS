@@ -144,6 +144,11 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'apikey.issue.duration': 'ms',
+  'apikey.verify.duration': 'ms',
+  'apikey.rotate.duration': 'ms',
+  'apikey.revoke.duration': 'ms',
+  'apikey.list.duration': 'ms',
   'x509.validation.duration_ms': 'ms',
   'mtls.verification.duration_ms': 'ms',
   'x509.trust_roots.expiring': '{certificate}',
