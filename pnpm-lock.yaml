@@ -430,6 +430,9 @@ importers:
       '@arkenivajs/security-apikey':
         specifier: workspace:*
         version: link:../../packages/security-apikey
+      '@arkenivajs/security-sessions':
+        specifier: workspace:*
+        version: link:../../packages/security-sessions
       '@arkenivajs/security-totp':
         specifier: workspace:*
         version: link:../../packages/security-totp
@@ -784,6 +787,19 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+
+  packages/security-sessions:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../telemetry
