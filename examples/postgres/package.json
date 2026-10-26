@@ -21,7 +21,8 @@
     "@arkenivajs/security-apikey": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/security-sessions": "workspace:*",
-    "@arkenivajs/security-password": "workspace:*"
+    "@arkenivajs/security-password": "workspace:*",
+    "@arkenivajs/webhooks": "workspace:*"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {

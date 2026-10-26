@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'webhook.operation',
+  'webhook.outcome',
   'upload.method',
   'upload.outcome',
   'mail.operation',
@@ -130,6 +132,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'webhook.operation': ['sign', 'verify', 'send'],
+  'webhook.outcome': ['ok', 'error'],
   'upload.method': ['POST', 'PUT'],
   'upload.outcome': ['ok', 'error'],
   'mail.operation': ['send', 'verify'],
@@ -214,6 +218,10 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'webhook.duration.ms': 'ms',
+  'webhook.payload.bytes': 'By',
+  'webhook.verification.failures': '{failure}',
+  'webhook.delivery.attempts': '{attempt}',
   'upload.duration.ms': 'ms',
   'upload.request.bytes': 'By',
   'upload.files': '{file}',
