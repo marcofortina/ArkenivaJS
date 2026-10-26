@@ -421,9 +421,15 @@ importers:
       '@arkenivajs/database-postgres':
         specifier: workspace:*
         version: link:../../packages/database-postgres
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../../packages/security
+      '@arkenivajs/security-apikey':
+        specifier: workspace:*
+        version: link:../../packages/security-apikey
       '@arkenivajs/security-totp':
         specifier: workspace:*
         version: link:../../packages/security-totp
@@ -752,6 +758,19 @@ importers:
       '@arkenivajs/api':
         specifier: workspace:*
         version: link:../api
+
+  packages/security-apikey:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
 
   packages/security-crypto:
     dependencies:

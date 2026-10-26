@@ -62,3 +62,6 @@ with the pinned browser SDK, a virtual authenticator and this shared SQL state.
 The [transactional security-state reference](security-state.md) adds complete
 CAS/batch/index/owner-epoch behavior for credential-service adapters, with actual
 cross-process PostgreSQL tests and no implicit database pool.
+
+The [API key lifecycle guide](api-keys.md) uses signed OIDC administration and
+the complete transactional store through two public credential-service instances.

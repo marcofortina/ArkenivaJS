@@ -68,6 +68,11 @@ native TLS and CRL tests using ephemeral certificates.
 The [certificate example](examples/certificates/README.md) demonstrates the full
 flow, including revocation and cleanup, against packed public artifacts.
 
+The optional [API key service](packages/security-apikey/README.md) provides
+scoped credentials with independent runtime authorization and shared atomic
+state. Its [PostgreSQL guide](examples/postgres/api-keys.md) verifies signed
+OIDC administration, tenant isolation, concurrent rotation and revocation.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later

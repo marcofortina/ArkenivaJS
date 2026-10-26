@@ -17,7 +17,9 @@
     "@arkenivajs/security": "workspace:*",
     "@arkenivajs/security-totp": "workspace:*",
     "@arkenivajs/security-webauthn": "workspace:*",
-    "jose": "6.2.13"
+    "jose": "6.2.13",
+    "@arkenivajs/security-apikey": "workspace:*",
+    "@arkenivajs/logging": "workspace:*"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
