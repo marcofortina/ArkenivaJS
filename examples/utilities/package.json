@@ -10,7 +10,8 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@arkenivajs/data-identifiers": "workspace:*"
+    "@arkenivajs/data-identifiers": "workspace:*",
+    "@arkenivajs/data-validation": "workspace:*"
   },
   "license": "AGPL-3.0-or-later"
 }

@@ -86,6 +86,8 @@ replacement and session invalidation through the application-owned transaction p
 The [identifier utility](packages/data-identifiers/README.md) uses native UUIDv4
 and the approved UUID library for UUIDv7, with strict version/canonical policy.
 The [utilities example](examples/utilities/README.md) runs without external services.
+The [validation utility](packages/data-validation/README.md) adds explicit email,
+URL, IP and UUID policies and startup-compiled Ajv schemas with bounded JSON input.
 
 ## License
 

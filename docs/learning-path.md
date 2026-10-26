@@ -26,7 +26,7 @@ external secret provider; the checked-in inventory contains no live credentials.
 | Project                                                          | Learn                                                                    | Infrastructure                                                 |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | [Configuration](../examples/configuration/README.md)             | YAML, environment precedence and immutable validated values              | None                                                           |
-| [Utilities](../examples/utilities/README.md)                     | Native UUIDv4, library-backed UUIDv7 and strict canonical policy         | None                                                           |
+| [Utilities](../examples/utilities/README.md)                     | Native UUIDs, format policies and startup-compiled JSON Schema           | None                                                           |
 | [Cryptography](../examples/cryptography/README.md)               | External versioned secrets, authenticated envelopes, MACs and signatures | Disposable loopback HTTPS and OpenSSL                          |
 | [Certificates](../examples/certificates/README.md)               | PEM/DER metadata, fingerprints, explicit TLS trust and actual CRL denial | Disposable loopback TLS and OpenSSL                            |
 | [HTTP hello service](../examples/hello-http/README.md)           | Typed route, response validation, OpenAPI and SIGTERM shutdown           | Local loopback sockets                                         |
