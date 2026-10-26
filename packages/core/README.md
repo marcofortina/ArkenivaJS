@@ -90,3 +90,9 @@ files, validates certificate dates and native OpenSSL context compatibility, and
 clears temporary certificate/key/CA buffers after the trusted callback constructs
 its native context. Importing core or its support entry does not load TLS material
 or open a listener.
+
+`captureAbortSignal` in the support SPI captures a validated native signal and
+rejects structural lookalikes or shadowed cancellation hooks. `within` snapshots
+its options, checks cancellation before invoking queued work, and checks its
+monotonic deadline again before acknowledging success. A timeout cannot preempt
+synchronous JavaScript or roll back a side effect that already occurred.

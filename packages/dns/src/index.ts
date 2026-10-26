@@ -6,7 +6,7 @@ import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { KitError, COMPONENTS } from '@arkenivajs/core';
 import type { Logger, OperationOptions, Plugin, Telemetry } from '@arkenivajs/core';
-import { SUPPORT_PLUGINS } from '@arkenivajs/core/support';
+import { SUPPORT_PLUGINS, captureAbortSignal } from '@arkenivajs/core/support';
 import type { ComposablePlugin, SupportPluginFactory } from '@arkenivajs/core/support';
 import {
   capture,
@@ -130,8 +130,7 @@ function service(setting: Captured, observation?: Observation): DnsService {
           options.timeoutMs === undefined
             ? setting.timeoutMs
             : Math.min(integer(options.timeoutMs, 1, 120000), setting.timeoutMs);
-      const signal =
-        options.signal === undefined ? undefined : AbortSignal.any([options.signal as AbortSignal]);
+      const signal = options.signal === undefined ? undefined : captureAbortSignal(options.signal);
       return { timeoutMs, signal };
     } catch {
       throw failure('EK_DNS_CONFIG');

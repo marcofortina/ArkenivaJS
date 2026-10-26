@@ -870,7 +870,8 @@ test('EK-STD-SEC-008 shutdown cancels pending verification and bootstrap timeout
 });
 test('EK-STD-SEC-008 native rotation preserves an authenticated connection while parallel new handshakes use the new certificate', async () => {
   const { app, mtls } = await start(),
-    original = f.materials.get('server')!;
+    original = f.materials.get('server')!,
+    firstServerVerification = gate();
   const sockets = new Set<TLSSocket>(),
     clients = new Set<TLSSocket>(),
     validations: Promise<void>[] = [];
@@ -886,6 +887,7 @@ test('EK-STD-SEC-008 native rotation preserves an authenticated connection while
           socket.on('data', (chunk: Buffer) => socket.write(chunk));
         });
       validations.push(verified);
+      firstServerVerification.release();
       void verified.catch(() => socket.destroy());
     },
   );
@@ -915,6 +917,9 @@ test('EK-STD-SEC-008 native rotation preserves an authenticated connection while
     port = address.port;
     const first = await open(),
       previous = new X509Certificate(first.getPeerCertificate().raw).fingerprint256;
+    // Rotation starts only after both sides authenticated the retained connection.
+    await firstServerVerification.promise;
+    await Promise.all(validations);
     f.materials.set('server', f.materials.get('rotated')!);
     await mtls.reloadCertificates();
     server.setSecureContext(

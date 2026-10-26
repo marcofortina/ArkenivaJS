@@ -398,28 +398,79 @@ export class ConfigStore<T extends Record<string, unknown>> implements ConfigSer
   }
 }
 
+/**
+ * Capture a native cancellation source without structural lookalikes or shadowed
+ * lifecycle hooks. Some supported Node lines accept lookalikes in any() alone.
+ */
+export function captureAbortSignal(input: unknown): AbortSignal {
+  try {
+    if (!(input instanceof AbortSignal)) throw new Error();
+    let current: object | null = input,
+      depth = 0;
+    while (current !== AbortSignal.prototype) {
+      if (!current || ++depth > 64) throw new Error();
+      for (const key of ['aborted', 'reason', 'addEventListener', 'removeEventListener'])
+        if (Object.getOwnPropertyDescriptor(current, key)) throw new Error();
+      current = Object.getPrototypeOf(current) as object | null;
+    }
+    Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!.call(input);
+    return AbortSignal.any([input]);
+  } catch {
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'The operation signal is invalid' });
+  }
+}
+
 /** EK-CORE-001: bounded wait, with cancellation and timer/listener cleanup. */
 export async function within<T>(
   work: () => Promise<T> | T,
   options: OperationOptions = {},
 ): Promise<T> {
-  const timeoutMs = options.timeoutMs ?? 30_000;
+  if (typeof work !== 'function')
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Operation work must be a function' });
+  let requestedTimeout: unknown, signal: AbortSignal | undefined;
+  try {
+    if (
+      !options ||
+      typeof options !== 'object' ||
+      Array.isArray(options) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(options))
+    )
+      throw new Error();
+    const timeout = Object.getOwnPropertyDescriptor(options, 'timeoutMs'),
+      source = Object.getOwnPropertyDescriptor(options, 'signal');
+    if ((timeout && !('value' in timeout)) || (source && !('value' in source))) throw new Error();
+    requestedTimeout = timeout?.value;
+    if (source?.value !== undefined) signal = captureAbortSignal(source.value);
+  } catch {
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'The operation options are invalid' });
+  }
+  const timeoutMs = requestedTimeout === undefined ? 30_000 : (requestedTimeout as number);
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)
     throw new KitError({
       code: 'EK_CONFIG_INVALID',
       message: 'Timeout must be a positive integer',
     });
-  if (options.signal?.aborted)
+  if (signal?.aborted)
     throw new KitError({
       code: 'EK_ABORTED',
       message: 'Operation aborted',
-      cause: options.signal.reason,
+      cause: signal.reason,
     });
+  const deadline = performance.now() + timeoutMs;
+  const check = () => {
+    if (signal?.aborted)
+      throw new KitError({
+        code: 'EK_ABORTED',
+        message: 'Operation aborted',
+        cause: signal.reason,
+      });
+    if (performance.now() >= deadline)
+      throw new KitError({ code: 'EK_TIMEOUT', message: 'Operation timed out' });
+  };
   let timer: ReturnType<typeof setTimeout> | undefined;
   let aborted: (() => void) | undefined;
   try {
     const limit = new Promise<never>((_, reject) => {
-      const deadline = performance.now() + timeoutMs;
       const schedule = (): void => {
         const remaining = Math.ceil(deadline - performance.now());
         if (remaining <= 0) {
@@ -435,15 +486,26 @@ export async function within<T>(
           new KitError({
             code: 'EK_ABORTED',
             message: 'Operation aborted',
-            cause: options.signal?.reason,
+            cause: signal?.reason,
           }),
         );
-      options.signal?.addEventListener('abort', aborted, { once: true });
+      signal?.addEventListener('abort', aborted, { once: true });
     });
-    return await Promise.race([Promise.resolve().then(work), limit]);
+    return await Promise.race([
+      Promise.resolve()
+        .then(() => {
+          check();
+          return work();
+        })
+        .then((value) => {
+          check();
+          return value;
+        }),
+      limit,
+    ]);
   } finally {
     if (timer) clearTimeout(timer);
-    if (aborted) options.signal?.removeEventListener('abort', aborted);
+    if (aborted) signal?.removeEventListener('abort', aborted);
   }
 }
 

@@ -207,6 +207,8 @@ test('Configuration and operation policies reject invalid values before pulling 
     { inputBom: 'ignore' },
     { outputBom: 'true' },
     { signal: {} },
+    { signal: { aborted: false, addEventListener() {}, removeEventListener() {} } },
+    { signal: Object.create(AbortSignal.prototype) },
     { signal: null },
     { extra: true },
   ])
