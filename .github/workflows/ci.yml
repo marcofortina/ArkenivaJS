@@ -55,7 +55,14 @@ jobs:
       fail-fast: false
       matrix:
         node: ['22.23.4', '24.22.1', '26.12.1']
-        package: ['security-apikey', 'security-crypto', 'security-mtls', 'security-x509']
+        package:
+          [
+            'security-apikey',
+            'security-crypto',
+            'security-mtls',
+            'security-sessions',
+            'security-x509',
+          ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

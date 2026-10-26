@@ -73,6 +73,11 @@ scoped credentials with independent runtime authorization and shared atomic
 state. Its [PostgreSQL guide](examples/postgres/api-keys.md) verifies signed
 OIDC administration, tenant isolation, concurrent rotation and revocation.
 
+The optional [session service](packages/security-sessions/README.md) provides
+opaque server-side credentials, atomic renewal and shared revocation epochs.
+Its [PostgreSQL guide](examples/postgres/sessions.md) verifies current account
+policy, original authentication metadata and signed logout boundaries.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later

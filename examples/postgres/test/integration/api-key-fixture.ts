@@ -83,16 +83,25 @@ export async function apiKeyFixture(maxKeys = 4, maxAttempts = 10000) {
       async digest(domain, parts, keyRef) {
         if (!state.secretAvailable || keyRef !== 'fixture/apikey-hmac')
           throw new Error('Fixture secret unavailable');
-        if (domain === 'arkenivajs.apikey.owner.v1' || domain === 'arkenivajs.apikey.rate-owner.v1')
+        if (
+          [
+            'arkenivajs.apikey.owner.v1',
+            'arkenivajs.apikey.rate-owner.v1',
+            'arkenivajs.sessions.owner.v1',
+            'arkenivajs.sessions.rate-owner.v1',
+            'arkenivajs.sessions.logout-owner.v1',
+          ].includes(domain)
+        )
           return mac(domain, parts, blindIndexKey).toString('hex');
-        if (domain !== 'arkenivajs.apikey.verifier.v1') throw new Error('Unapproved HMAC domain');
+        if (!['arkenivajs.apikey.verifier.v1', 'arkenivajs.sessions.verifier.v1'].includes(domain))
+          throw new Error('Unapproved HMAC domain');
         return active + ':' + mac(domain, parts, hmacKeys.get(active)!).toString('hex');
       },
       async verify(domain, parts, expected, keyRef) {
         if (
           !state.secretAvailable ||
           keyRef !== 'fixture/apikey-hmac' ||
-          domain !== 'arkenivajs.apikey.verifier.v1'
+          !['arkenivajs.apikey.verifier.v1', 'arkenivajs.sessions.verifier.v1'].includes(domain)
         )
           throw new Error('Fixture secret unavailable');
         const [version, encoded] = expected.split(':'),
@@ -175,6 +184,8 @@ export async function apiKeyFixture(maxKeys = 4, maxAttempts = 10000) {
       backend,
       issuer,
       settings,
+      auth,
+      currentIdentity: () => requests.getStore(),
       state,
       first,
       second,

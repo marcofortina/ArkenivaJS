@@ -65,3 +65,7 @@ cross-process PostgreSQL tests and no implicit database pool.
 
 The [API key lifecycle guide](api-keys.md) uses signed OIDC administration and
 the complete transactional store through two public credential-service instances.
+
+The [durable session guide](sessions.md) adds canonical authentication events,
+atomic renewal, shared revocation epochs and verified signed logout handling
+through two independent session-service instances.
