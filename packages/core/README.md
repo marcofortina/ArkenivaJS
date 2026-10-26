@@ -21,6 +21,11 @@ const response = error.toSafeJSON();
 
 `retryable` defaults to false and never authorizes automatic replay. Error details are immutable primitive metadata. Native causes may contain sensitive data and must remain within trusted components.
 
+`ErrorCode` includes the approved optional security, protocol, data and tenant
+categories. Recognizing an error identifier does not install its adapter or enable
+an optional feature. All categories retain the same fixed safe JSON message;
+unknown identifiers and spelling variants are rejected at runtime.
+
 The documented `@arkenivajs/core/support` integration entry point provides `ConfigStore`, `compileSchema`, `copyData`, `freezeData`, `mergeData`, `redactData` and `within`. These primitives let adapters share one validated data model and error identity without circular package dependencies. They perform no I/O at import.
 
 `ConfigStore<T>(initial, {schema, dynamicPaths?, secretPaths?, preflight?})` validates strict JSON Schema without coercion. Getters and snapshots are deeply immutable; snapshots redact known secret names and explicit secret paths. `reload` merges, validates and preflights a new generation before one atomic swap. Failed reloads retain the previous generation and reject with `EK_CONFIG_RELOAD_REJECTED`. Preflight functions must be side-effect-free. Static data, credentials and security policy require reconstruction.

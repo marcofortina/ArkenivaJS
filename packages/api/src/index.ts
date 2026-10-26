@@ -160,6 +160,7 @@ const statusFor = (error: KitError): number => {
     case 'EK_BACKEND_UNAVAILABLE':
     case 'EK_HEALTH_NOT_READY':
     case 'EK_MFA_STORAGE':
+    case 'EK_TROUTE_CAPACITY':
       return 503;
     default:
       return 500;
