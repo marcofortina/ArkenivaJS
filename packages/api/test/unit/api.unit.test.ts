@@ -124,6 +124,7 @@ test('EK-HTTP-001 typed failures use stable HTTP mappings and never disclose nat
     ['EK_MFA_REPLAY', 409],
     ['EK_MFA_RATE_LIMIT', 429],
     ['EK_MFA_STORAGE', 503],
+    ['EK_TROUTE_CAPACITY', 503],
     ['EK_MFA_ALREADY_ENROLLED', 409],
     ['EK_MFA_ENROLLMENT_EXPIRED', 410],
     ['EK_MFA_CHALLENGE_EXPIRED', 410],

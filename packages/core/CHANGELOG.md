@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Accept the complete approved error catalogue while preserving fixed safe JSON
+  messages and rejecting unknown runtime error identifiers.
+
 - Add lifecycle-aware symbol resolution with application-local initialization
   scopes, dependency checks and explicit missing/duplicate registration errors.
 

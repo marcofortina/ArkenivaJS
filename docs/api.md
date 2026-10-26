@@ -6,6 +6,11 @@ ArkenivaJS packages are ESM-only. Import their documented package entry points a
 
 `KitError({code, message, cause?, retryable?, details?})` extends Error. Its developer message and original cause stay internal. `code` belongs to the exported `ErrorCode` union; invalid JavaScript constructor arguments reject with TypeError. `retryable` defaults to false. `details` contains immutable finite primitive metadata. `toSafeJSON()` and JSON serialization expose only a stable code and a fixed safe message; optional request correlation never exposes a cause or stack.
 
+The complete approved error catalogue includes optional adapter categories without
+loading or enabling those adapters. All categories use the same safe envelope.
+The API maps `EK_TROUTE_CAPACITY` to HTTP 503 while preserving the fixed external
+message and request correlation.
+
 `createApplication(options): Promise<Application>` validates `service.name`, SemVer `service.version` and the development/test/production environment. It checks declared plugins and requested capabilities before opening resources. It never binds a port. Missing or cyclic dependencies use `EK_PLUGIN_DEPENDENCY`; duplicates use `EK_PLUGIN_DUPLICATE`; malformed options use `EK_CONFIG_INVALID`.
 
 `Application.start(): Promise<void>` follows dependency order, shares concurrent startup, and returns immediately once READY. Failure rolls back initialized plugins in reverse order with the primary error retained as cause. `Application.stop({timeoutMs?}): Promise<void>` closes initialized plugins once, continues after cleanup failures and rejects with sanitized aggregate metadata. Its default is `DEFAULT_SHUTDOWN_TIMEOUT_MS`, exactly 30,000 ms. CLOSED is terminal; repeated stop calls are harmless. Starting a closed or draining application rejects with `EK_LIFECYCLE_STATE`.
