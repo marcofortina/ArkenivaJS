@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [durable MFA harness](mfa.md) adds bounded four-mode TOTP/WebAuthn/challenge
+smoke measurements with actual SQL, a controlled authenticator and export privacy checks.
+
 This Tinybench workload measures errors, strict configuration reads/loads, an isolated application's start/stop, Pino logging and native process snapshots. It exercises the same public package entries used by applications. It requires a built workspace and Node.js 24; no server or database is needed.
 
 Run from the workspace root:

@@ -49,6 +49,7 @@ test('PostgreSQL compatibility covers both reviewed servers on every supported N
     'pnpm test:packed:examples --integration postgres',
     'pnpm --filter @arkenivajs/example-postgres test:browser',
     'pnpm test:packed:examples --browser postgres',
+    'pnpm --filter @arkenivajs/benchmark-foundation mfa --smoke "$RUNNER_TEMP/mfa-benchmark"',
   ])
     assert.ok(commands.includes(gate), 'Every PostgreSQL/Node pair must run ' + gate);
   const browser = job.steps.find(
