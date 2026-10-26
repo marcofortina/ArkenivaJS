@@ -4,6 +4,7 @@
 import { pathToFileURL } from 'node:url';
 import { createIdentifiersService } from '@arkenivajs/data-identifiers';
 import { createValidationService } from '@arkenivajs/data-validation';
+import { createTimeService } from '@arkenivajs/data-time';
 
 /** Exercise public utilities without an application or external services. */
 export function runUtilities() {
@@ -22,6 +23,10 @@ export function runUtilities() {
       policy: { maxConcurrent: 1, timeoutMs: 1000 },
     });
   validation.assertSchema({ id: 7 }, 'order');
+  const time = createTimeService({ allowedZones: ['UTC', 'Europe/Rome'] }),
+    rome = time.toZoned(time.parseInstant('2026-03-28T11:00:00Z'), 'Europe/Rome'),
+    calendarDay = time.add(rome, { days: 1 }, 'reject'),
+    elapsedDay = time.add(rome, { hours: 24 }, 'reject');
   const email = validation.email('User@EXAMPLE.ORG'),
     ip = validation.ip('2001:0db8:0000:0000:0000:0000:0000:0001');
   return Object.freeze({
@@ -33,6 +38,8 @@ export function runUtilities() {
     ipNormalized: ip.valid && ip.value === '2001:db8::1',
     privateUrlRejected: !validation.url('https://127.0.0.1', { schemes: ['https:'] }).valid,
     schemaAccepted: true,
+    dstCalendarPreserved: calendarDay.iso === '2026-03-29T12:00:00+02:00[Europe/Rome]',
+    elapsedHoursPreserved: elapsedDay.iso === '2026-03-29T13:00:00+02:00[Europe/Rome]',
   });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

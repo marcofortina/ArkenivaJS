@@ -1,0 +1,33 @@
+{
+  "name": "@arkenivajs/data-time",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node ../../scripts/test.mjs all",
+    "test:unit": "node ../../scripts/test.mjs unit",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@js-temporal/polyfill": "0.5.1"
+  },
+  "license": "AGPL-3.0-or-later"
+}

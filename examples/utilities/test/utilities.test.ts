@@ -15,5 +15,7 @@ test('Public utilities preserve supported versions and reject malformed or nonca
     ipNormalized: true,
     privateUrlRejected: true,
     schemaAccepted: true,
+    dstCalendarPreserved: true,
+    elapsedHoursPreserved: true,
   });
 });
