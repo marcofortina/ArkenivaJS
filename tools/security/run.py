@@ -15,6 +15,14 @@ import re
 
 IMAGE = "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
 REVIEWED_VECTOR = "fc0a86f0f54e0fdecb8951944c7065fd454f4245:packages/security-totp/test/unit/service.unit.test.ts:generic-api-key:229"
+REVIEWED_VERSION_COMMIT = "f4f63b387e16e531188a70ddddbd8119f61f6a66"
+REVIEWED_VERSIONS = (
+    ("examples/cryptography/src/secret-fixture.ts", 83, "fixture-encryption-v1"),
+    ("examples/cryptography/src/secret-fixture.ts", 88, "fixture-signing-v1"),
+    ("packages/security-crypto/test/unit/crypto.unit.test.ts", 40, "encryption-v1"),
+    ("packages/security-crypto/test/unit/crypto.unit.test.ts", 41, "encryption-v0"),
+    ("packages/security-crypto/test/unit/crypto.unit.test.ts", 160, "encryption-v2"),
+)
 
 
 def reviewed_public_vectors(repository):
@@ -45,6 +53,46 @@ def reviewed_public_vectors(repository):
             or base64.b32decode(match.group(1)) != b"12345678901234567890"):
         raise ValueError("Reviewed source is not the published RFC6238 SHA1 test vector")
     return [REVIEWED_VECTOR]
+
+
+def reviewed_version_metadata(repository):
+    """Validate only the five independently reviewed historical version labels."""
+    relative = "tools/security/reviewed-version-metadata.json"
+    path = repository / relative
+    if not path.exists():
+        return []
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+        raise ValueError("Version review must be a bounded tracked regular file")
+    content = path.read_bytes()
+    if content != subprocess.check_output(["git", "show", "HEAD:" + relative], cwd=repository):
+        raise ValueError("Version review differs from the clean committed policy")
+    review = json.loads(content)
+    if (not isinstance(review, dict) or set(review) != {"classification", "findings"}
+            or review["classification"] != "non-secret-version-metadata"
+            or not isinstance(review["findings"], list)
+            or len(review["findings"]) != len(REVIEWED_VERSIONS)):
+        raise ValueError("Version review differs from the approved metadata policy")
+    approved = []
+    for entry, (filename, number, label) in zip(review["findings"], REVIEWED_VERSIONS):
+        fingerprint = f"{REVIEWED_VERSION_COMMIT}:{filename}:generic-api-key:{number}"
+        if (not isinstance(entry, dict)
+                or set(entry) != {"fingerprint", "sourceLineSha256", "sourceFileSha256"}
+                or entry["fingerprint"] != fingerprint):
+            raise ValueError("Version fingerprint differs from the approved historical finding")
+        source = subprocess.check_output(
+            ["git", "show", REVIEWED_VERSION_COMMIT + ":" + filename], cwd=repository)
+        line = source.decode("utf-8").splitlines()[number - 1]
+        if (hashlib.sha256(source).hexdigest() != entry["sourceFileSha256"]
+                or hashlib.sha256(line.encode("utf-8")).hexdigest() != entry["sourceLineSha256"]
+                or re.search(r"keyVersion:\s*'" + re.escape(label) + r"'", line) is None):
+            raise ValueError("Version review is not bound to the approved non-secret source")
+        if number == 88:
+            if b"generateKeyPairSync('ed25519')" not in source or b"signing.privateKey.export" not in source:
+                raise ValueError("Signing fixture must create its key at runtime")
+        elif "randomBytes(32)" not in line:
+            raise ValueError("Encryption fixture must create its key at runtime")
+        approved.append(fingerprint)
+    return approved
 
 
 def reviewed_ignore(repository, reviewed):
@@ -81,7 +129,9 @@ def scan(repository, output):
     if subprocess.check_output(["git", "rev-parse", "--is-shallow-repository"],
                                cwd=repository, text=True).strip() != "false":
         raise ValueError("Full-history evidence requires a non-shallow checkout")
-    reviewed = reviewed_public_vectors(repository)
+    vectors = reviewed_public_vectors(repository)
+    versions = reviewed_version_metadata(repository)
+    reviewed = vectors + versions
     has_ignore = reviewed_ignore(repository, reviewed)
     if (repository / ".gitleaks.toml").exists():
         raise ValueError("This scanner requires the pinned upstream detection rules")
@@ -147,7 +197,8 @@ def scan(repository, output):
             "findings": (sum(item["findings"] for item in results.values())
                          if all(item["findings"] is not None for item in results.values()) else None),
             "scans": results,
-            "reviewedPublicVectorFingerprints": reviewed,
+            "reviewedPublicVectorFingerprints": vectors,
+            "reviewedVersionMetadataFingerprints": versions,
             "exitCode": 0 if status == "PASS" else 1,
             "durationSeconds": time.monotonic() - started,
             "coverage": "All reachable Git history and complete current tree; clean non-shallow source; upstream detection rules",

@@ -1,0 +1,30 @@
+{
+  "classification": "non-secret-version-metadata",
+  "findings": [
+    {
+      "fingerprint": "f4f63b387e16e531188a70ddddbd8119f61f6a66:examples/cryptography/src/secret-fixture.ts:generic-api-key:83",
+      "sourceLineSha256": "be24229eb16af7a4313ae32c0b6f9b3057ff314a004d2151b7f882ca7396f2b0",
+      "sourceFileSha256": "fb49c486dffcef202fc9e3f022010eff2352764c0f828f62d5a316daccb10864"
+    },
+    {
+      "fingerprint": "f4f63b387e16e531188a70ddddbd8119f61f6a66:examples/cryptography/src/secret-fixture.ts:generic-api-key:88",
+      "sourceLineSha256": "3fa2e94ee2b190a63b2bfd474c944edf495bbec76dbce802ee2fef66e18a4a0d",
+      "sourceFileSha256": "fb49c486dffcef202fc9e3f022010eff2352764c0f828f62d5a316daccb10864"
+    },
+    {
+      "fingerprint": "f4f63b387e16e531188a70ddddbd8119f61f6a66:packages/security-crypto/test/unit/crypto.unit.test.ts:generic-api-key:40",
+      "sourceLineSha256": "5e51f7e81a1739762a7095f108ce6edaaaba71e3f8a0594941df0c9c4f744e4b",
+      "sourceFileSha256": "82f13b6711951eb308bc14b74c5d276a99e23faa99f601cf9e82d16dca665773"
+    },
+    {
+      "fingerprint": "f4f63b387e16e531188a70ddddbd8119f61f6a66:packages/security-crypto/test/unit/crypto.unit.test.ts:generic-api-key:41",
+      "sourceLineSha256": "945d435c1cb8a1e4b31756c753ed613bc469f4b1a14b9210b67dc395f0b2b725",
+      "sourceFileSha256": "82f13b6711951eb308bc14b74c5d276a99e23faa99f601cf9e82d16dca665773"
+    },
+    {
+      "fingerprint": "f4f63b387e16e531188a70ddddbd8119f61f6a66:packages/security-crypto/test/unit/crypto.unit.test.ts:generic-api-key:160",
+      "sourceLineSha256": "357b3836a0fb64c4d4586b257cdf40f7ece1ddfa23109b4f4dfcf76f21bbbb64",
+      "sourceFileSha256": "82f13b6711951eb308bc14b74c5d276a99e23faa99f601cf9e82d16dca665773"
+    }
+  ]
+}

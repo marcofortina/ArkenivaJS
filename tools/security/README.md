@@ -24,8 +24,8 @@ comments are ignored; unreviewed findings cannot be converted into success by th
 The owner-approved [public-vector review](reviewed-public-vectors.json) identifies
 exactly one immutable commit/file/rule/line fingerprint for the published
 [RFC 6238 Appendix B SHA1 test seed](https://www.rfc-editor.org/rfc/rfc6238.html#appendix-B).
-The source-root [`.gitleaksignore`](../../.gitleaksignore) contains that single
-commit-qualified fingerprint. The tool verifies both tracked policy files,
+The source-root [`.gitleaksignore`](../../.gitleaksignore) preserves that exact
+commit-qualified fingerprint. The tool verifies the tracked policy files,
 historical source-line SHA-256 and decoded public fixture before using the root
 ignore for the history scan. A changed
 fingerprint, rule, source line or standard fails validation. No source path or
@@ -36,6 +36,16 @@ ignore file: the historical approval never suppresses a current-tree finding.
 Toy repositories without this review also use an explicit empty history ignore;
 implicit repository ignore discovery cannot broaden the exception. Custom
 repository rule configuration is rejected so the pinned upstream rules remain active.
+
+The separate [version metadata policy](reviewed-version-metadata.json) binds five
+individually reviewed historical fixture labels to their exact commit, path,
+rule, line, source-line hash and source-file hash. These labels identify versions;
+their corresponding AES and Ed25519 keys are created at runtime. Only those five
+additional commit-qualified occurrences are accepted. The validator independently
+pins their identities and verifies the historical key-generation expressions.
+Changing a fingerprint, hash, entry count or policy field rejects the review.
+The current directory continues to use an empty ignore file. This policy does not
+authorize another occurrence, a credential, a whole path or a scanner rule.
 
 `findings.json`, `scanner.log`, `tree-findings.json`, `tree-scanner.log` and
 `summary.json` remain in a private external
@@ -71,6 +81,12 @@ in a different commit: both history and current-tree scans must report it.
 An ignored local synthetic credential must fail the directory scan even when
 history is clean. Missing or broadened root ignores, modified review fingerprints
 and custom rule configuration fail before scanning.
+
+Version-metadata controls reintroduce the same label at the same path/line in a
+new commit and require detection. Additional synthetic credentials in that
+reviewed test path and another test file must fail both history and directory
+scans, with redaction checked. Forged fingerprints, source hashes and extra
+policy entries fail validation before the scanner can use an ignore file.
 
 The security workflow checks a complete checkout on main pushes, weekly runs
 and explicit dispatch. It runs these negative tests before scanning product
