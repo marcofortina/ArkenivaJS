@@ -45,6 +45,10 @@ external secret provider; the checked-in inventory contains no live credentials.
 | [Health](../examples/health/README.md)                           | Liveness, dependency readiness, HTTP status and drain                    | Redis fixture                                                  |
 | [Messaging](../examples/messaging/README.md)                     | Core NATS semantics, error strategy and correlation                      | Verified-TLS disposable NATS                                   |
 
+The [DNS project](../examples/dns/README.md) additionally exercises all approved
+native DNS record families against its owned loopback authority, resolver
+isolation, OS lookup differences and actual SDK metric/log privacy.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs

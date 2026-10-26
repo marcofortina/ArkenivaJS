@@ -92,6 +92,8 @@ The [time utility](packages/data-time/README.md) delegates calendar and DST beha
 to Temporal, with explicit IANA zones, locale formatting and disambiguation policy.
 The [CSV adapter](packages/data-csv/README.md) streams UTF-8 records through the
 approved native codecs with explicit headers, bounds and cancellation.
+The [DNS utility](packages/dns/README.md) isolates named native resolvers from OS
+lookup semantics. Its [loopback example](examples/dns/README.md) tests actual DNS records.
 
 ## License
 
