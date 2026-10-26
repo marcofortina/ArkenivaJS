@@ -65,3 +65,5 @@ If a telemetry plugin is explicitly installed, the existing scoped support SPI r
 The package tests generate an ephemeral root, intermediate, leaf certificates and actual CRLs with existing OpenSSL, then verify a localhost Node TLS handshake using the pinned CA and CRLs. They cover revocation, missing intermediate, foreign CA, DNS/IP mismatch, CN-only rejection, expiry, future validity, SAN quoting, malformed/accessor input, bounded concurrency, cancellation, shutdown and cross-application isolation. No keys or generated certificates are stored in source.
 
 Run `pnpm --filter @arkenivajs/security-x509 build` and `pnpm --filter @arkenivajs/security-x509 test`. Runtime compatibility targets the workspace's pinned Node 22, 24 and 26 versions. These local tests do not certify every external CRL/OCSP provider, public CA programme or remote service. Release campaigns and broader compatibility gates remain separate.
+
+The [complete certificate example](../../examples/certificates/README.md) executes all public methods, a real TLS handshake and actual CRL denial, then repeats the same workflow against packed public artifacts.
