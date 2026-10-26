@@ -759,6 +759,12 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/security-mtls:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/security-totp:
     dependencies:
       '@arkenivajs/core':
