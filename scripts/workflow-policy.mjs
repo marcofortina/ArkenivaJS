@@ -38,6 +38,15 @@ export function validateWorkflow(name, text) {
   assert.ok(workflow.jobs && typeof workflow.jobs === 'object');
   let actions = 0;
   for (const [jobName, job] of Object.entries(workflow.jobs)) {
+    for (const value of Object.values(job.env ?? {})) {
+      if (typeof value !== 'string') continue;
+      // Job env is evaluated before a runner exists; step env/run have broader context availability.
+      for (const expression of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g))
+        assert.ok(
+          !/\b(?:runner|steps|job|env)\s*(?:\.|\[)/.test(expression[1]),
+          'Job environment cannot reference runner, step, job or environment contexts',
+        );
+    }
     assert.ok(
       job && Array.isArray(job.steps) && job.steps.length > 0,
       'Jobs require explicit steps',

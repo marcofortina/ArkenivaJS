@@ -18,7 +18,6 @@ jobs:
     timeout-minutes: 25
     env:
       EXPECTED_ARCHITECTURE: ${{ matrix.target.architecture }}
-      ARKENIVA_TEST_REPORT_DIRECTORY: ${{ runner.temp }}/arkenivajs-compatibility
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +35,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           architecture: ${{ matrix.target.architecture }}
+      - name: Resolve the compatibility-report directory on the allocated runner
+        run: printf 'ARKENIVA_TEST_REPORT_DIRECTORY=%s/arkenivajs-compatibility\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Verify the actual runtime architecture and retain its versions
         run: |
           set -euo pipefail
