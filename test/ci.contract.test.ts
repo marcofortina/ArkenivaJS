@@ -22,6 +22,23 @@ test('SMTP integration verifies actual TLS, native recipient outcomes and packed
   assert.ok(!JSON.stringify(job).includes('NODE_TLS_REJECT_UNAUTHORIZED'));
   assert.ok(!JSON.stringify(job).includes('continue-on-error'));
 });
+test('Multipart integration verifies native HTTP, HTTPS, HTTP2 and packed consumers on each Node line', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
+    job = workflow.jobs['upload-integration'];
+  assert.deepEqual(job.strategy.matrix.node, ['22.23.4', '24.22.1', '26.12.1']);
+  assert.equal(job.strategy['fail-fast'], false);
+  const commands = (job.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  for (const command of [
+    'pnpm --filter @arkenivajs/upload test:integration',
+    'pnpm --filter @arkenivajs/example-upload test',
+    'pnpm test:packed:examples --example upload',
+  ])
+    assert.ok(commands.includes(command));
+  assert.ok(!JSON.stringify(job).includes('NODE_TLS_REJECT_UNAUTHORIZED'));
+  assert.ok(!JSON.stringify(job).includes('continue-on-error'));
+});
 test('CI runs only on main pushes with immutable official Actions and read-only permissions', () => {
   const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
   const pins = [...workflow.matchAll(/uses: (actions\/[a-z-]+)@([a-f0-9]+)/g)];
@@ -106,6 +123,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-sessions',
       'security-x509',
       'socket',
+      'upload',
     ],
   });
   assert.equal(job.strategy['fail-fast'], false);
