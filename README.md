@@ -90,6 +90,8 @@ The [validation utility](packages/data-validation/README.md) adds explicit email
 URL, IP and UUID policies and startup-compiled Ajv schemas with bounded JSON input.
 The [time utility](packages/data-time/README.md) delegates calendar and DST behavior
 to Temporal, with explicit IANA zones, locale formatting and disambiguation policy.
+The [CSV adapter](packages/data-csv/README.md) streams UTF-8 records through the
+approved native codecs with explicit headers, bounds and cancellation.
 
 ## License
 

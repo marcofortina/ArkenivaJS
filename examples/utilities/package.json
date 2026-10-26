@@ -10,6 +10,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@arkenivajs/data-csv": "workspace:*",
     "@arkenivajs/data-identifiers": "workspace:*",
     "@arkenivajs/data-time": "workspace:*",
     "@arkenivajs/data-validation": "workspace:*"
