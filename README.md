@@ -83,6 +83,10 @@ native Argon2id, breach-policy hooks and one-use recovery credentials. Its
 [PostgreSQL guide](examples/postgres/passwords.md) verifies atomic password
 replacement and session invalidation through the application-owned transaction port.
 
+The [identifier utility](packages/data-identifiers/README.md) uses native UUIDv4
+and the approved UUID library for UUIDv7, with strict version/canonical policy.
+The [utilities example](examples/utilities/README.md) runs without external services.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
