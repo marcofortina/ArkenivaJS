@@ -78,6 +78,11 @@ opaque server-side credentials, atomic renewal and shared revocation epochs.
 Its [PostgreSQL guide](examples/postgres/sessions.md) verifies current account
 policy, original authentication metadata and signed logout boundaries.
 
+The optional [password service](packages/security-password/README.md) uses bounded
+native Argon2id, breach-policy hooks and one-use recovery credentials. Its
+[PostgreSQL guide](examples/postgres/passwords.md) verifies atomic password
+replacement and session invalidation through the application-owned transaction port.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later

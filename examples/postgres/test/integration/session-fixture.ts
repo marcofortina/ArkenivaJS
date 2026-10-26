@@ -223,6 +223,7 @@ export async function sessionFixture(maxSessions = 4) {
       state,
       first,
       second,
+      verifyPrimary: primary,
       async revokePrimary(subject: IdentitySubject, sid: string) {
         if (
           !(

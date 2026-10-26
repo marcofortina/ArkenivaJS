@@ -77,6 +77,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-apikey',
       'security-crypto',
       'security-mtls',
+      'security-password',
       'security-sessions',
       'security-x509',
     ],

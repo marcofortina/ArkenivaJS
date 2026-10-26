@@ -69,3 +69,7 @@ the complete transactional store through two public credential-service instances
 The [durable session guide](sessions.md) adds canonical authentication events,
 atomic renewal, shared revocation epochs and verified signed logout handling
 through two independent session-service instances.
+
+The [password reset guide](passwords.md) verifies one native transaction for
+password replacement, reset consumption and actual session invalidation,
+including controlled rollback and competing consumers.

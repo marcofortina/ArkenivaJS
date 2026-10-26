@@ -144,6 +144,10 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'password.hash.duration': 'ms',
+  'password.verify.duration': 'ms',
+  'password.create_reset.duration': 'ms',
+  'password.consume_reset.duration': 'ms',
   'sessions.create.duration': 'ms',
   'sessions.validate.duration': 'ms',
   'sessions.renew.duration': 'ms',
