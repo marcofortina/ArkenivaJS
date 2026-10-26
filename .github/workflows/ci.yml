@@ -151,6 +151,18 @@ jobs:
           ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE: '1'
           ARKENIVA_WEBAUTHN_BROWSER_URL: http://127.0.0.1:19222
           ARKENIVA_WEBAUTHN_BROWSER_ORIGIN: http://localhost:19377
+      - name: Measure bounded MFA workloads and verify export privacy
+        run: pnpm --filter @arkenivajs/benchmark-foundation mfa --smoke "$RUNNER_TEMP/mfa-benchmark"
+        env:
+          ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE: '1'
+          ARKENIVA_WEBAUTHN_BROWSER_URL: http://127.0.0.1:19222
+          ARKENIVA_BENCHMARK_RUNNER: github-hosted-disposable-runner
+      - name: Retain the MFA measurement summary without raw credential-bearing inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mfa-node-${{ matrix.node }}-postgres-${{ matrix.postgres }}
+          path: ${{ runner.temp }}/mfa-benchmark/report.json
+          if-no-files-found: error
       - if: always()
         run: docker compose -p arkenivajs-webauthn-browser -f examples/postgres/test/fixtures/browser/compose.yaml down
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''
