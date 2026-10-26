@@ -78,6 +78,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'data-identifiers',
       'data-time',
       'data-validation',
+      'dns',
       'security-apikey',
       'security-crypto',
       'security-mtls',

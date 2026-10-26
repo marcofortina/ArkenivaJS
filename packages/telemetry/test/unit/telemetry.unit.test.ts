@@ -87,7 +87,7 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
     ...options(target.endpoint),
     instanceId: 'instance-test',
     workload: { namespace: 'test', pod: 'example-pod', container: 'app', node: 'example-node' },
-    labelValues: { route: ['/orders/:id'] },
+    labelValues: { route: ['/orders/:id'], 'dns.resolver': ['lab', 'os'] },
   });
   try {
     assert.equal(telemetry.resource()['process.pid'], process.pid);
@@ -121,6 +121,22 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
       'messaging.process.duration',
     ];
     for (const name of readinessDurations) telemetry.recordHistogram(name, 0.002);
+    telemetry.recordHistogram('dns.duration.ms', 2, {
+      'dns.operation': 'resolve',
+      'dns.type': 'A',
+      'dns.resolver': 'lab',
+      'dns.outcome': 'ok',
+    });
+    assert.throws(
+      () =>
+        telemetry.recordHistogram('dns.duration.ms', 2, {
+          'dns.operation': 'resolve',
+          'dns.type': 'A',
+          'dns.resolver': 'unapproved',
+          'dns.outcome': 'ok',
+        }),
+      code('EK_CONFIG_INVALID'),
+    );
     assert.throws(
       () => telemetry.addCounter('http.server.active_requests', 1),
       code('EK_CONFIG_INVALID'),
@@ -147,6 +163,9 @@ test('EK-OTEL-001 owned providers export actual SDK spans, metrics, resource met
       assert.equal(metric.histogram?.dataPoints[0]?.sum, 0.002);
       assert.deepEqual(metric.histogram?.dataPoints[0]?.explicitBounds, DURATION_BUCKETS_SECONDS);
     }
+    const dnsMetric = exportedMetrics.find((entry) => entry.name === 'dns.duration.ms');
+    assert.equal(dnsMetric?.unit, 'ms');
+    assert.equal(dnsMetric?.histogram?.dataPoints[0]?.sum, 2);
     const spans = target.data
       .flatMap((entry) => entry.body.resourceSpans ?? [])
       .flatMap((group) => group.scopeSpans.flatMap((scope) => scope.spans));

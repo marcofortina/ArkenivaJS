@@ -94,6 +94,10 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'dns.operation',
+  'dns.type',
+  'dns.resolver',
+  'dns.outcome',
   'route',
   'method',
   'status_code',
@@ -111,6 +115,18 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'dns.operation': ['resolve', 'lookup', 'reverse'],
+  'dns.type': ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT', 'CAA', 'NAPTR', 'OS'],
+  'dns.resolver': ['os'],
+  'dns.outcome': [
+    'ok',
+    'EK_DNS_CONFIG',
+    'EK_DNS_NOT_FOUND',
+    'EK_DNS_TEMPORARY',
+    'EK_DNS_TIMEOUT',
+    'EK_ABORTED',
+    'EK_RESOURCE_CLOSED',
+  ],
   method: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   direction: ['server.response', 'client.response'],
   'db.system.name': ['postgresql', 'mysql', 'mariadb', 'oracle', 'redis', 'etcd', 'mongodb'],
@@ -144,6 +160,10 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'dns.duration.ms': 'ms',
+  'dns.response.records': '{record}',
+  'dns.inflight': '{query}',
+  'dns.observation.dropped': '{observation}',
   'password.hash.duration': 'ms',
   'password.verify.duration': 'ms',
   'password.create_reset.duration': 'ms',
