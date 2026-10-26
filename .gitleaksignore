@@ -3,3 +3,10 @@
 
 # Owner-approved historical RFC 6238 public test vector; no current-tree exception.
 fc0a86f0f54e0fdecb8951944c7065fd454f4245:packages/security-totp/test/unit/service.unit.test.ts:generic-api-key:229
+
+# Owner-approved historical fixture version identifiers; keys are created at runtime.
+f4f63b387e16e531188a70ddddbd8119f61f6a66:examples/cryptography/src/secret-fixture.ts:generic-api-key:83
+f4f63b387e16e531188a70ddddbd8119f61f6a66:examples/cryptography/src/secret-fixture.ts:generic-api-key:88
+f4f63b387e16e531188a70ddddbd8119f61f6a66:packages/security-crypto/test/unit/crypto.unit.test.ts:generic-api-key:40
+f4f63b387e16e531188a70ddddbd8119f61f6a66:packages/security-crypto/test/unit/crypto.unit.test.ts:generic-api-key:41
+f4f63b387e16e531188a70ddddbd8119f61f6a66:packages/security-crypto/test/unit/crypto.unit.test.ts:generic-api-key:160

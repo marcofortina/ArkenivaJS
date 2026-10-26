@@ -14,7 +14,8 @@ import unittest
 
 # Keep disposable execution checkouts clean while importing the scanner fixture.
 sys.dont_write_bytecode = True
-from run import scan, reviewed_public_vectors, reviewed_ignore, REVIEWED_VECTOR
+from run import (scan, reviewed_public_vectors, reviewed_version_metadata, reviewed_ignore,
+                 REVIEWED_VECTOR, REVIEWED_VERSIONS, REVIEWED_VERSION_COMMIT)
 
 
 class ScannerTests(unittest.TestCase):
@@ -81,6 +82,7 @@ class ScannerTests(unittest.TestCase):
             self.assertEqual(scan(reviewed, good), 0)
             summary = json.loads((good / "summary.json").read_text())
             self.assertEqual(len(summary["reviewedPublicVectorFingerprints"]), 1)
+            self.assertEqual(len(summary["reviewedVersionMetadataFingerprints"]), 5)
             self.assertEqual(summary["scans"]["dir"]["status"], "PASS")
             token = "ghp_" + hashlib.sha256(b"Separate synthetic detection fixture").hexdigest()[:36]
             (reviewed / "synthetic-credential.txt").write_text("token=" + token + "\n")
@@ -140,7 +142,7 @@ class ScannerTests(unittest.TestCase):
             self.git("config", "user.email", "security@example.test")
             approved = reviewed_public_vectors(reviewed)
             self.assertEqual(approved, [REVIEWED_VECTOR])
-            self.assertTrue(reviewed_ignore(reviewed, approved))
+            self.assertTrue(reviewed_ignore(reviewed, approved + reviewed_version_metadata(reviewed)))
             commit, filename, rule, number = REVIEWED_VECTOR.split(":")
             historical = self.git("show", commit + ":" + filename).splitlines()[int(number) - 1]
             path = reviewed / filename
@@ -166,6 +168,82 @@ class ScannerTests(unittest.TestCase):
             self.commit("Try broadening the historical exception to a global finding")
             with self.assertRaises(ValueError):
                 scan(reviewed, self.directory / "broadened-ignore-results")
+        finally:
+            self.repository = original
+
+
+    def test_metadata_exception_cannot_hide_recurrence_or_synthetic_credentials(self):
+        source = Path(__file__).resolve().parents[2]
+        reviewed = self.directory / "metadata-repository"
+        subprocess.run(["git", "clone", "--no-hardlinks", "--branch", "main",
+                        str(source), str(reviewed)], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        original = self.repository
+        self.repository = reviewed
+        try:
+            self.git("config", "user.name", "Disposable security fixture")
+            self.git("config", "user.email", "security@example.test")
+            versions = reviewed_version_metadata(reviewed)
+            self.assertEqual(len(versions), 5)
+            filename, number, _ = REVIEWED_VERSIONS[2]
+            historical = self.git("show", REVIEWED_VERSION_COMMIT + ":" + filename)
+            line = historical.splitlines()[number - 1]
+            path = reviewed / filename
+            lines = path.read_text().splitlines()
+            lines[number - 1] = line
+            path.write_text("\n".join(lines) + "\n")
+            self.commit("Reintroduce inert metadata at the same fixture line in a new commit")
+            recurrence = self.git("rev-parse", "HEAD").strip()
+            output = self.directory / "metadata-recurrence-results"
+            self.assertEqual(scan(reviewed, output), 1)
+            findings = json.loads((output / "findings.json").read_text())
+            self.assertTrue(any(item["Commit"] == recurrence and item["File"] == filename
+                                and item["StartLine"] == number and item["RuleID"] == "generic-api-key"
+                                and item["Fingerprint"] not in versions for item in findings))
+            token = "ghp_" + hashlib.sha256(b"Synthetic metadata exception negative control").hexdigest()[:36]
+            with path.open("a") as stream:
+                stream.write("\nsyntheticCredential='" + token + "'\n")
+            other = "packages/security-crypto/test/unit/synthetic-negative.txt"
+            (reviewed / other).write_text("token=" + token + "\n")
+            self.commit("Add synthetic credentials in the reviewed and an unrelated fixture path")
+            output = self.directory / "metadata-secret-results"
+            self.assertEqual(scan(reviewed, output), 1)
+            for report in ["findings.json", "tree-findings.json"]:
+                findings = json.loads((output / report).read_text())
+                for candidate in [filename, other]:
+                    self.assertTrue(any(item["File"].endswith(candidate)
+                                        and item["RuleID"] == "github-pat" for item in findings))
+            for report in output.iterdir():
+                self.assertNotIn(token, report.read_text())
+        finally:
+            self.repository = original
+
+    def test_metadata_review_rejects_forged_fingerprints_hashes_and_extra_findings(self):
+        source = Path(__file__).resolve().parents[2]
+        reviewed = self.directory / "metadata-tamper-repository"
+        subprocess.run(["git", "clone", "--no-hardlinks", "--branch", "main",
+                        str(source), str(reviewed)], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        original = self.repository
+        self.repository = reviewed
+        try:
+            self.git("config", "user.name", "Disposable security fixture")
+            self.git("config", "user.email", "security@example.test")
+            policy = reviewed / "tools/security/reviewed-version-metadata.json"
+            content = policy.read_text()
+            for key in ["fingerprint", "sourceLineSha256", "sourceFileSha256"]:
+                document = json.loads(content)
+                document["findings"][0][key] = "unapproved"
+                policy.write_text(json.dumps(document) + "\n")
+                self.commit("Verify rejection of altered metadata review " + key)
+                with self.assertRaises(ValueError):
+                    reviewed_version_metadata(reviewed)
+            document = json.loads(content)
+            document["findings"].append(document["findings"][0])
+            policy.write_text(json.dumps(document) + "\n")
+            self.commit("Verify rejection of an extra metadata finding")
+            with self.assertRaises(ValueError):
+                reviewed_version_metadata(reviewed)
         finally:
             self.repository = original
 
