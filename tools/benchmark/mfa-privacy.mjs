@@ -6,6 +6,37 @@ import { createHash } from 'node:crypto';
 /** Ephemeral leakage-test comparison only; neither credential storage nor a published secret verifier. */
 export const fingerprint = (value) => createHash('sha256').update(value).digest('hex');
 
+/** Empty binding components represent absence; retain every nonempty private value and verifier component. */
+export function rememberSensitiveValues(input, fingerprints) {
+  const pending = [[input, 0]],
+    seen = new WeakSet();
+  let nodes = 0;
+  while (pending.length) {
+    if (++nodes > 100000 || fingerprints.size > 250000)
+      throw new Error('Privacy corpus capacity exceeded');
+    const [value, depth] = pending.pop();
+    if (depth > 32) throw new Error('Privacy corpus nesting exceeded');
+    if (typeof value === 'string') {
+      if (!value.length) continue;
+      if (value.length > 65536) throw new Error('Privacy corpus string capacity exceeded');
+      fingerprints.add(fingerprint(value));
+      const verifier = /^(.+):([a-f0-9]{64})$/.exec(value);
+      if (verifier) {
+        fingerprints.add(fingerprint(verifier[1]));
+        fingerprints.add(fingerprint(verifier[2]));
+      }
+      if (fingerprints.size > 250000) throw new Error('Privacy corpus capacity exceeded');
+    } else if (value && typeof value === 'object' && !seen.has(value)) {
+      seen.add(value);
+      for (const field of Object.values(Object.getOwnPropertyDescriptors(value))) {
+        if (!('value' in field))
+          throw new Error('Privacy corpus must contain only data properties');
+        pending.push([field.value, depth + 1]);
+      }
+    }
+  }
+}
+
 /** Inspect bounded JSON data without retaining factor material or invoking object accessors. */
 export function countSensitiveValues(value, fingerprints) {
   const hashes = fingerprints instanceof Set ? fingerprints : new Set(fingerprints);
