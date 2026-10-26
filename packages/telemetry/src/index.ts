@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'upload.method',
+  'upload.outcome',
   'mail.operation',
   'mail.outcome',
   'mail.error',
@@ -128,6 +130,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'upload.method': ['POST', 'PUT'],
+  'upload.outcome': ['ok', 'error'],
   'mail.operation': ['send', 'verify'],
   'mail.outcome': ['ok', 'partial', 'rejected', 'error'],
   'mail.error': [
@@ -210,6 +214,9 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'upload.duration.ms': 'ms',
+  'upload.request.bytes': 'By',
+  'upload.files': '{file}',
   'mail.duration.ms': 'ms',
   'mail.attachment.bytes': 'By',
   'mail.accepted.recipients': '{recipient}',

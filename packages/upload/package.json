@@ -1,0 +1,41 @@
+{
+  "name": "@arkenivajs/upload",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node ../../scripts/test.mjs all",
+    "test:unit": "node ../../scripts/test.mjs unit",
+    "lint": "eslint src test",
+    "test:integration": "node ../../scripts/test.mjs all"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/api": "workspace:*",
+    "@fastify/multipart": "10.1.6",
+    "fastify": "5.12.7"
+  },
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "jose": "6.2.13"
+  }
+}
