@@ -219,14 +219,8 @@ export function createService(settings: Settings, telemetry?: Telemetry) {
       const started = performance.now();
       const report = (status: string) => {
         try {
-          telemetry?.recordHistogram('mtls.verification.duration_ms', performance.now() - started, {
-            operation: 'verify_peer',
-            status,
-          });
-          telemetry?.addCounter('mtls.verification.completed', 1, {
-            operation: 'verify_peer',
-            status,
-          });
+          telemetry?.recordHistogram('mtls.verification.duration_ms', performance.now() - started);
+          telemetry?.addCounter('mtls.verification.completed.' + status, 1);
         } catch {
           /* Diagnostic failures cannot grant peer authorization. */
         }
@@ -236,7 +230,7 @@ export function createService(settings: Settings, telemetry?: Telemetry) {
           instrumentOperation(
             telemetry,
             'mtls.verify_peer',
-            { operation: 'verify_peer' },
+            {},
             async () => {
               try {
                 const certificate = nativeCertificate(

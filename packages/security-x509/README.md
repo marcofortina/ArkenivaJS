@@ -60,6 +60,8 @@ Limits are validated before listeners open. Saturation fails immediately with `E
 
 If a telemetry plugin is explicitly installed, the existing scoped support SPI records one `x509.inspect_chain` span, validation duration and completion status, plus a configured-CA expiry-threshold gauge. There are no subject, SAN, fingerprint, root-reference or request labels. Diagnostic failures cannot change trust outcomes. The configured-root gauge does not claim to monitor arbitrary remote endpoints.
 
+The duration histogram uses milliseconds. Completion classes use fixed metric names such as `x509.validation.completed.trusted` and `x509.validation.completed.untrusted`; no custom label policy is needed. The CA gauge has certificate units and a fixed 30-day threshold. The actual SDK/OTLP regression test checks units, exported spans and counters, privacy and zero diagnostic drops.
+
 ## Verification and limitations
 
 The package tests generate an ephemeral root, intermediate, leaf certificates and actual CRLs with existing OpenSSL, then verify a localhost Node TLS handshake using the pinned CA and CRLs. They cover revocation, missing intermediate, foreign CA, DNS/IP mismatch, CN-only rejection, expiry, future validity, SAN quoting, malformed/accessor input, bounded concurrency, cancellation, shutdown and cross-application isolation. No keys or generated certificates are stored in source.

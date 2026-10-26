@@ -28,5 +28,8 @@
   "dependencies": {
     "@arkenivajs/core": "workspace:*"
   },
-  "license": "AGPL-3.0-or-later"
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "@arkenivajs/telemetry": "workspace:*"
+  }
 }

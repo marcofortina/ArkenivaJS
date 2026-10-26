@@ -94,4 +94,9 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'pnpm --filter @arkenivajs/benchmark-foundation crypto --smoke "$RUNNER_TEMP/crypto-smoke"',
     ),
   );
+  assert.ok(
+    checks.includes(
+      'pnpm --filter @arkenivajs/benchmark-foundation x509 --smoke "$RUNNER_TEMP/x509-smoke"',
+    ),
+  );
 });

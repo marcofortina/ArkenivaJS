@@ -3,6 +3,8 @@
 
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer as createHttpReceiver } from 'node:http';
+import { createTelemetry } from '@arkenivajs/telemetry';
 import { createHash, X509Certificate } from 'node:crypto';
 import { createApplication, KitError } from '@arkenivajs/core';
 import type { Application, OperationOptions, Plugin, Telemetry } from '@arkenivajs/core';
@@ -678,6 +680,98 @@ test('EK-STD-SEC-012 scoped telemetry records bounded classifications without ce
     assert.equal(f.calls(), before + 1);
   } finally {
     await app.stop();
+  }
+});
+test('EK-STD-SEC-012 the actual telemetry SDK exports certificate diagnostics without custom labels, drops or private metadata', async () => {
+  const bodies: unknown[] = [];
+  let totalBytes = 0;
+  const receiver = createHttpReceiver((request, response) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    request.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      totalBytes += chunk.length;
+      if (bytes > 1048576 || totalBytes > 4194304) request.destroy();
+      else chunks.push(chunk);
+    });
+    request.once('end', () => {
+      try {
+        bodies.push(JSON.parse(Buffer.concat(chunks).toString()) as unknown);
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end('{}');
+      } catch {
+        response.writeHead(400);
+        response.end();
+      }
+    });
+  });
+  await new Promise<void>((resolve) => receiver.listen(0, '127.0.0.1', resolve));
+  const address = receiver.address();
+  assert.ok(address && typeof address !== 'string');
+  const telemetry = createTelemetry({
+    service,
+    mode: 'detailed',
+    samplingRatio: 1,
+    endpoint: 'http://127.0.0.1:' + address.port,
+    allowInsecureLoopback: true,
+    exportIntervalMs: 1000,
+    exportTimeoutMs: 1000,
+  });
+  const observer: Plugin = {
+    id: 'certificate-sdk-observer',
+    version: '1.0.0',
+    capabilities: new Set(['telemetry']),
+    init(context) {
+      context.provide(COMPONENTS.telemetry, telemetry);
+    },
+    close() {},
+  };
+  const app = await createApplication({ service, plugins: [x509Plugin(f.settings), observer] });
+  try {
+    await app.start();
+    const adapter = app.resolve<X509Service>(X509_CAPABILITY);
+    assert.equal((await adapter.inspectChain(f.chain, trust())).status, 'trusted');
+    assert.equal(
+      (await adapter.inspectChain(f.chain, { ...trust(), expectedHostname: 'foreign.invalid' }))
+        .status,
+      'untrusted',
+    );
+    await telemetry.flush();
+    assert.equal(telemetry.stats().droppedMetrics, 0);
+    assert.equal(telemetry.stats().droppedSpans, 0);
+    assert.equal(telemetry.stats().exportFailures, 0);
+    const objects: Record<string, unknown>[] = [];
+    const visit = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      objects.push(value as Record<string, unknown>);
+      Object.values(value).forEach(visit);
+    };
+    bodies.forEach(visit);
+    assert.ok(objects.some((value) => value.name === 'x509.inspect_chain'));
+    assert.ok(
+      objects.some((value) => value.name === 'x509.validation.duration_ms' && value.unit === 'ms'),
+    );
+    assert.ok(objects.some((value) => value.name === 'x509.validation.completed.trusted'));
+    const serialized = JSON.stringify(bodies);
+    for (const privateValue of [
+      'localhost',
+      'spiffe',
+      identity().issuer,
+      identity().certificateFingerprintSha256,
+    ])
+      assert.equal(serialized.includes(privateValue), false);
+  } finally {
+    try {
+      await app.stop();
+      await telemetry.close();
+    } finally {
+      receiver.closeAllConnections();
+      await new Promise<void>((resolve) => receiver.close(() => resolve()));
+    }
   }
 });
 test('EK-STD-SEC-012 native CRL rejection after revocation cannot produce trusted validation', async () => {
