@@ -174,6 +174,8 @@ export class RedisConnection implements RedisProvider {
           }
           return this.client.withAbortSignal(controller.signal).ping();
         });
+        // Native startup remains owned even when the public waiter expires before observing it.
+        void requested.catch(() => undefined);
         const pong = await within(() => requested, {
           timeoutMs: captured.timeoutMs,
           signal: controller.signal,

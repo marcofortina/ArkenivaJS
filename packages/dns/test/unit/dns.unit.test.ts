@@ -67,6 +67,8 @@ test('Query validation rejects unsafe names, profiles, options and forged values
       { timeoutMs: 0 },
       { timeoutMs: null },
       { signal: {} },
+      { signal: { aborted: false, addEventListener() {}, removeEventListener() {} } },
+      { signal: Object.create(AbortSignal.prototype) },
       { signal: null },
       { clock: () => 0 },
     ])

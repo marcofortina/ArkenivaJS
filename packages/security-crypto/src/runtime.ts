@@ -218,6 +218,8 @@ export function createRuntime(settings: Settings) {
         active.delete(controller);
       }
     });
+    // Observe owned work even if the public wait expires before invoking its factory.
+    void task.catch(() => undefined);
     try {
       return await within(() => task, { signal, timeoutMs });
     } catch (error) {

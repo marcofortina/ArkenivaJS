@@ -392,9 +392,9 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
       try {
         const remaining = Math.ceil(deadline - performance.now());
         const closing = Promise.resolve().then(() => plugin.close(context));
+        void closing.catch(() => undefined);
         if (remaining <= 0) {
           // Invoke every close hook, but do not extend a shared expired deadline.
-          void closing.catch(() => undefined);
           errors.push(new KitError({ code: 'EK_TIMEOUT', message: 'Shutdown deadline exhausted' }));
         } else {
           await within(() => closing, { timeoutMs: remaining });
@@ -542,6 +542,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
                     }
                   }),
               );
+              void initialization.catch(() => undefined);
               await within(() => initialization, { signal: controller.signal });
             } finally {
               initializing = false;
@@ -646,8 +647,8 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
             try {
               const remaining = Math.ceil(deadline - performance.now());
               const draining = Promise.resolve().then(() => drain(context));
+              void draining.catch(() => undefined);
               if (remaining <= 0) {
-                void draining.catch(() => undefined);
                 errors.push(
                   new KitError({
                     code: 'EK_TIMEOUT',

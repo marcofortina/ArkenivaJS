@@ -3,8 +3,16 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ConfigStore, copyData, mergeData, compileSchema, within } from '@arkenivajs/core/support';
+import {
+  ConfigStore,
+  copyData,
+  mergeData,
+  compileSchema,
+  within,
+  captureAbortSignal,
+} from '@arkenivajs/core/support';
 import { spawnSync } from 'node:child_process';
+import { getEventListeners } from 'node:events';
 import { KitError } from '@arkenivajs/core';
 
 const schema = {
@@ -201,5 +209,98 @@ test('Hung reload preflight preserves the active generation and releases the que
   assert.throws(
     () => new ConfigStore({ count: 1 }, { schema, preflightTimeoutMs: 0 }),
     code('EK_CONFIG_INVALID'),
+  );
+});
+
+test('Operation scopes reject forged or shadowed native signals before invoking work', async () => {
+  let calls = 0,
+    accesses = 0;
+  const shadowed = new AbortController().signal;
+  Object.defineProperty(shadowed, 'aborted', { value: false });
+  for (const input of [
+    null,
+    {},
+    Object.create(AbortSignal.prototype),
+    { aborted: false, addEventListener() {}, removeEventListener() {} },
+    shadowed,
+  ]) {
+    assert.throws(() => captureAbortSignal(input), code('EK_CONFIG_INVALID'));
+    await assert.rejects(
+      within(
+        () => {
+          calls++;
+        },
+        { signal: input as never },
+      ),
+      code('EK_CONFIG_INVALID'),
+    );
+  }
+  for (const options of [
+    null,
+    [],
+    { timeoutMs: null },
+    {
+      get signal() {
+        accesses++;
+        return new AbortController().signal;
+      },
+    },
+    {
+      get timeoutMs() {
+        accesses++;
+        return 1000;
+      },
+    },
+  ])
+    await assert.rejects(
+      within(() => {
+        calls++;
+      }, options as never),
+      code('EK_CONFIG_INVALID'),
+    );
+  await assert.rejects(within(null as never), code('EK_CONFIG_INVALID'));
+  assert.equal(calls, 0);
+  assert.equal(accesses, 0);
+});
+
+test('Cancellation snapshots the original native signal and cannot leak a listener through option replacement', async () => {
+  const original = new AbortController(),
+    replacement = new AbortController(),
+    options = { signal: original.signal };
+  const pending = within(() => new Promise(() => undefined), options);
+  options.signal = replacement.signal;
+  original.abort('Original owned cancellation');
+  await assert.rejects(pending, code('EK_ABORTED'));
+  assert.equal(getEventListeners(original.signal, 'abort').length, 0);
+  assert.equal(getEventListeners(replacement.signal, 'abort').length, 0);
+  const captured = captureAbortSignal(replacement.signal);
+  assert.notEqual(captured, replacement.signal);
+  replacement.abort();
+  assert.equal(captured.aborted, true);
+});
+
+test('Aborted queued work never starts and elapsed synchronous work cannot acknowledge a late result', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const pending = within(
+    () => {
+      calls++;
+      return 'unacknowledged';
+    },
+    { signal: controller.signal },
+  );
+  controller.abort();
+  await assert.rejects(pending, code('EK_ABORTED'));
+  assert.equal(calls, 0);
+  const wait = new Int32Array(new SharedArrayBuffer(4));
+  await assert.rejects(
+    within(
+      () => {
+        Atomics.wait(wait, 0, 0, 10);
+        return 'late';
+      },
+      { timeoutMs: 1 },
+    ),
+    code('EK_TIMEOUT'),
   );
 });

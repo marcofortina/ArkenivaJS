@@ -5,7 +5,7 @@ import { isIP, SocketAddress } from 'node:net';
 import { isAbsolute, normalize } from 'node:path';
 import { KitError } from '@arkenivajs/core';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
-import { validateServerTlsFiles } from '@arkenivajs/core/support';
+import { validateServerTlsFiles, captureAbortSignal } from '@arkenivajs/core/support';
 import type { ServerTlsFiles } from '@arkenivajs/core';
 import type { SocketNetworkAddress, SocketServerKind } from './contracts.js';
 
@@ -277,9 +277,7 @@ export function operation(input: OperationOptions | undefined, defaultMs: number
   let signal: AbortSignal | undefined;
   try {
     if (data.signal !== undefined) {
-      // Node 22's any() alone accepts some structural lookalikes.
-      Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!.call(data.signal);
-      signal = AbortSignal.any([data.signal as AbortSignal]);
+      signal = captureAbortSignal(data.signal);
     }
   } catch {
     throw failure('EK_SOCKET_CONFIG');

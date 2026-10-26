@@ -5,6 +5,7 @@ import { toUSVString } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { KitError } from '@arkenivajs/core';
 import type { OperationOptions } from '@arkenivajs/core';
+import { captureAbortSignal } from '@arkenivajs/core/support';
 import type { CsvOptions, DataCsvPluginSettings } from './types.js';
 
 export type CsvFailure =
@@ -173,7 +174,7 @@ export function callOptions(input: (CsvOptions & OperationOptions) | undefined, 
     const { signal, timeoutMs, ...codec } = supplied;
     return {
       codec: options(codec, setting.defaults),
-      signal: signal as AbortSignal | undefined,
+      signal: signal === undefined ? undefined : captureAbortSignal(signal),
       timeoutMs:
         timeoutMs === undefined
           ? setting.timeoutMs
