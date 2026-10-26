@@ -218,6 +218,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
 
+  examples/cryptography:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/security-crypto':
+        specifier: workspace:*
+        version: link:../../packages/security-crypto
+
   examples/distributed-tracing:
     dependencies:
       '@arkenivajs/api':
@@ -734,6 +743,12 @@ importers:
       '@arkenivajs/api':
         specifier: workspace:*
         version: link:../api
+
+  packages/security-crypto:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/security-totp:
     dependencies:

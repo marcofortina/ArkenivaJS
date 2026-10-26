@@ -48,6 +48,31 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  standard-apis-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.4', '24.22.1', '26.12.1']
+        package: ['security-crypto']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile
+      - name: Compile the optional adapter and its declared workspace dependencies
+        run: pnpm --filter "@arkenivajs/${{ matrix.package }}..." build
+      - name: Enforce public types, negative fixtures and source policy
+        run: pnpm --filter "@arkenivajs/${{ matrix.package }}" typecheck && pnpm --filter "@arkenivajs/${{ matrix.package }}" lint
+      - name: Verify native cryptography, adversarial input and bounded lifecycle
+        run: pnpm --filter "@arkenivajs/${{ matrix.package }}" test
+
   telemetry-integration:
     runs-on: ubuntu-latest
     steps:

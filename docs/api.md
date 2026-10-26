@@ -134,6 +134,39 @@ is opt-in; its evidence binds the consumed ceremony as a pre-session authenticat
 transaction, consumed through the evidence store before the application issues a
 session. Durable-store, browser and performance acceptance remain separate gates.
 
+## Native cryptography
+
+The experimental `@arkenivajs/security-crypto` exports
+`cryptoPlugin(settings): Plugin`, `CRYPTO_CAPABILITY`, `CryptoService`,
+`SealedEnvelope`, `CryptoPluginSettings`, `BoundedRuntimePolicy`, `SecretProvider`,
+`SecretValue` and the shared `KeyedDigestProvider` port. The digest port is an
+external provider contract, with no implicit key-management implementation.
+Register the plugin explicitly, await startup, then resolve its symbol.
+
+| Operation                                                | Result and policy                                                                                                |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `encrypt(plaintext, keyRef, aad?, options?)`             | `Promise<SealedEnvelope>`; AES-256-GCM, fresh 12-byte nonce, 16-byte tag and authenticated version metadata/AAD. |
+| `decrypt(envelope, keyRef, aad?, options?)`              | `Promise<Uint8Array>`; no plaintext on failed authentication or wrong key version.                               |
+| `hmac(input, keyRef, options?)`                          | `Promise<Uint8Array>`; complete HMAC-SHA256 digest.                                                              |
+| `verifyMac(input, mac, keyRef, options?)`                | `Promise<boolean>`; native constant-time comparison of full 32-byte MACs.                                        |
+| `sign(input, keyRef, options?)`                          | `Promise<Uint8Array>`; Ed25519 or P-256 with a DER PKCS#8 private key; 64-byte signature.                        |
+| `verifySignature(input, signature, publicKey, options?)` | `Promise<boolean>`; DER SPKI public key, Ed25519 or P-256 IEEE-P1363; no algorithm fallback.                     |
+
+Settings contain external secret references, a trusted `SecretProvider` and finite
+concurrency/deadline/byte budgets. Missing, expired, unapproved or mismatched key
+versions reject with `EK_CRYPTO_KEY_UNAVAILABLE`; tampered ciphertext/AAD uses
+`EK_CRYPTO_AUTH_FAILED`; malformed data, unsupported algorithms and byte limits
+use `EK_CRYPTO_FORMAT`. Invalid settings/options use `EK_CONFIG_INVALID`.
+Native cancellation/deadlines use `EK_ABORTED`/`EK_TIMEOUT`, saturation rejects
+immediately with `EK_BACKEND_UNAVAILABLE`, and closed handles use
+`EK_RESOURCE_CLOSED`. No retry is implicit. Providers marked test-only reject
+outside the test environment; a label does not establish trust.
+
+See the [exact limits and envelope format](../packages/security-crypto/README.md)
+and the [complete HTTPS-backed example](../examples/cryptography/README.md) for
+rotation, sensitive-byte ownership and failure handling. Release performance and
+remote CI remain separate from local cryptographic compatibility tests.
+
 ## Metrics and tracing
 
 `@arkenivajs/telemetry` exports `createTelemetry`, `telemetryPlugin`, `DURATION_BUCKETS_SECONDS` and the public telemetry port. Providers and W3C async context are instance-owned; no process-global SDK is replaced. Metric labels and series, span queues and exporter deadlines are bounded. See the [telemetry reference](../packages/telemetry/README.md) for modes, units, sampling, resource metadata and actual collector integration. The [distributed guide](../examples/distributed-tracing/README.md) runs two HTTP hops with correlated logs and measured process quantities.

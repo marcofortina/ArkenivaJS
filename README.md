@@ -58,6 +58,10 @@ correlation, explicit handler error policy and truthful acknowledgment semantics
 Follow the [developer learning path](docs/learning-path.md) for executable
 projects and independent verification with packed public artifacts.
 
+The experimental [cryptography example](examples/cryptography/README.md) covers
+verified HTTPS secret retrieval, versioned authenticated encryption, HMAC,
+Ed25519 signatures and explicit key rotation with disposable test material.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later

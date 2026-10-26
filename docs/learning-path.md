@@ -23,24 +23,25 @@ do not automatically load dotenv files. Keep actual URLs, passwords and key
 paths in the documented private fixture environment loader or an approved
 external secret provider; the checked-in inventory contains no live credentials.
 
-| Project                                                          | Learn                                                            | Infrastructure                                                 |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
-| [Configuration](../examples/configuration/README.md)             | YAML, environment precedence and immutable validated values      | None                                                           |
-| [HTTP hello service](../examples/hello-http/README.md)           | Typed route, response validation, OpenAPI and SIGTERM shutdown   | Local loopback sockets                                         |
-| [Observability](../examples/observability/README.md)             | Safe structured logs and actual process CPU/RSS/loop quantities  | None                                                           |
-| [OIDC tenants](../examples/oidc-tenants/README.md)               | Signed assertions, issuer/audience, scopes and tenant provenance | Disposable loopback issuer                                     |
-| [Distributed tracing](../examples/distributed-tracing/README.md) | Two HTTP hops, W3C trace correlation and safe logs               | Loopback collector receiver; actual collector suite separately |
-| [Tenant metering](../examples/metering/README.md)                | Independent technical events and durable JSONL output            | Private temporary files and loopback issuer                    |
-| [PostgreSQL](../examples/postgres/README.md)                     | Named binds, SQL transaction outcomes and safe numeric values    | Verified-TLS disposable PostgreSQL                             |
-| [MySQL](../examples/mysql/README.md)                             | Its own native driver, precision and prepared statements         | Verified-TLS disposable MySQL                                  |
-| [MariaDB](../examples/mariadb/README.md)                         | Independent MariaDB results and awaited ownership cleanup        | Verified-TLS disposable MariaDB                                |
-| [Oracle](../examples/oracle/README.md)                           | Exact NUMBER DTO conversion and Thin configuration               | Mock contracts required; real Oracle optional and unverified   |
-| [Redis](../examples/redis/README.md)                             | Expiration, NX outcomes and scoped native keys                   | Verified-TLS disposable Redis                                  |
-| [etcd](../examples/etcd/README.md)                               | Exact revisions, CAS, watches and leases through `etcd3`         | Authenticated disposable etcd 3.7                              |
-| [MongoDB](../examples/mongodb/README.md)                         | Native BSON DTOs, aggregation and session transactions           | Authenticated disposable replica set                           |
-| [JSON cache](../examples/cache/README.md)                        | Checked values, tenant namespaces and expiration                 | Redis fixture                                                  |
-| [Health](../examples/health/README.md)                           | Liveness, dependency readiness, HTTP status and drain            | Redis fixture                                                  |
-| [Messaging](../examples/messaging/README.md)                     | Core NATS semantics, error strategy and correlation              | Verified-TLS disposable NATS                                   |
+| Project                                                          | Learn                                                                    | Infrastructure                                                 |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| [Configuration](../examples/configuration/README.md)             | YAML, environment precedence and immutable validated values              | None                                                           |
+| [Cryptography](../examples/cryptography/README.md)               | External versioned secrets, authenticated envelopes, MACs and signatures | Disposable loopback HTTPS and OpenSSL                          |
+| [HTTP hello service](../examples/hello-http/README.md)           | Typed route, response validation, OpenAPI and SIGTERM shutdown           | Local loopback sockets                                         |
+| [Observability](../examples/observability/README.md)             | Safe structured logs and actual process CPU/RSS/loop quantities          | None                                                           |
+| [OIDC tenants](../examples/oidc-tenants/README.md)               | Signed assertions, issuer/audience, scopes and tenant provenance         | Disposable loopback issuer                                     |
+| [Distributed tracing](../examples/distributed-tracing/README.md) | Two HTTP hops, W3C trace correlation and safe logs                       | Loopback collector receiver; actual collector suite separately |
+| [Tenant metering](../examples/metering/README.md)                | Independent technical events and durable JSONL output                    | Private temporary files and loopback issuer                    |
+| [PostgreSQL](../examples/postgres/README.md)                     | Named binds, SQL transaction outcomes and safe numeric values            | Verified-TLS disposable PostgreSQL                             |
+| [MySQL](../examples/mysql/README.md)                             | Its own native driver, precision and prepared statements                 | Verified-TLS disposable MySQL                                  |
+| [MariaDB](../examples/mariadb/README.md)                         | Independent MariaDB results and awaited ownership cleanup                | Verified-TLS disposable MariaDB                                |
+| [Oracle](../examples/oracle/README.md)                           | Exact NUMBER DTO conversion and Thin configuration                       | Mock contracts required; real Oracle optional and unverified   |
+| [Redis](../examples/redis/README.md)                             | Expiration, NX outcomes and scoped native keys                           | Verified-TLS disposable Redis                                  |
+| [etcd](../examples/etcd/README.md)                               | Exact revisions, CAS, watches and leases through `etcd3`                 | Authenticated disposable etcd 3.7                              |
+| [MongoDB](../examples/mongodb/README.md)                         | Native BSON DTOs, aggregation and session transactions                   | Authenticated disposable replica set                           |
+| [JSON cache](../examples/cache/README.md)                        | Checked values, tenant namespaces and expiration                         | Redis fixture                                                  |
+| [Health](../examples/health/README.md)                           | Liveness, dependency readiness, HTTP status and drain                    | Redis fixture                                                  |
+| [Messaging](../examples/messaging/README.md)                     | Core NATS semantics, error strategy and correlation                      | Verified-TLS disposable NATS                                   |
 
 ## Verify the distributed package boundary
 
