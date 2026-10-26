@@ -209,6 +209,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-redis
 
+  examples/certificates:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/security-x509':
+        specifier: workspace:*
+        version: link:../../packages/security-x509
+
   examples/configuration:
     dependencies:
       '@arkenivajs/config':

@@ -65,6 +65,8 @@ Ed25519 signatures and explicit key rotation with disposable test material.
 The optional [X.509 adapter](packages/security-x509/README.md) separates bounded
 certificate inspection from explicit chain and revocation verification, with
 native TLS and CRL tests using ephemeral certificates.
+The [certificate example](examples/certificates/README.md) demonstrates the full
+flow, including revocation and cleanup, against packed public artifacts.
 
 ## License
 

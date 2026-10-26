@@ -27,6 +27,7 @@ external secret provider; the checked-in inventory contains no live credentials.
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | [Configuration](../examples/configuration/README.md)             | YAML, environment precedence and immutable validated values              | None                                                           |
 | [Cryptography](../examples/cryptography/README.md)               | External versioned secrets, authenticated envelopes, MACs and signatures | Disposable loopback HTTPS and OpenSSL                          |
+| [Certificates](../examples/certificates/README.md)               | PEM/DER metadata, fingerprints, explicit TLS trust and actual CRL denial | Disposable loopback TLS and OpenSSL                            |
 | [HTTP hello service](../examples/hello-http/README.md)           | Typed route, response validation, OpenAPI and SIGTERM shutdown           | Local loopback sockets                                         |
 | [Observability](../examples/observability/README.md)             | Safe structured logs and actual process CPU/RSS/loop quantities          | None                                                           |
 | [OIDC tenants](../examples/oidc-tenants/README.md)               | Signed assertions, issuer/audience, scopes and tenant provenance         | Disposable loopback issuer                                     |
