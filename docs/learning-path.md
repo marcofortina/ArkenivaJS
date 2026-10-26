@@ -56,6 +56,15 @@ unit/CLI suite against the installed artifacts:
 pnpm test:packed:examples
 ```
 
+During development, select one example for the same isolated package installation,
+strict source/test compilation and executable public-artifact check:
+
+```sh
+pnpm test:packed:examples --example utilities
+```
+
+The default command and automatic CI retain every example suite.
+
 This check keeps TypeScript strict, validates real public exports and uses the
 unmodified registry NATS dependency. It does not publish packages, use source
 aliases or silently apply the workspace's dependency patch to consumers. Native
