@@ -62,6 +62,10 @@ The experimental [cryptography example](examples/cryptography/README.md) covers
 verified HTTPS secret retrieval, versioned authenticated encryption, HMAC,
 Ed25519 signatures and explicit key rotation with disposable test material.
 
+The optional [X.509 adapter](packages/security-x509/README.md) separates bounded
+certificate inspection from explicit chain and revocation verification, with
+native TLS and CRL tests using ephemeral certificates.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
