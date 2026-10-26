@@ -60,6 +60,7 @@ jobs:
             'security-apikey',
             'security-crypto',
             'security-mtls',
+            'security-password',
             'security-sessions',
             'security-x509',
           ]

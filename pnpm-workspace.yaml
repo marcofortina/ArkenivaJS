@@ -8,6 +8,8 @@ packages:
 patchedDependencies:
   nats@2.29.3: packages/messaging/compat/nats-exact-optional.diff
 allowBuilds:
+  # Reviewed Node-API binaries are bundled; do not execute native build/install hooks.
+  argon2@0.45.1: false
   # Thin mode needs no install hook or Oracle Client setup.
   oracledb@26.0.0: false
   # The reviewed protobuf runtime is complete without its version-scheme warning hook.

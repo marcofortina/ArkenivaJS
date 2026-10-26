@@ -12,7 +12,7 @@ concurrency:
   group: compatibility-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  linux-javascript:
+  linux-runtime:
     if: github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.target.runner }}
     timeout-minutes: 25
