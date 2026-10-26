@@ -96,6 +96,9 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'codes.operation',
+  'codes.symbology',
+  'codes.outcome',
   'socket.kind',
   'socket.event',
   'socket.outcome',
@@ -120,6 +123,9 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'codes.operation': ['encode', 'decode'],
+  'codes.symbology': ['QR', 'CODE128', 'EAN13', 'detect'],
+  'codes.outcome': ['ok', 'error'],
   'socket.kind': ['tcp', 'tls', 'udp', 'unix'],
   'socket.event': [
     'connection',
@@ -181,6 +187,9 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'codes.duration.ms': 'ms',
+  'codes.output.bytes': 'By',
+  'codes.image.pixels': '{pixel}',
   'socket.payload.bytes': 'By',
   'socket.pending.bytes': 'By',
   'socket.active.connections': '{connection}',

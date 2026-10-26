@@ -8,6 +8,8 @@ packages:
 patchedDependencies:
   nats@2.29.3: packages/messaging/compat/nats-exact-optional.diff
 allowBuilds:
+  # Reviewed Node-API image binaries are bundled; do not run native build/install hooks.
+  sharp: false
   # Reviewed Node-API binaries are bundled; do not execute native build/install hooks.
   argon2@0.45.1: false
   # Thin mode needs no install hook or Oracle Client setup.
