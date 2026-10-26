@@ -235,6 +235,8 @@ export function runtime() {
         active--;
       }
     });
+    // Observe the owned task even when cancellation prevents the public waiter from starting.
+    void task.catch(() => undefined);
     try {
       return await within(() => task, { signal: combined, timeoutMs });
     } catch (error) {
