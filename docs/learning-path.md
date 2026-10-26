@@ -99,3 +99,5 @@ bytes differ from network traffic, wall durations can overlap, and process
 CPU/RSS cannot be assigned exactly to concurrent requests. Tracing can be off
 while verified tenant metering remains active. Refer to each package's measured
 coverage before interpreting missing quantities.
+
+The [native socket project](../examples/socket/README.md) exchanges real TCP, verified TLS, UDP and Unix bytes with complete application-owned cleanup.

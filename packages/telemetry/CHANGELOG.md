@@ -1,5 +1,7 @@
 # Changelog
 
+- Add explicit inbound trace-scope isolation and fixed socket event labels with native payload and duration units.
+
 ## 0.1.0
 
 - Export messaging publication, subscription, health and processing durations in seconds with explicit buckets.

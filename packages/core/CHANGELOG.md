@@ -1,5 +1,7 @@
 # Changelog
 
+- Share the bounded native server TLS file/context policy through the explicit adapter support SPI.
+
 ## Unreleased
 
 - Accept the complete approved error catalogue while preserving fixed safe JSON

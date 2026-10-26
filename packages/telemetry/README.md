@@ -39,3 +39,9 @@ docker compose -f packages/telemetry/test/fixtures/compose.yaml down
 For a remote VM, forward its collector port to loopback, select that endpoint and retain the evidence outside the checkout. Capture `docker logs` inside the VM to an external file, then pass that file instead of `--docker` to the checker. The checker requires the exact emitted trace id, instance id, operation, metric and resource keys in the collector's output; it fails if any are missing. Debug output is for disposable fixtures only, with no real credentials or tenant data. Shut down the fixture even after a failed test.
 
 HTTP adapters accept the abstract telemetry port. Declare explicit plugin dependencies and finite route labels; they create one server span and one logical outbound span per hop. Reserved HTTP server/client and database client operations carry the corresponding native SERVER/CLIENT span kind; other operations remain INTERNAL. Response bytes use `server.response`/`client.response` roles and exclude request bodies and wire overhead. `setGauge('http.server.active_requests', value, attrs)` maintains current nonnegative request state through a native UpDownCounter by recording state deltas; all other gauges use native last-value instruments. The [distributed example](../../examples/distributed-tracing/README.md) exercises two isolated applications, real sockets, correlated logs and process-level diagnostics.
+
+`ManagedTelemetry.withoutScope(work)` clears this owner's active trace scope and
+uses the OpenTelemetry root context for inbound/background work. It does not
+extract user baggage or grant tenant identity. The surrounding trace scope is
+restored after the callback, while its asynchronous children retain their own
+new scope.

@@ -85,6 +85,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-password',
       'security-sessions',
       'security-x509',
+      'socket',
     ],
   });
   assert.equal(job.strategy['fail-fast'], false);

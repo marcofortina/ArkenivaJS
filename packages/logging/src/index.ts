@@ -30,6 +30,8 @@ export interface LogStats {
 export interface ManagedLogger extends Logger {
   child(fields: LogFields): ManagedLogger;
   run<T>(fields: LogFields, work: () => T): T;
+  /** Background resources must not inherit an unrelated request's log fields. */
+  withoutScope<T>(work: () => T): T;
   stats(): LogStats;
   close(options?: OperationOptions): Promise<void>;
 }
@@ -331,6 +333,15 @@ export function createLogger(options: LoggerOptions): ManagedLogger {
           freezeData(merge(merge(bound, context.getStore() ?? {}), fields(data))),
           work,
         );
+      },
+      withoutScope<T>(work: () => T): T {
+        open();
+        if (typeof work !== 'function')
+          throw new KitError({
+            code: 'EK_CONFIG_INVALID',
+            message: 'Log scope requires a callback',
+          });
+        return context.exit(work);
       },
       stats(): LogStats {
         return Object.freeze({ ...counters });

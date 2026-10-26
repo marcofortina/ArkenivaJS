@@ -5,6 +5,7 @@ import { Ajv } from 'ajv';
 import type { AnySchema } from 'ajv';
 import { isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
+import { isAbsolute } from 'node:path';
 import { KitError } from './errors.js';
 import type { ConfigService, OperationOptions } from './contracts.js';
 import type { Telemetry } from './ports.js';
@@ -443,5 +444,70 @@ export async function within<T>(
   } finally {
     if (timer) clearTimeout(timer);
     if (aborted) options.signal?.removeEventListener('abort', aborted);
+  }
+}
+
+/** Shared inbound transport policy; native TLS/file code loads only on explicit use. */
+export async function withServerTls<T>(
+  input: import('./contracts.js').ServerTlsFiles,
+  consume: (options: Readonly<import('node:tls').TlsOptions>) => T | Promise<T>,
+): Promise<T> {
+  return (await import('./server-tls.js')).withServerTls(input, consume);
+}
+
+const tlsFields = new Set([
+  'certificateFile',
+  'privateKeyFile',
+  'caFile',
+  'privateKeyPassphraseEnv',
+  'minVersion',
+  'clientCertificate',
+]);
+
+/** Immutable file references only; no file is opened while validating configuration. */
+export function validateServerTlsFiles(
+  input: import('./contracts.js').ServerTlsFiles,
+): Readonly<import('./contracts.js').ServerTlsFiles> {
+  try {
+    const value = copyData(input);
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      Object.keys(value).some((key) => !tlsFields.has(key))
+    )
+      throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid server TLS file policy' });
+    for (const name of ['certificateFile', 'privateKeyFile', 'caFile'] as const) {
+      const path = value[name];
+      if (name === 'caFile' && path === undefined) continue;
+      if (
+        typeof path !== 'string' ||
+        path.length > 4096 ||
+        !isAbsolute(path) ||
+        path.includes('\0')
+      )
+        throw new KitError({
+          code: 'EK_HTTP_TLS_CONFIG',
+          message: 'Invalid server TLS file policy',
+        });
+    }
+    if (value.minVersion !== undefined && !['TLSv1.2', 'TLSv1.3'].includes(value.minVersion))
+      throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid server TLS file policy' });
+    if (
+      value.clientCertificate !== undefined &&
+      !['none', 'required'].includes(value.clientCertificate)
+    )
+      throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid server TLS file policy' });
+    if (value.clientCertificate === 'required' && value.caFile === undefined)
+      throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid server TLS file policy' });
+    if (
+      value.privateKeyPassphraseEnv !== undefined &&
+      (typeof value.privateKeyPassphraseEnv !== 'string' ||
+        !/^[A-Z_][A-Z0-9_]*$/.test(value.privateKeyPassphraseEnv))
+    )
+      throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid server TLS file policy' });
+    return freezeData(value);
+  } catch {
+    throw new KitError({ code: 'EK_HTTP_TLS_CONFIG', message: 'Invalid server TLS file policy' });
   }
 }

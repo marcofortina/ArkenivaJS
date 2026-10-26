@@ -108,3 +108,5 @@ their own licenses and attributions; see the notices for
 [etcd](packages/database-etcd/THIRD_PARTY_NOTICES.md),
 [MongoDB](packages/database-mongodb/THIRD_PARTY_NOTICES.md) and
 [messaging](packages/messaging/THIRD_PARTY_NOTICES.md).
+
+The [native socket servers](packages/socket/README.md) add managed TCP, TLS, UDP and Unix listeners. The [executable example](examples/socket/README.md) uses real owned loopback clients.

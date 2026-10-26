@@ -71,6 +71,8 @@ export interface TelemetryOptions {
 }
 /** Extra controls expose safe correlation, lifecycle and an explicitly native escape hatch. */
 export interface ManagedTelemetry extends Telemetry {
+  /** Inbound resources must not inherit the registering request's trace scope. */
+  withoutScope<T>(work: () => T): T;
   withRemoteContext<T>(headers: Readonly<Record<string, string | undefined>>, work: () => T): T;
   traceHeaders(): Readonly<{ traceparent?: string; tracestate?: string }>;
   currentTraceId(): string | undefined;
@@ -94,6 +96,9 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'socket.kind',
+  'socket.event',
+  'socket.outcome',
   'dns.operation',
   'dns.type',
   'dns.resolver',
@@ -115,6 +120,22 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'socket.kind': ['tcp', 'tls', 'udp', 'unix'],
+  'socket.event': [
+    'connection',
+    'rejected',
+    'active',
+    'read',
+    'write',
+    'pending',
+    'handler',
+    'received',
+    'sent',
+    'dropped',
+    'handshake',
+    'error',
+  ],
+  'socket.outcome': ['ok', 'error', 'timeout', 'capacity'],
   'dns.operation': ['resolve', 'lookup', 'reverse'],
   'dns.type': ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT', 'CAA', 'NAPTR', 'OS'],
   'dns.resolver': ['os'],
@@ -160,6 +181,12 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'socket.payload.bytes': 'By',
+  'socket.pending.bytes': 'By',
+  'socket.active.connections': '{connection}',
+  'socket.handler.duration.ms': 'ms',
+  'socket.handshake.duration.ms': 'ms',
+  'socket.observation.dropped': '{observation}',
   'dns.duration.ms': 'ms',
   'dns.response.records': '{record}',
   'dns.inflight': '{query}',
@@ -569,6 +596,11 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     });
   };
   const api: ManagedTelemetry = {
+    withoutScope(work) {
+      open();
+      if (typeof work !== 'function') throw invalid('Trace scope requires a callback');
+      return storage.exit(() => globalContext.with(ROOT_CONTEXT, work));
+    },
     withSpan: span,
     async measure(name, work, parameters = {}) {
       open();
