@@ -13,7 +13,8 @@
     "crypto": "node crypto.mjs",
     "test": "node --test test/*.unit.test.mjs",
     "test:integration": "node --test test/http.integration.test.mjs",
-    "x509": "node x509.mjs"
+    "x509": "node x509.mjs",
+    "apikey": "node apikey.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -40,7 +41,8 @@
     "pg-connection-string": "2.14.1",
     "pg-cursor": "2.22.1",
     "pino": "10.4.0",
-    "tinybench": "6.2.2"
+    "tinybench": "6.2.2",
+    "@arkenivajs/security-apikey": "workspace:*"
   },
   "license": "AGPL-3.0-or-later"
 }

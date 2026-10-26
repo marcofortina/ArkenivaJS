@@ -892,6 +892,9 @@ importers:
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../../packages/security
+      '@arkenivajs/security-apikey':
+        specifier: workspace:*
+        version: link:../../packages/security-apikey
       '@arkenivajs/security-crypto':
         specifier: workspace:*
         version: link:../../packages/security-crypto

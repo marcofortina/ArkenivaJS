@@ -1,5 +1,9 @@
 # Local foundation measurements
 
+The [API key verification smoke](apikey.md) compares the public credential
+adapter with the same native HMAC, durable quota and trusted-authority work in
+four isolated profiles, checking actual PostgreSQL increments and export privacy.
+
 The [certificate utility smoke](x509.md) compares native parsing, expiry,
 fingerprints and actual TLS/CRL verification in four isolated profiles.
 
