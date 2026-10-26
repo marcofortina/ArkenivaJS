@@ -86,4 +86,12 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       commands.some((command) => command.includes('matrix.package') && command.includes(gate)),
     );
   assert.ok(commands.includes('pnpm install --frozen-lockfile'));
+  const checks = (workflow.jobs.checks.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  assert.ok(
+    checks.includes(
+      'pnpm --filter @arkenivajs/benchmark-foundation crypto --smoke "$RUNNER_TEMP/crypto-smoke"',
+    ),
+  );
 });

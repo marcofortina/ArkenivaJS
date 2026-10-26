@@ -33,6 +33,8 @@ jobs:
       - run: pnpm verify
       - name: Verify benchmark statistics and the synthetic identity fixture
         run: pnpm --filter @arkenivajs/benchmark-foundation test
+      - name: Verify native cryptography in four bounded diagnostic profiles
+        run: pnpm --filter @arkenivajs/benchmark-foundation crypto --smoke "$RUNNER_TEMP/crypto-smoke"
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

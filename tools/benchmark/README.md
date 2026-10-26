@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [native cryptography smoke](crypto.md) compares eight operations in four
+isolated profiles with actual OTLP exports, fixed offers and privacy checks.
+
 The [durable MFA harness](mfa.md) adds bounded four-mode TOTP/WebAuthn/challenge
 smoke measurements with actual SQL, a controlled authenticator and export privacy checks.
 

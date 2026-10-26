@@ -10,6 +10,7 @@
     "postgres": "node postgres.mjs",
     "http": "node http.mjs",
     "mfa": "node mfa.mjs",
+    "crypto": "node crypto.mjs",
     "test": "node --test test/*.unit.test.mjs",
     "test:integration": "node --test test/http.integration.test.mjs"
   },
@@ -23,6 +24,7 @@
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/metering": "workspace:*",
     "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/security-crypto": "workspace:*",
     "@arkenivajs/security-totp": "workspace:*",
     "@arkenivajs/security-webauthn": "workspace:*",
     "@arkenivajs/telemetry": "workspace:*",
