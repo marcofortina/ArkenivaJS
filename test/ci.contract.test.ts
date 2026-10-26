@@ -68,3 +68,22 @@ test('PostgreSQL compatibility covers both reviewed servers on every supported N
   assert.equal(fixture.network_mode, 'host');
   assert.ok(fixture.command.includes('--remote-debugging-address=127.0.0.1'));
 });
+
+test('Optional standard APIs retain explicit Node/package coverage and cannot bypass public contract gates', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+  const job = workflow.jobs['standard-apis-unit'];
+  assert.deepEqual(job.strategy.matrix, {
+    node: ['22.23.4', '24.22.1', '26.12.1'],
+    package: ['security-crypto'],
+  });
+  assert.equal(job.strategy['fail-fast'], false);
+  assert.ok(job['timeout-minutes'] <= 10);
+  const commands = (job.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  for (const gate of ['build', 'typecheck', 'lint', 'test'])
+    assert.ok(
+      commands.some((command) => command.includes('matrix.package') && command.includes(gate)),
+    );
+  assert.ok(commands.includes('pnpm install --frozen-lockfile'));
+});
