@@ -1,0 +1,21 @@
+{
+  "name": "@arkenivajs/example-webhooks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/*.test.js",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/webhooks": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "jose": "6.2.13"
+  },
+  "license": "AGPL-3.0-or-later"
+}

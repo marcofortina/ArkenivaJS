@@ -518,6 +518,9 @@ importers:
       '@arkenivajs/security-webauthn':
         specifier: workspace:*
         version: link:../../packages/security-webauthn
+      '@arkenivajs/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/webhooks
       jose:
         specifier: 6.2.13
         version: 6.2.13
@@ -588,6 +591,27 @@ importers:
       '@arkenivajs/data-validation':
         specifier: workspace:*
         version: link:../../packages/data-validation
+
+  examples/webhooks:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+      '@arkenivajs/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/webhooks
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
 
   packages/api:
     dependencies:
@@ -1204,6 +1228,25 @@ importers:
       jose:
         specifier: 6.2.13
         version: 6.2.13
+
+  packages/webhooks:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/http':
+        specifier: workspace:*
+        version: link:../http
+      '@arkenivajs/security-crypto':
+        specifier: workspace:*
+        version: link:../security-crypto
+      '@arkenivajs/security-sessions':
+        specifier: workspace:*
+        version: link:../security-sessions
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
 
   tools/benchmark:
     devDependencies:
