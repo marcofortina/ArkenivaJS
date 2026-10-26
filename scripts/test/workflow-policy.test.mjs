@@ -19,6 +19,28 @@ const fixture = () => ({
     },
   },
 });
+
+test('Job environment rejects unavailable runner contexts while step environment may resolve them', () => {
+  for (const expression of [
+    '${{ runner.temp }}',
+    "${{ runner['temp'] }}",
+    '${{ steps.prepare.outputs.directory }}',
+    '${{ env.ROOT }}',
+    '${{ job.status }}',
+  ]) {
+    const value = fixture();
+    value.jobs.checks.env = { REPORT_DIRECTORY: expression };
+    assert.throws(
+      () => validateWorkflow('ci.yml', stringify(value)),
+      /Job environment cannot reference/,
+    );
+  }
+  const value = fixture();
+  value.jobs.checks.steps[0].env = { REPORT_DIRECTORY: '${{ runner.temp }}' };
+  assert.doesNotThrow(() => validateWorkflow('ci.yml', stringify(value)));
+  value.jobs.checks.env = { NODE_VERSION: '${{ matrix.node }}' };
+  assert.doesNotThrow(() => validateWorkflow('ci.yml', stringify(value)));
+});
 test('Workflow policy rejects untrusted triggers, mutable actions and hidden failure suppression', () => {
   assert.deepEqual(validateWorkflow('ci.yml', stringify(fixture())), { jobs: 1, actions: 1 });
   const changes = [
