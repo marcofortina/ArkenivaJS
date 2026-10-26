@@ -33,6 +33,21 @@ Long deadlines use bounded native timer intervals against a monotonic clock, pre
 
 Use `COMPONENTS` with plugin `provide` and `require` to install explicit services. Duplicate registrations fail; a consumer must declare the provider's plugin id in `dependencies`. The registry freezes after initialization. `APPLICATION_SIGNAL` provides cooperative startup cancellation. Hooks must release partially acquired resources on rejection; late successful hooks are closed even after cancellation. JavaScript cannot forcibly terminate arbitrary uncooperative code.
 
+`app.resolve<T>(key: symbol)` returns an explicitly installed service; a missing
+symbol throws `EK_UNSUPPORTED_CAPABILITY`. `app.tryResolve<T>(key)` returns
+`undefined` for absence. Both require a started application, or the current
+plugin's active dependency-aware initialization/activation context. That context
+is local to one application, propagates across awaits and expires when its hook
+finishes. Duplicate capability registration reaches startup callers as
+`EK_PLUGIN_DUPLICATE` and preserves the original cause.
+
+After READY, admitted drain work may resolve remaining dependencies until their
+owner releases them. CREATED, cancelled startup and CLOSED reject with
+`EK_LIFECYCLE_STATE`; stopping an application that never reached READY grants no
+lookup admission. Primitive symbol identity selects a service, with no implicit
+module loading or string-name fallback. See the
+[configured capability example](../../examples/configuration/README.md).
+
 A core-only application has lifecycle and validated configuration. Required accessors for absent adapters throw `EK_UNSUPPORTED_CAPABILITY`, while optional accessors return undefined. HTTP, database, security, telemetry, health and metering implementations are separate integrations. The type-only ports describe their application-facing contracts and do not open or simulate those services.
 
 Reload preflight is bounded by `preflightTimeoutMs` (default 30,000 ms). A hung or failed preflight leaves the active generation unchanged and releases the serialized reload queue; late preflight completion cannot commit.

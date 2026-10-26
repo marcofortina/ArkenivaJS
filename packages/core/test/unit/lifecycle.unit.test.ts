@@ -209,7 +209,7 @@ test('EK-CORE-002 providers cannot overwrite or consume undeclared dependencies'
         }),
       ],
     });
-    await assert.rejects(app.start(), code('EK_PLUGIN_FAILED'));
+    await assert.rejects(app.start(), code(duplicate ? 'EK_PLUGIN_DUPLICATE' : 'EK_PLUGIN_FAILED'));
   }
 });
 

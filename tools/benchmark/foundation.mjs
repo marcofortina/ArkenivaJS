@@ -57,7 +57,39 @@ const config = await createConfig({
   environment: {},
 });
 const records = [];
+const capabilityKey = Symbol('foundation-benchmark.capability');
+const capabilityValue = Object.freeze({ value: 1 });
+const nativeCapabilities = new Map([[capabilityKey, capabilityValue]]);
+const capabilityApp = await createApplication({
+  service,
+  plugins: [
+    {
+      id: 'benchmark-capability',
+      version: '1.0.0',
+      capabilities: new Set(['benchmark-capability']),
+      init(context) {
+        context.provide(capabilityKey, capabilityValue);
+      },
+      close() {},
+    },
+  ],
+});
+await capabilityApp.start();
+assert.equal(capabilityApp.resolve(capabilityKey), nativeCapabilities.get(capabilityKey));
 const scenarios = [
+  ['native-capability-map-read', 'BASELINE', 10000, () => nativeCapabilities.get(capabilityKey)],
+  [
+    'application-capability-resolve',
+    'FRAMEWORK',
+    10000,
+    () => capabilityApp.resolve(capabilityKey),
+  ],
+  [
+    'application-capability-try-resolve',
+    'FRAMEWORK',
+    10000,
+    () => capabilityApp.tryResolve(capabilityKey),
+  ],
   ['native-error', 'BASELINE', 1000, () => new Error('Benchmark error')],
   [
     'typed-safe-error',
@@ -146,6 +178,7 @@ try {
   assert.equal(logger.stats().failedWrites, 0);
   assert.ok(bytes > 0);
 } finally {
+  await capabilityApp.stop();
   diagnostics.close();
   await logger.close();
   destination.destroy();

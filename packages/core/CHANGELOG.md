@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add lifecycle-aware symbol resolution with application-local initialization
+  scopes, dependency checks and explicit missing/duplicate registration errors.
+
 ## 0.1.0
 
 - Add type-only shared MFA subject, atomic challenge/limiter, evidence and secret-provider ports.
