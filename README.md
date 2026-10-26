@@ -88,6 +88,8 @@ and the approved UUID library for UUIDv7, with strict version/canonical policy.
 The [utilities example](examples/utilities/README.md) runs without external services.
 The [validation utility](packages/data-validation/README.md) adds explicit email,
 URL, IP and UUID policies and startup-compiled Ajv schemas with bounded JSON input.
+The [time utility](packages/data-time/README.md) delegates calendar and DST behavior
+to Temporal, with explicit IANA zones, locale formatting and disambiguation policy.
 
 ## License
 

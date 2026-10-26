@@ -58,6 +58,7 @@ jobs:
         package:
           [
             'data-identifiers',
+            'data-time',
             'data-validation',
             'security-apikey',
             'security-crypto',

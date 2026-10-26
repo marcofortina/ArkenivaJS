@@ -4,6 +4,7 @@ This example generates UUIDv4 and UUIDv7 identifiers through public framework
 imports, parses their supported versions and verifies canonical-input policy.
 It also normalizes email/IP input, rejects a literal private URL and validates
 an object with a startup-compiled JSON Schema.
+Calendar-day and elapsed-hour operations demonstrate the Rome DST transition.
 It requires no listener, database, credential or application bootstrap.
 
 ```sh
@@ -24,7 +25,9 @@ Expected output:
   "emailNormalized": true,
   "ipNormalized": true,
   "privateUrlRejected": true,
-  "schemaAccepted": true
+  "schemaAccepted": true,
+  "dstCalendarPreserved": true,
+  "elapsedHoursPreserved": true
 }
 ```
 
@@ -32,3 +35,5 @@ The packed-artifact verifier also installs and executes this example. See the
 [identifier reference](../../packages/data-identifiers/README.md) and
 [validation reference](../../packages/data-validation/README.md) for exact
 contracts and the limits of UUID ordering, mailbox verification and URL/DNS policy.
+The [time reference](../../packages/data-time/README.md) explains explicit DST
+policies, locales and deployment ICU/TZDB requirements.
