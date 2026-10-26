@@ -9,16 +9,18 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-packed-examples-'));
-await chmod(directory, 0o700);
 const args = process.argv.slice(2);
 assert.ok(
-  args.length === 0 || (args.length === 2 && ['--integration', '--browser'].includes(args[0])),
-  'Use --integration EXAMPLE or --browser EXAMPLE for an explicitly configured live suite',
+  args.length === 0 ||
+    (args.length === 2 && ['--example', '--integration', '--browser'].includes(args[0])),
+  'Use --example EXAMPLE, --integration EXAMPLE or --browser EXAMPLE to select a suite',
 );
 const selected = args[1];
-const selectedScript = args[0] === '--browser' ? 'test:browser' : 'test:integration';
+const selectedScript =
+  args[0] === '--example' ? 'test' : args[0] === '--browser' ? 'test:browser' : 'test:integration';
 if (selected) assert.match(selected, /^[a-z][a-z0-9-]*$/);
+const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-packed-examples-'));
+await chmod(directory, 0o700);
 function execute(command, arguments_, cwd) {
   const result = spawnSync(command, arguments_, { cwd, stdio: 'inherit', timeout: 180000 });
   if (result.error) throw result.error;
