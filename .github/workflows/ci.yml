@@ -58,6 +58,7 @@ jobs:
         package:
           [
             'data-barcodes',
+            'data-compression',
             'data-csv',
             'data-identifiers',
             'data-time',

@@ -75,6 +75,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
     node: ['22.23.4', '24.22.1', '26.12.1'],
     package: [
       'data-barcodes',
+      'data-compression',
       'data-csv',
       'data-identifiers',
       'data-time',
