@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
+name: performance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-security:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.4', '24.22.1', '26.12.1']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Measure native cryptography in four diagnostic profiles
+        run: pnpm --filter @arkenivajs/benchmark-foundation crypto --smoke "$RUNNER_TEMP/crypto-smoke"
+      - name: Measure certificate utilities and actual TLS revocation in four diagnostic profiles
+        run: pnpm --filter @arkenivajs/benchmark-foundation x509 --smoke "$RUNNER_TEMP/x509-smoke"
+      - name: Retain measured summaries without secret inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-security-performance-node-${{ matrix.node }}
+          path: |
+            ${{ runner.temp }}/crypto-smoke/report.json
+            ${{ runner.temp }}/x509-smoke/report.json
+          if-no-files-found: error
+
+  durable-identity:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.4', '24.22.1', '26.12.1']
+        postgres: ['17', '18']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Verify fixture guards before allocating private credentials
+        run: python3 packages/database-postgres/test/fixtures/test_prepare.py
+      - name: Prepare owned PostgreSQL credentials and TLS identities
+        run: python3 packages/database-postgres/test/fixtures/prepare.py "$RUNNER_TEMP/postgres-fixture" --server-major "${{ matrix.postgres }}" --github-env "$GITHUB_ENV"
+      - name: Start owned PostgreSQL with verified TLS
+        run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
+      - name: Start the pinned controlled authenticator browser
+        run: docker compose -p arkenivajs-webauthn-browser -f examples/postgres/test/fixtures/browser/compose.yaml up -d --wait --wait-timeout 40
+      - name: Measure durable MFA workflows and verify export privacy
+        run: pnpm --filter @arkenivajs/benchmark-foundation mfa --smoke "$RUNNER_TEMP/mfa-benchmark"
+        env:
+          ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE: '1'
+          ARKENIVA_WEBAUTHN_BROWSER_URL: http://127.0.0.1:19222
+          ARKENIVA_BENCHMARK_RUNNER: github-hosted-disposable-runner
+      - name: Retain the measured summary without raw credentials
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: durable-identity-performance-node-${{ matrix.node }}-postgres-${{ matrix.postgres }}
+          path: ${{ runner.temp }}/mfa-benchmark/report.json
+          if-no-files-found: error
+      - if: always()
+        run: docker compose -p arkenivajs-webauthn-browser -f examples/postgres/test/fixtures/browser/compose.yaml down
+      - if: always() && env.PG_FIXTURE_DIRECTORY != ''
+        run: docker compose -f packages/database-postgres/test/fixtures/compose.yaml down

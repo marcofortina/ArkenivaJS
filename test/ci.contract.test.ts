@@ -49,7 +49,6 @@ test('PostgreSQL compatibility covers both reviewed servers on every supported N
     'pnpm test:packed:examples --integration postgres',
     'pnpm --filter @arkenivajs/example-postgres test:browser',
     'pnpm test:packed:examples --browser postgres',
-    'pnpm --filter @arkenivajs/benchmark-foundation mfa --smoke "$RUNNER_TEMP/mfa-benchmark"',
   ])
     assert.ok(commands.includes(gate), 'Every PostgreSQL/Node pair must run ' + gate);
   const browser = job.steps.find(
@@ -89,14 +88,40 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
   const checks = (workflow.jobs.checks.steps as readonly { run?: string }[]).flatMap((step) =>
     step.run ? [step.run] : [],
   );
-  assert.ok(
-    checks.includes(
-      'pnpm --filter @arkenivajs/benchmark-foundation crypto --smoke "$RUNNER_TEMP/crypto-smoke"',
-    ),
-  );
-  assert.ok(
-    checks.includes(
-      'pnpm --filter @arkenivajs/benchmark-foundation x509 --smoke "$RUNNER_TEMP/x509-smoke"',
-    ),
-  );
+  assert.ok(checks.includes('pnpm verify'));
+  assert.ok(checks.includes('pnpm --filter @arkenivajs/benchmark-foundation test'));
+});
+
+test('Performance campaigns remain explicit manual main-only work while functional gates stay automatic', () => {
+  const functional = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+  const performance = parse(readFileSync('.github/workflows/performance.yml', 'utf8'));
+  assert.deepEqual(Object.keys(performance.on), ['workflow_dispatch']);
+  assert.deepEqual(performance.jobs['native-security'].strategy.matrix, {
+    node: ['22.23.4', '24.22.1', '26.12.1'],
+  });
+  assert.deepEqual(performance.jobs['durable-identity'].strategy.matrix, {
+    node: ['22.23.4', '24.22.1', '26.12.1'],
+    postgres: ['17', '18'],
+  });
+  const commands = (workflow: typeof performance) =>
+    Object.values(workflow.jobs).flatMap((job: unknown) =>
+      (job as { steps: readonly { run?: string }[] }).steps.flatMap((step) =>
+        step.run ? [step.run] : [],
+      ),
+    );
+  const automatic = commands(functional),
+    manual = commands(performance);
+  assert.ok(automatic.includes('pnpm verify'));
+  assert.ok(automatic.includes('pnpm --filter @arkenivajs/benchmark-foundation test'));
+  assert.ok(automatic.includes('pnpm --filter @arkenivajs/example-postgres test:integration'));
+  for (const tool of ['crypto', 'x509', 'mfa']) {
+    assert.ok(
+      manual.some((command) => command.includes('benchmark-foundation ' + tool + ' --smoke')),
+    );
+    assert.ok(
+      !automatic.some((command) => command.includes('benchmark-foundation ' + tool + ' --smoke')),
+    );
+  }
+  for (const job of Object.values(performance.jobs))
+    assert.equal((job as { if: string }).if, "github.ref == 'refs/heads/main'");
 });
