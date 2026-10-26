@@ -484,6 +484,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-redis
 
+  examples/socket:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/socket':
+        specifier: workspace:*
+        version: link:../../packages/socket
+
   examples/utilities:
     dependencies:
       '@arkenivajs/data-csv':
@@ -961,6 +970,25 @@ importers:
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../telemetry
+
+  packages/socket:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/metering':
+        specifier: workspace:*
+        version: link:../metering
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
 
   packages/telemetry:
     dependencies:

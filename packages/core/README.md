@@ -82,3 +82,11 @@ access to foreign component values. Callback results must be boolean, and late
 results from stopped owners reject. Neither `HEALTH_PROBES` nor
 `APPLICATION_SIGNAL` can be overwritten by a plugin. The separate
 health integration owns probe deadlines and readiness policy.
+
+The adapter support SPI also exposes `validateServerTlsFiles` and the lazy
+`withServerTls` loader, shared by explicit HTTPS and raw TLS owners. Validation
+captures file references without reading them. The loader reads bounded regular
+files, validates certificate dates and native OpenSSL context compatibility, and
+clears temporary certificate/key/CA buffers after the trusted callback constructs
+its native context. Importing core or its support entry does not load TLS material
+or open a listener.
