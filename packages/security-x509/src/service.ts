@@ -110,14 +110,8 @@ export function createService(settings: Settings, telemetry?: Telemetry) {
       const started = performance.now();
       const record = (status: string) => {
         try {
-          telemetry?.recordHistogram('x509.validation.duration_ms', performance.now() - started, {
-            operation: 'inspect_chain',
-            status,
-          });
-          telemetry?.addCounter('x509.validation.completed', 1, {
-            operation: 'inspect_chain',
-            status,
-          });
+          telemetry?.recordHistogram('x509.validation.duration_ms', performance.now() - started);
+          telemetry?.addCounter('x509.validation.completed.' + status, 1);
         } catch {
           /* Diagnostic failures cannot change certificate trust. */
         }
@@ -127,7 +121,7 @@ export function createService(settings: Settings, telemetry?: Telemetry) {
           instrumentOperation(
             telemetry,
             'x509.inspect_chain',
-            { operation: 'inspect_chain' },
+            {},
             async () => {
               const trust = data(inputTrust, [
                 'trustRoots',
@@ -280,7 +274,6 @@ export function createService(settings: Settings, telemetry?: Telemetry) {
         telemetry?.setGauge(
           'x509.trust_roots.expiring',
           roots.filter((root) => root.validToDate.getTime() - Date.now() <= 30 * 86400000).length,
-          { threshold_days: 30 },
         );
       } catch {
         /* Configured-root diagnostics contain no certificate identities. */

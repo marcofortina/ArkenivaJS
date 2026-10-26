@@ -3,6 +3,8 @@
 
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer as createHttpReceiver } from 'node:http';
+import { createTelemetry } from '@arkenivajs/telemetry';
 import { X509Certificate } from 'node:crypto';
 import { connect, createServer } from 'node:tls';
 import type { ConnectionOptions, TLSSocket, TlsOptions } from 'node:tls';
@@ -944,6 +946,99 @@ test('EK-STD-SEC-008 native rotation preserves an authenticated connection while
     for (const socket of [...clients, ...sockets]) socket.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await app.stop();
+  }
+});
+test('EK-STD-SEC-008 the actual telemetry SDK exports certificate diagnostics without custom labels, drops or private metadata', async () => {
+  const bodies: unknown[] = [];
+  let totalBytes = 0;
+  const receiver = createHttpReceiver((request, response) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    request.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      totalBytes += chunk.length;
+      if (bytes > 1048576 || totalBytes > 4194304) request.destroy();
+      else chunks.push(chunk);
+    });
+    request.once('end', () => {
+      try {
+        bodies.push(JSON.parse(Buffer.concat(chunks).toString()) as unknown);
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end('{}');
+      } catch {
+        response.writeHead(400);
+        response.end();
+      }
+    });
+  });
+  await new Promise<void>((resolve) => receiver.listen(0, '127.0.0.1', resolve));
+  const address = receiver.address();
+  assert.ok(address && typeof address !== 'string');
+  const telemetry = createTelemetry({
+    service,
+    mode: 'detailed',
+    samplingRatio: 1,
+    endpoint: 'http://127.0.0.1:' + address.port,
+    allowInsecureLoopback: true,
+    exportIntervalMs: 1000,
+    exportTimeoutMs: 1000,
+  });
+  const observer: Plugin = {
+    id: 'certificate-sdk-observer',
+    version: '1.0.0',
+    capabilities: new Set(['telemetry']),
+    init(context) {
+      context.provide(COMPONENTS.telemetry, telemetry);
+    },
+    close() {},
+  };
+  const app = await createApplication({ service, plugins: [mtlsPlugin(f.settings), observer] });
+  try {
+    await app.start();
+    const adapter = app.resolve<MtlsService>(MTLS_CAPABILITY);
+    assert.ok(await adapter.verifyPeer(der('server'), policy('client')));
+    await assert.rejects(
+      adapter.verifyPeer(der('client'), policy('client')),
+      code('EK_MTLS_INVALID_PEER'),
+    );
+    await telemetry.flush();
+    assert.equal(telemetry.stats().droppedMetrics, 0);
+    assert.equal(telemetry.stats().droppedSpans, 0);
+    assert.equal(telemetry.stats().exportFailures, 0);
+    const objects: Record<string, unknown>[] = [];
+    const visit = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      objects.push(value as Record<string, unknown>);
+      Object.values(value).forEach(visit);
+    };
+    bodies.forEach(visit);
+    assert.ok(objects.some((value) => value.name === 'mtls.verify_peer'));
+    assert.ok(
+      objects.some(
+        (value) => value.name === 'mtls.verification.duration_ms' && value.unit === 'ms',
+      ),
+    );
+    assert.ok(objects.some((value) => value.name === 'mtls.verification.completed.trusted'));
+    const serialized = JSON.stringify(bodies);
+    for (const privateValue of [
+      'localhost',
+      'spiffe',
+      identity().issuer,
+      identity().certificateFingerprintSha256,
+    ])
+      assert.equal(serialized.includes(privateValue), false);
+  } finally {
+    try {
+      await app.stop();
+      await telemetry.close();
+    } finally {
+      receiver.closeAllConnections();
+      await new Promise<void>((resolve) => receiver.close(() => resolve()));
+    }
   }
 });
 test('EK-STD-SEC-008 actual CRL revocation and provider outage prevent application peer authorization', async () => {

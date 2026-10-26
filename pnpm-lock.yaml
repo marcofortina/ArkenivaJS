@@ -764,6 +764,10 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
 
   packages/security-totp:
     dependencies:
@@ -798,6 +802,10 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
 
   packages/telemetry:
     dependencies:
@@ -874,6 +882,9 @@ importers:
       '@arkenivajs/security-webauthn':
         specifier: workspace:*
         version: link:../../packages/security-webauthn
+      '@arkenivajs/security-x509':
+        specifier: workspace:*
+        version: link:../../packages/security-x509
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry

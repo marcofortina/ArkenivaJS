@@ -12,7 +12,8 @@
     "mfa": "node mfa.mjs",
     "crypto": "node crypto.mjs",
     "test": "node --test test/*.unit.test.mjs",
-    "test:integration": "node --test test/http.integration.test.mjs"
+    "test:integration": "node --test test/http.integration.test.mjs",
+    "x509": "node x509.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -27,6 +28,7 @@
     "@arkenivajs/security-crypto": "workspace:*",
     "@arkenivajs/security-totp": "workspace:*",
     "@arkenivajs/security-webauthn": "workspace:*",
+    "@arkenivajs/security-x509": "workspace:*",
     "@arkenivajs/telemetry": "workspace:*",
     "@simplewebauthn/browser": "14.0.0",
     "@simplewebauthn/server": "14.0.3",

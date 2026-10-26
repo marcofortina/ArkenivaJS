@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [certificate utility smoke](x509.md) compares native parsing, expiry,
+fingerprints and actual TLS/CRL verification in four isolated profiles.
+
 The [native cryptography smoke](crypto.md) compares eight operations in four
 isolated profiles with actual OTLP exports, fixed offers and privacy checks.
 

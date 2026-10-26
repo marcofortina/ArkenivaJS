@@ -80,6 +80,8 @@ Saturation is immediate `EK_BACKEND_UNAVAILABLE`; there is no hidden queue. A pr
 
 When a telemetry plugin is explicitly installed, the existing scoped support SPI records a `mtls.verify_peer` span and fixed verification duration/status metrics. It excludes secret references, keys, PEM, SANs, subjects and fingerprints. Diagnostics cannot change a policy result or replay work.
 
+Duration uses millisecond units; fixed completion names `mtls.verification.completed.trusted` and `mtls.verification.completed.error` preserve the common label policy without custom configuration. An actual SDK/OTLP regression test verifies exported spans, counters, units and privacy with zero dropped diagnostics.
+
 Tests use private ephemeral CA/server/client keys, actual mutual TLS, SNI/ALPN, native mismatch rejection and an independently executed OpenSSL chain/purpose/CRL verifier. They prove that native success alone does not process authorized payloads before asynchronous verification, and cover revocation, provider outage, malformed input, runtime forgery, strict bounds, cancellation, failed rotation rollback, late reload and independent applications. No production credentials or generated certificate files are committed.
 
 Run `pnpm --filter @arkenivajs/security-mtls build` and `pnpm --filter @arkenivajs/security-mtls test`. A production provider, executable packed consumer, measured overhead and remote release evidence require their own applicable gates; local TLS fixture success does not certify an external PKI or service mesh deployment.

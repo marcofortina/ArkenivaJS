@@ -144,6 +144,9 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'x509.validation.duration_ms': 'ms',
+  'mtls.verification.duration_ms': 'ms',
+  'x509.trust_roots.expiring': '{certificate}',
   'http.server.active_requests': '{request}',
   'arkenivajs.meter.events.enqueued': '{event}',
   'arkenivajs.meter.events.exported': '{event}',

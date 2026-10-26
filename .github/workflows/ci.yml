@@ -35,6 +35,8 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test
       - name: Verify native cryptography in four bounded diagnostic profiles
         run: pnpm --filter @arkenivajs/benchmark-foundation crypto --smoke "$RUNNER_TEMP/crypto-smoke"
+      - name: Verify native certificate utilities and actual TLS revocation in four diagnostic profiles
+        run: pnpm --filter @arkenivajs/benchmark-foundation x509 --smoke "$RUNNER_TEMP/x509-smoke"
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim
