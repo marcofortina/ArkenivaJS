@@ -778,6 +778,12 @@ importers:
         specifier: 14.0.3
         version: 14.0.3
 
+  packages/security-x509:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/telemetry:
     dependencies:
       '@arkenivajs/core':
