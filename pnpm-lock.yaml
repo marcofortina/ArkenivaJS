@@ -462,6 +462,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-redis
 
+  examples/utilities:
+    dependencies:
+      '@arkenivajs/data-identifiers':
+        specifier: workspace:*
+        version: link:../../packages/data-identifiers
+
   packages/api:
     dependencies:
       '@arkenivajs/core':
@@ -526,6 +532,15 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+
+  packages/data-identifiers:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      uuid:
+        specifier: 14.0.3
+        version: 14.0.3
 
   packages/database:
     dependencies:
@@ -2271,6 +2286,10 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
+  uuid@14.0.3:
+    resolution: {integrity: sha512-Sc5u1VVln93y1Xnz4R+CunOZc7R9LUcTmhj7Rc7Eg3HVcf7rVn2FOoa812fe0W8p3jD7xeoGSYbfqCGGH2B6xw==}
+    hasBin: true
+
   webidl-conversions@7.0.0:
     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
     engines: {node: '>=12'}
@@ -3721,6 +3740,8 @@ snapshots:
       punycode: 2.3.1
 
   util-deprecate@1.0.2: {}
+
+  uuid@14.0.3: {}
 
   webidl-conversions@7.0.0: {}
 
