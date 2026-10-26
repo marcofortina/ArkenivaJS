@@ -844,6 +844,9 @@ importers:
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../../packages/security
+      '@arkenivajs/security-crypto':
+        specifier: workspace:*
+        version: link:../../packages/security-crypto
       '@arkenivajs/security-totp':
         specifier: workspace:*
         version: link:../../packages/security-totp
