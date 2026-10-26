@@ -58,3 +58,7 @@ the same named SQL provider. It remains explicitly test-only until application-o
 production storage policy and the separate factor acceptance gates are satisfied.
 The [controlled browser suite](webauthn-browser.md) exercises the public factor service
 with the pinned browser SDK, a virtual authenticator and this shared SQL state.
+
+The [transactional security-state reference](security-state.md) adds complete
+CAS/batch/index/owner-epoch behavior for credential-service adapters, with actual
+cross-process PostgreSQL tests and no implicit database pool.
