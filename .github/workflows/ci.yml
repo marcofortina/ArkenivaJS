@@ -33,10 +33,6 @@ jobs:
       - run: pnpm verify
       - name: Verify benchmark statistics and the synthetic identity fixture
         run: pnpm --filter @arkenivajs/benchmark-foundation test
-      - name: Verify native cryptography in four bounded diagnostic profiles
-        run: pnpm --filter @arkenivajs/benchmark-foundation crypto --smoke "$RUNNER_TEMP/crypto-smoke"
-      - name: Verify native certificate utilities and actual TLS revocation in four diagnostic profiles
-        run: pnpm --filter @arkenivajs/benchmark-foundation x509 --smoke "$RUNNER_TEMP/x509-smoke"
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim
@@ -180,18 +176,6 @@ jobs:
           ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE: '1'
           ARKENIVA_WEBAUTHN_BROWSER_URL: http://127.0.0.1:19222
           ARKENIVA_WEBAUTHN_BROWSER_ORIGIN: http://localhost:19377
-      - name: Measure bounded MFA workloads and verify export privacy
-        run: pnpm --filter @arkenivajs/benchmark-foundation mfa --smoke "$RUNNER_TEMP/mfa-benchmark"
-        env:
-          ARKENIVA_WEBAUTHN_BROWSER_DISPOSABLE: '1'
-          ARKENIVA_WEBAUTHN_BROWSER_URL: http://127.0.0.1:19222
-          ARKENIVA_BENCHMARK_RUNNER: github-hosted-disposable-runner
-      - name: Retain the MFA measurement summary without raw credential-bearing inputs
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: mfa-node-${{ matrix.node }}-postgres-${{ matrix.postgres }}
-          path: ${{ runner.temp }}/mfa-benchmark/report.json
-          if-no-files-found: error
       - if: always()
         run: docker compose -p arkenivajs-webauthn-browser -f examples/postgres/test/fixtures/browser/compose.yaml down
       - if: always() && env.PG_FIXTURE_DIRECTORY != ''

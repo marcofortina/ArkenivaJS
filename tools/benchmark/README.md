@@ -1,5 +1,12 @@
 # Local foundation measurements
 
+Performance comparisons run through the explicit
+[manual performance workflow](../../.github/workflows/performance.yml) after
+functional implementation and verification. Automatic CI keeps functional,
+integration, security, privacy-regression and benchmark-analysis tests active.
+Manual measurement results remain required evidence for their release gates;
+deferring execution does not count a measurement as passed.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.
