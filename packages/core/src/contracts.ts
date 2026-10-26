@@ -227,6 +227,10 @@ export interface ApplicationOptions {
 
 /** Application contract for explicit application composition. */
 export interface Application {
+  /** Resolve an installed symbol after startup, or within the current plugin's declared initialization dependencies. */
+  resolve<T>(key: symbol): T;
+  /** Return undefined for an absent symbol; lifecycle and initialization dependency checks still apply. */
+  tryResolve<T>(key: symbol): T | undefined;
   readonly state: LifecycleState;
   readonly logger: Logger;
   readonly api: ApiServer;

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { performance } from 'node:perf_hooks';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
   Application,
   ApplicationOptions,
@@ -325,8 +326,11 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
   }
   const immutableOptions = Object.freeze({ ...wiring, plugins: Object.freeze(plugins) });
   const values = new Map<symbol, { owner: string; value: unknown }>();
+  // Each application's active initialization owns its dependency checks, including across awaits.
+  const resolutionScopes = new AsyncLocalStorage<{ context: PluginContext; active: boolean }>();
   const controller = new AbortController();
   let state: LifecycleState = 'CREATED';
+  let reachedReady = false;
   let starting: Promise<void> | undefined, stopping: Promise<void> | undefined;
   let shutdownDeadline: number | undefined;
   let startupCleanupErrors: readonly unknown[] = [];
@@ -339,6 +343,24 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
       });
     return values.get(key)!.value as T;
   };
+  function resolveCapability<T>(key: symbol, optional: false): T;
+  function resolveCapability<T>(key: symbol, optional: true): T | undefined;
+  function resolveCapability<T>(key: symbol, optional: boolean): T | undefined {
+    const scope = state === 'INITIALIZING' ? resolutionScopes.getStore() : undefined;
+    if (
+      state !== 'READY' &&
+      !(state === 'DRAINING' && reachedReady) &&
+      !(state === 'INITIALIZING' && scope?.active && !controller.signal.aborted)
+    )
+      throw new KitError({
+        code: 'EK_LIFECYCLE_STATE',
+        message: 'Capability resolution requires readiness or active plugin initialization',
+      });
+    if (typeof key !== 'symbol')
+      throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Capability keys must be symbols' });
+    if (!values.has(key)) return optional ? undefined : component<T>(key);
+    return scope ? scope.context.require<T>(key) : component<T>(key);
+  }
   for (const plugin of plugins) {
     const bindings = plugin[PREPARE_PLUGIN]?.(
       Object.freeze({ options: immutableOptions, state: () => state }),
@@ -386,6 +408,12 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
     return errors;
   };
   const application = {
+    resolve<T>(key: symbol): T {
+      return resolveCapability<T>(key, false);
+    },
+    tryResolve<T>(key: symbol): T | undefined {
+      return resolveCapability<T>(key, true);
+    },
     get state() {
       return state;
     },
@@ -423,6 +451,11 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
                     code: 'EK_LIFECYCLE_STATE',
                     message: 'Provider registry is frozen',
                   });
+                if (typeof key !== 'symbol')
+                  throw new KitError({
+                    code: 'EK_CONFIG_INVALID',
+                    message: 'Capability keys must be symbols',
+                  });
                 if (key === APPLICATION_SIGNAL || key === HEALTH_PROBES)
                   throw new KitError({
                     code: 'EK_PLUGIN_DEPENDENCY',
@@ -436,6 +469,11 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
                 values.set(key, { owner: plugin.id, value: instance });
               },
               require<T>(key: symbol): T {
+                if (typeof key !== 'symbol')
+                  throw new KitError({
+                    code: 'EK_CONFIG_INVALID',
+                    message: 'Capability keys must be symbols',
+                  });
                 if (key === APPLICATION_SIGNAL) return controller.signal as T;
                 if (key === HEALTH_PROBES) {
                   if (!plugin.capabilities.has('health'))
@@ -487,23 +525,27 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
                 return entry.value as T;
               },
             });
+            const scope = { context, active: true };
             try {
               // Hooks receive the cooperative signal through require(APPLICATION_SIGNAL).
-              const initializing = Promise.resolve()
-                .then(() => plugin.init(context))
-                .then(async () => {
-                  if (state === 'FAILED' || state === 'CLOSED') {
-                    // A hook that ignores cancellation still releases late successful resources.
-                    await within(() => plugin.close(context), {
-                      timeoutMs: DEFAULT_SHUTDOWN_TIMEOUT_MS,
-                    });
-                  } else {
-                    started.push({ plugin, context });
-                  }
-                });
-              await within(() => initializing, { signal: controller.signal });
+              const initialization = resolutionScopes.run(scope, () =>
+                Promise.resolve()
+                  .then(() => plugin.init(context))
+                  .then(async () => {
+                    if (state === 'FAILED' || state === 'CLOSED') {
+                      // A hook that ignores cancellation still releases late successful resources.
+                      await within(() => plugin.close(context), {
+                        timeoutMs: DEFAULT_SHUTDOWN_TIMEOUT_MS,
+                      });
+                    } else {
+                      started.push({ plugin, context });
+                    }
+                  }),
+              );
+              await within(() => initialization, { signal: controller.signal });
             } finally {
               initializing = false;
+              scope.active = false;
             }
           }
           // Resource initialization and route registration finish before listeners bind.
@@ -514,9 +556,20 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
           );
           for (const { plugin, context } of activationOrder) {
             const activate = plugin[ACTIVATE_PLUGIN];
-            if (activate) await within(() => activate(context), { signal: controller.signal });
+            if (activate) {
+              const scope = { context, active: true };
+              try {
+                await within(() => resolutionScopes.run(scope, () => activate(context)), {
+                  signal: controller.signal,
+                });
+              } finally {
+                scope.active = false;
+              }
+            }
           }
+          reachedReady = true;
           state = 'READY';
+          resolutionScopes.disable();
         } catch (cause) {
           state = 'FAILED';
           const errors = await cleanup(
@@ -525,9 +578,11 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
           startupCleanupErrors = errors;
           values.clear();
           state = 'CLOSED';
+          resolutionScopes.disable();
           const failure = new KitError({
             code:
-              cause instanceof KitError && ['EK_ABORTED', 'EK_MFA_POLICY'].includes(cause.code)
+              cause instanceof KitError &&
+              ['EK_ABORTED', 'EK_MFA_POLICY', 'EK_PLUGIN_DUPLICATE'].includes(cause.code)
                 ? cause.code
                 : 'EK_PLUGIN_FAILED',
             message: 'Application startup failed',
@@ -608,6 +663,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
           if (startupTimeout) errors.push(startupTimeout);
           values.clear();
           state = 'CLOSED';
+          resolutionScopes.disable();
           if (errors.length)
             throw new KitError({
               code: errors.some((e) => e instanceof KitError && e.code === 'EK_TIMEOUT')
