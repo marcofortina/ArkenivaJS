@@ -11,5 +11,9 @@ test('Public utilities preserve supported versions and reject malformed or nonca
     v7Version: 7,
     malformedRejected: true,
     canonicalPolicyEnforced: true,
+    emailNormalized: true,
+    ipNormalized: true,
+    privateUrlRejected: true,
+    schemaAccepted: true,
   });
 });

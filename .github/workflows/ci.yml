@@ -58,6 +58,7 @@ jobs:
         package:
           [
             'data-identifiers',
+            'data-validation',
             'security-apikey',
             'security-crypto',
             'security-mtls',
