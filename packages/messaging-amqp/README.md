@@ -7,8 +7,9 @@
 2.2.0. Startup resolves external connection secrets, verifies AMQPS peers and
 checks the trusted topology before making the service available. Importing the
 package or constructing the plugin does not resolve secrets or open connections.
-Broker-restart, independently packaged application and diagnostics validation
-remain incomplete; this package is not ready for production deployment.
+The [executable application](../../examples/amqp/README.md) includes native
+diagnostics and independent public package installation. Performance campaigns
+and final release acceptance remain separate from these functional tests.
 
 The contract preserves explicit publisher confirms, mandatory-return outcomes,
 single-use local acknowledgment submission, broker-specific consumer settings and
@@ -40,6 +41,7 @@ when concurrent messages share an application message ID. Cancellation, deadline
 or disconnection after submission can produce `unknown`. Recovery never republishes
 such messages. Native write backpressure stops new admission until `drain`; each
 profile also has an explicit concurrent publication bound, with no waiting queue.
+The native producer channel uses a write high-water mark of 16 frames.
 
 Consumers use native per-channel prefetch and manual acknowledgments. Each
 delivery permits one local `ack()` or `nack({ requeue })` submission; it does not
@@ -119,5 +121,6 @@ Negative tests prove explicit rejection without a connection or publication.
 an explicitly owned disposable AMQPS broker. Real-broker cases cover native
 confirms, correlated returns, single-use ack/nack, explicit requeue, handler failure,
 TLS rejection, least privilege, size rejection, transport recovery and redelivery
-between two application instances. Private metadata and broker credentials must
+between two application instances, broker restart, actual channel close, native
+write backpressure and externally configured dead-letter routing. Private metadata and broker credentials must
 remain outside the repository. Local runs use the owned integration VM.

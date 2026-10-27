@@ -171,7 +171,7 @@ export class Connection {
     model.on('error', () => undefined);
     model.on('handler-error', () => undefined);
     if (this.stopped) throw failure('EK_RESOURCE_CLOSED');
-    const channel = await model.createConfirmChannel();
+    const channel = await model.createConfirmChannel({ highWaterMark: 16 });
     channel.on('error', () => undefined);
     channel.on('handler-error', () => undefined);
     guardMessages(channel, this.config.maxMessageBytes, () => this.halt());
