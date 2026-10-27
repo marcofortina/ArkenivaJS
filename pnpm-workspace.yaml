@@ -11,6 +11,7 @@ overrides:
   # Keep the native Parse API while removing the legacy decoder's unlicensed buffers dependency.
   exceljs@4.4.0>unzipper: 0.12.5
 patchedDependencies:
+  dev-null@0.1.1: packages/soap/compat/dev-null-license-metadata.diff
   fast-deep-equal@3.1.3: packages/data-json/compat/fast-deep-equal-json-members.diff
   amqplib@2.2.0: packages/messaging-amqp/compat/amqplib-native-field-fidelity.diff
   buildcheck@0.0.7: packages/sftp/compat/buildcheck-license-metadata.diff
