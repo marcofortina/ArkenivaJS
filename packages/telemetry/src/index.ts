@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'ldap.operation',
+  'ldap.outcome',
   'webhook.operation',
   'security.http.operation',
   'security.http.outcome',
@@ -134,6 +136,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'ldap.operation': ['find', 'groups', 'search', 'verify', 'ping'],
+  'ldap.outcome': ['ok', 'error', 'timeout'],
   'webhook.operation': ['sign', 'verify', 'send'],
   'security.http.operation': ['issue', 'verify'],
   'security.http.outcome': ['ok', 'error'],
@@ -222,6 +226,11 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'ldap.bind.duration.ms': 'ms',
+  'ldap.operation.duration.ms': 'ms',
+  'ldap.search.count': '{page}',
+  'ldap.group.depth': '1',
+  'ldap.timeouts': '{timeout}',
   'webhook.duration.ms': 'ms',
   'security.http.duration.ms': 'ms',
   'security.http.csrf.rejections': '{rejection}',
