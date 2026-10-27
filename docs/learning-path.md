@@ -53,6 +53,10 @@ The [LDAP project](../examples/ldap/README.md) verifies enterprise directory loo
 isolated password binds, nested groups and private SDK metrics against the owned
 OpenLDAP fixture. Verified LDAPS and STARTTLS remain mandatory in test.
 
+The [outgoing OAuth guide](../examples/postgres/oauth-client.md) composes the native
+OIDC client, external cryptographic keys and shared PostgreSQL state. Run its
+owned HTTPS fixture wrapper around the complete PostgreSQL integration suite.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs

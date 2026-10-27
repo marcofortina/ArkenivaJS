@@ -70,6 +70,7 @@ jobs:
             'security-crypto',
             'security-http',
             'security-ldap',
+            'security-oauth-client',
             'security-mtls',
             'security-password',
             'security-sessions',
@@ -285,8 +286,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration
         env:
           ARKENIVAJS_OTLP_ENDPOINT: http://127.0.0.1:4318
-      - run: pnpm --filter @arkenivajs/example-postgres test:integration
-      - run: pnpm test:packed:examples --integration postgres
+      - name: Verify durable security state with an owned HTTPS OAuth provider
+        run: python3 packages/security-oauth-client/test/fixtures/run.py --test-only -- pnpm --filter @arkenivajs/example-postgres test:integration
+      - name: Verify the complete public PostgreSQL consumer against packed artifacts
+        run: python3 packages/security-oauth-client/test/fixtures/run.py --test-only -- pnpm test:packed:examples --integration postgres
       - name: Start the pinned disposable browser with a virtual authenticator
         run: docker compose -p arkenivajs-webauthn-browser -f examples/postgres/test/fixtures/browser/compose.yaml up -d --wait --wait-timeout 40
       - name: Verify WebAuthn browser interoperability and signed multiprocess zero-counter races

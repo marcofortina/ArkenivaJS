@@ -226,6 +226,11 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'oauth.begin_authorization.duration': 'ms',
+  'oauth.exchange_code.duration': 'ms',
+  'oauth.client_credentials.duration': 'ms',
+  'oauth.refresh.duration': 'ms',
+  'oauth.revoke.duration': 'ms',
   'ldap.bind.duration.ms': 'ms',
   'ldap.operation.duration.ms': 'ms',
   'ldap.search.count': '{page}',

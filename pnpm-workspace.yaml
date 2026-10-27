@@ -6,6 +6,7 @@ packages:
   - examples/*
   - tools/*
 patchedDependencies:
+  openid-client@6.8.8: packages/security-oauth-client/compat/openid-client-exact-optional.diff
   nats@2.29.3: packages/messaging/compat/nats-exact-optional.diff
 allowBuilds:
   # Reviewed Node-API image binaries are bundled; do not run native build/install hooks.

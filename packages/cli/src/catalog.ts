@@ -35,6 +35,7 @@ export const MODULES: readonly string[] = Object.freeze([
   '@arkenivajs/security-http',
   '@arkenivajs/security-ldap',
   '@arkenivajs/security-mtls',
+  '@arkenivajs/security-oauth-client',
   '@arkenivajs/security-password',
   '@arkenivajs/security-sessions',
   '@arkenivajs/security-totp',

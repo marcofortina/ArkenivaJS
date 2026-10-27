@@ -113,8 +113,8 @@ test('PostgreSQL compatibility covers both reviewed servers on every supported N
   for (const gate of [
     'pnpm coverage:postgres',
     'pnpm --filter @arkenivajs/benchmark-foundation test:integration',
-    'pnpm --filter @arkenivajs/example-postgres test:integration',
-    'pnpm test:packed:examples --integration postgres',
+    'python3 packages/security-oauth-client/test/fixtures/run.py --test-only -- pnpm --filter @arkenivajs/example-postgres test:integration',
+    'python3 packages/security-oauth-client/test/fixtures/run.py --test-only -- pnpm test:packed:examples --integration postgres',
     'pnpm --filter @arkenivajs/example-postgres test:browser',
     'pnpm test:packed:examples --browser postgres',
   ])
@@ -155,6 +155,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-crypto',
       'security-http',
       'security-ldap',
+      'security-oauth-client',
       'security-mtls',
       'security-password',
       'security-sessions',
@@ -202,7 +203,11 @@ test('Performance campaigns remain explicit manual main-only work while function
     manual = commands(performance);
   assert.ok(automatic.includes('pnpm verify'));
   assert.ok(automatic.includes('pnpm --filter @arkenivajs/benchmark-foundation test'));
-  assert.ok(automatic.includes('pnpm --filter @arkenivajs/example-postgres test:integration'));
+  assert.ok(
+    automatic.includes(
+      'python3 packages/security-oauth-client/test/fixtures/run.py --test-only -- pnpm --filter @arkenivajs/example-postgres test:integration',
+    ),
+  );
   for (const tool of ['crypto', 'x509', 'mfa']) {
     assert.ok(
       manual.some((command) => command.includes('benchmark-foundation ' + tool + ' --smoke')),

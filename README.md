@@ -100,6 +100,11 @@ mandatory STARTTLS, native bound filters, isolated password binds and bounded
 paged/group searches. Its [consumer](examples/ldap/README.md) runs against an
 owned OpenLDAP fixture and checks actual SDK diagnostic privacy.
 
+The optional [outgoing OAuth client](packages/security-oauth-client/README.md)
+uses the native OIDC SDK for PKCE grants and shared encrypted refresh state.
+The [PostgreSQL consumer](examples/postgres/oauth-client.md) verifies signed
+local authorization independently of outgoing provider grants.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
