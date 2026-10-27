@@ -12,6 +12,7 @@ const messages: Partial<Record<ErrorCode, string>> = {
   EK_TIMEOUT: 'The JSON operation exceeded its deadline',
   EK_ABORTED: 'The JSON operation was canceled',
   EK_RESOURCE_CLOSED: 'The JSON service is closed',
+  EK_LIFECYCLE_STATE: 'The JSON application is not ready',
   EK_BACKEND_UNAVAILABLE: 'The JSON worker is unavailable',
 };
 export function failure(code: ErrorCode = 'EK_CONFIG_INVALID'): KitError {

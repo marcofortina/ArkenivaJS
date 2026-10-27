@@ -8,6 +8,7 @@ import type {
   JsonService,
   JsonValidation,
 } from '../../dist/index.js';
+import { dataJsonPlugin, JSON_CAPABILITY } from '../../dist/index.js';
 declare const mapping: JsonMappingV1;
 const registry: JsonMappingRegistry = {
   ids: Object.freeze([mapping.id]),
@@ -36,4 +37,8 @@ function synchronous(json: JsonService) {
   json.parse('{}', { allowPrototype: true });
   return { result, transformed };
 }
-void [dynamic, executable, settings, synchronous];
+const plugin = dataJsonPlugin(settings);
+const key: symbol = JSON_CAPABILITY;
+// @ts-expect-error JSON plugin settings require an explicit bounded policy.
+dataJsonPlugin({ defaults: {}, schemas: {}, mappings: registry });
+void [dynamic, executable, settings, synchronous, plugin, key];

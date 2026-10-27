@@ -68,6 +68,7 @@ test('Schema registries reject external references, local and cross-catalog cycl
     { a: { $ref: 'b' }, b: { $ref: 'a' } },
     { a: { type: 'array', prefixItems: [{ $ref: '#' }] } },
     { a: { type: 'object', dependentSchemas: { x: { $ref: '#' } } } },
+    { a: { type: 'object', dependencies: { x: { $ref: '#' } } } },
     { a: { $ref: '#missing' } },
   ])
     assert.throws(() => new Schemas(source), code('EK_JSON_SCHEMA'));

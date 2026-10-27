@@ -188,6 +188,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'data-compression',
       'data-csv',
       'data-identifiers',
+      'data-json',
       'data-time',
       'data-validation',
       'data-xml',
