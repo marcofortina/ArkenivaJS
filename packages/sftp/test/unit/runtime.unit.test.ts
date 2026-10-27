@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import ssh2 from 'ssh2';
 const { Server, utils } = ssh2;
 import type { Connection as ServerConnection } from 'ssh2';
@@ -18,9 +18,15 @@ import type { SftpPluginSettings } from '../../dist/index.js';
 
 const code = (value: string) => (error: unknown) =>
   error instanceof KitError && error.code === value;
+// Native SEC1 fixtures avoid upstream OpenSSH serialization truncation of leading-zero Ed25519 keys.
+const fixtureKey = () => ({
+  private: generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    .privateKey.export({ type: 'sec1', format: 'pem' })
+    .toString(),
+});
 async function fixture() {
-  const host = utils.generateKeyPairSync('ed25519'),
-    user = utils.generateKeyPairSync('ed25519'),
+  const host = fixtureKey(),
+    user = fixtureKey(),
     connections = new Set<ServerConnection>(),
     state = { auth: 0, rename: 0, command: '' };
   const key = utils.parseKey(host.private);
