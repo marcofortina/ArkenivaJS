@@ -136,6 +136,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'mail',
       'security-apikey',
       'security-crypto',
+      'security-http',
       'security-mtls',
       'security-password',
       'security-sessions',

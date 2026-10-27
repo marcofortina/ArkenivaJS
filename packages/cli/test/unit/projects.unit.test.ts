@@ -174,7 +174,7 @@ test('Only existing module names and exact compatible framework versions are adm
     for (const name of [
       'no-module',
       '../api',
-      'security-http',
+      'unimplemented-module',
       'https://untrusted.invalid',
       '__proto__',
     ])

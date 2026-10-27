@@ -97,6 +97,8 @@ const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
   'webhook.operation',
+  'security.http.operation',
+  'security.http.outcome',
   'webhook.outcome',
   'upload.method',
   'upload.outcome',
@@ -133,6 +135,8 @@ const labels = new Set([
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   'webhook.operation': ['sign', 'verify', 'send'],
+  'security.http.operation': ['issue', 'verify'],
+  'security.http.outcome': ['ok', 'error'],
   'webhook.outcome': ['ok', 'error'],
   'upload.method': ['POST', 'PUT'],
   'upload.outcome': ['ok', 'error'],
@@ -219,6 +223,8 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
 };
 const units: Record<string, string> = {
   'webhook.duration.ms': 'ms',
+  'security.http.duration.ms': 'ms',
+  'security.http.csrf.rejections': '{rejection}',
   'webhook.payload.bytes': 'By',
   'webhook.verification.failures': '{failure}',
   'webhook.delivery.attempts': '{attempt}',

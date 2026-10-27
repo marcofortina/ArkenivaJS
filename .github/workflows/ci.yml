@@ -68,6 +68,7 @@ jobs:
             'mail',
             'security-apikey',
             'security-crypto',
+            'security-http',
             'security-mtls',
             'security-password',
             'security-sessions',

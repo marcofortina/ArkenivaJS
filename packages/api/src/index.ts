@@ -136,6 +136,7 @@ const statusFor = (error: KitError): number => {
     case 'EK_MFA_INVALID':
       return 401;
     case 'EK_AUTH_FORBIDDEN':
+    case 'EK_HTTP_CSRF':
     case 'EK_TENANT_UNVERIFIED':
     case 'EK_MFA_ASSURANCE_REQUIRED':
       return 403;
