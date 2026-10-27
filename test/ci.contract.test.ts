@@ -125,6 +125,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
   assert.deepEqual(job.strategy.matrix, {
     node: ['22.23.4', '24.22.1', '26.12.1'],
     package: [
+      'cli',
       'data-barcodes',
       'data-compression',
       'data-csv',
