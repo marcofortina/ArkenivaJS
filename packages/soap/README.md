@@ -33,9 +33,21 @@ silently restarted. Native fault details and private response bodies are not
 included in public errors. The worker checks SOAP XML before invoking the native
 decoder, preventing its JSON fallback from admitting a non-SOAP response.
 
+The internal HTTPS transport uses the same reviewed Axios version as node-soap,
+through an isolated native client and Node HTTPS sockets. It owns one fixed HTTPS
+endpoint, captures at most 16 startup DNS addresses and permits native connection
+selection only among those addresses. It verifies TLS 1.2 or later, supports an
+explicit CA and client certificate, disables proxies, redirects and automatic
+response decompression, and applies finite body and concurrency limits. Absolute
+deadlines cancel real work even during a continuously active slow response.
+Close awaits physical socket cleanup; owned private-key copies are cleared.
+Uncertain submitted failures report an unknown outcome and are never retried.
+Native OS DNS lookup is not cancelable; lifecycle owners must retain initialization
+reservations until that work actually settles.
+
 These foundations have native document/literal, RPC/literal, SOAP 1.1/1.2,
-malicious XML, cancellation and lifecycle tests. Managed HTTPS transport,
-credentials and the plugin runtime remain in development;
+malicious XML, real HTTPS/mTLS, cancellation and lifecycle tests. Managed service
+wiring, secret-provider credentials and the plugin runtime remain in development;
 this package does not yet provide a usable managed client service.
 
 The compatibility patch changes only the obsolete `dev-null@0.1.1` license

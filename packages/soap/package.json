@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
+    "axios": "1.20.0",
     "saxes": "6.0.0",
     "soap": "1.14.0"
   },

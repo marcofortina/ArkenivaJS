@@ -1537,6 +1537,9 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../core
+      axios:
+        specifier: 1.20.0
+        version: 1.20.0(debug@4.4.3)
       saxes:
         specifier: 6.0.0
         version: 6.0.0(patch_hash=983b813a63f631c02964c4647bad7918ee8742f3b697a116892b3a1cb9d1b7d1)
