@@ -57,6 +57,10 @@ The [outgoing OAuth guide](../examples/postgres/oauth-client.md) composes the na
 OIDC client, external cryptographic keys and shared PostgreSQL state. Run its
 owned HTTPS fixture wrapper around the complete PostgreSQL integration suite.
 
+The [XLSX project](../examples/xlsx/README.md) writes and reads typed, styled
+worksheets through explicit native streaming workers and tests actual SDK
+memory, size and latency metadata without exposing workbook contents.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs

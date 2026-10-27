@@ -5,7 +5,11 @@ packages:
   - packages/*
   - examples/*
   - tools/*
+overrides:
+  # ExcelJS uses only the compatible CommonJS v4 API; retain the upstream bounds-check fix.
+  exceljs@4.4.0>uuid: 11.1.1
 patchedDependencies:
+  saxes@6.0.0: packages/data-xlsx/compat/saxes-exact-optional.diff
   openid-client@6.8.8: packages/security-oauth-client/compat/openid-client-exact-optional.diff
   nats@2.29.3: packages/messaging/compat/nats-exact-optional.diff
 allowBuilds:
