@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import type { ErrorCode } from '@arkenivajs/core';
+import type { ContractAssets } from './assets.js';
 export const headerBytes = 16;
 export const errorCodes: readonly ErrorCode[] = [
   'EK_BACKEND_UNAVAILABLE',
@@ -15,4 +16,5 @@ export interface ParserSettings {
   readonly protocol: '1.1' | '1.2';
   readonly timeoutMs: number;
   readonly maxBytes: number;
+  readonly assets?: ContractAssets;
 }

@@ -10,3 +10,5 @@
 - Decode versioned SOAP responses in owned workers with deadlines and cleanup.
 - Reject implicit imports, hostile XML and native method name collisions.
 - Normalize an upstream MIT metadata declaration without altering runtime code.
+- Capture bounded local WSDL/XSD import graphs and compile them through the native
+  cache without implicit filesystem or network resolution.
