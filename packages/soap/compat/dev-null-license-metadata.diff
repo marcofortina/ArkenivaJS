@@ -1,0 +1,9 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -33,4 +33 @@
+-  "license": {
+-    "type": "MIT",
+-    "url": "https://github.com/thlorenz/dev-null/blob/master/LICENSE"
+-  },
++  "license": "MIT",
