@@ -11,6 +11,7 @@ overrides:
   # Keep the native Parse API while removing the legacy decoder's unlicensed buffers dependency.
   exceljs@4.4.0>unzipper: 0.12.5
 patchedDependencies:
+  png-js@2.0.0: packages/documents-pdf/compat/png-js-license-metadata.diff
   saxes@6.0.0: packages/data-xlsx/compat/saxes-exact-optional.diff
   openid-client@6.8.8: packages/security-oauth-client/compat/openid-client-exact-optional.diff
   nats@2.29.3: packages/messaging/compat/nats-exact-optional.diff

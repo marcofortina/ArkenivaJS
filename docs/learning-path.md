@@ -61,6 +61,10 @@ The [XLSX project](../examples/xlsx/README.md) writes and reads typed, styled
 worksheets through explicit native streaming workers and tests actual SDK
 memory, size and latency metadata without exposing workbook contents.
 
+The [PDF project](../examples/pdf/README.md) composes searchable pages, adds rotated
+text and verifies native resource observations while signature policy remains
+enforced independently by every rewriting operation.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs
