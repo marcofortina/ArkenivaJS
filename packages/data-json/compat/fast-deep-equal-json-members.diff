@@ -1,0 +1,9 @@
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -24,3 +24,3 @@
+     if (a.constructor === RegExp) return a.source === b.source && a.flags === b.flags;
+-    if (a.valueOf !== Object.prototype.valueOf) return a.valueOf() === b.valueOf();
+-    if (a.toString !== Object.prototype.toString) return a.toString() === b.toString();
++    if (typeof a.valueOf === 'function' && typeof b.valueOf === 'function' && a.valueOf !== Object.prototype.valueOf) return a.valueOf() === b.valueOf();
++    if (typeof a.toString === 'function' && typeof b.toString === 'function' && a.toString !== Object.prototype.toString) return a.toString() === b.toString();
