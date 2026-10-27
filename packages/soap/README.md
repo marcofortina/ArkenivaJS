@@ -12,9 +12,18 @@ automatically validate arbitrary business schemas.
 The internal compiler and decoder use the real node-soap implementation. A
 separate native SAX admission check rejects DTDs, external entities, malformed
 namespaces, prototype-sensitive names and collisions with native client methods.
-WSDL admission currently permits self-contained offline documents only; imports
-fail explicitly until the registered asset graph is implemented. Neither URL
-fetches nor implicit filesystem includes are allowed.
+The internal asset loader captures a trusted local WSDL and its bounded relative
+WSDL/XSD imports beneath that file's directory. It rejects symlinks, writable
+shared files, malformed UTF-8, external locations, path escapes and import cycles.
+The graph allows at most 32 files, 1 MiB per file and 8 MiB in total. Relative
+import names use ASCII letters, digits, underscores, dots, slashes and hyphens;
+URL encoding, query strings and fragments are unsupported. Imports may traverse
+parent directories only while remaining within the approved root.
+
+The immutable captured documents populate the actual native cache in dependency
+order. Native import hooks admit only already compiled captured entries. A cache
+miss fails explicitly; neither URL fetches nor implicit filesystem includes are
+allowed. Compilation still works after original source assets are removed.
 
 The owned decoder worker enforces XML size, depth, element and attribute limits,
 SOAP envelope version, finite deadlines and a fixed output ceiling. The worker
@@ -26,7 +35,7 @@ decoder, preventing its JSON fallback from admitting a non-SOAP response.
 
 These foundations have native document/literal, RPC/literal, SOAP 1.1/1.2,
 malicious XML, cancellation and lifecycle tests. Managed HTTPS transport,
-credentials, offline asset graphs and the plugin runtime remain in development;
+credentials and the plugin runtime remain in development;
 this package does not yet provide a usable managed client service.
 
 The compatibility patch changes only the obsolete `dev-null@0.1.1` license

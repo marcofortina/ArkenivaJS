@@ -4,7 +4,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { serialize } from 'node:v8';
 import { KitError } from '@arkenivajs/core';
-import { nativeWsdl } from './backend.js';
+import { nativeWsdl, nativeGraph } from './backend.js';
 import { inspectXml } from './xml.js';
 import { errorCodes, headerBytes } from './protocol.js';
 import type { ParserSettings } from './protocol.js';
@@ -17,7 +17,9 @@ const { settings, buffer } = workerData as {
 const header = new Int32Array(buffer, 0, 4),
   output = new Uint8Array(buffer, headerBytes);
 try {
-  const contract = await nativeWsdl(settings.source);
+  const contract = settings.assets
+    ? await nativeGraph(settings.assets)
+    : await nativeWsdl(settings.source);
   parentPort!.on('message', (source: string) => {
     try {
       let root;
