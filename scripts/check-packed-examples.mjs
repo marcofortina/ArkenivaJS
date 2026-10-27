@@ -7,7 +7,12 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, parseAllDocuments } from 'yaml';
+import {
+  selectTestFiles,
+  snapshotReviewedPatches,
+  resolvedPatches,
+} from './packed-example-inputs.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
@@ -31,9 +36,10 @@ const examples = [];
 try {
   const archiveDirectory = join(directory, 'packages');
   await mkdir(archiveDirectory, { mode: 0o700 });
-  const dependencies = {},
-    overrides =
-      parseYaml(await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8')).overrides ?? {};
+  const workspace = parseYaml(await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8')),
+    dependencies = {},
+    overrides = workspace.overrides ?? {},
+    archives = new Map();
   for (const [selector, version] of Object.entries(overrides)) {
     assert.match(selector, /^[a-z@][a-z0-9@/.*>^~-]+$/);
     assert.match(version, /^\d+\.\d+\.\d+$/);
@@ -51,7 +57,14 @@ try {
     );
     dependencies[manifest.name] = 'file:' + archive;
     overrides[manifest.name] = 'file:' + archive;
+    archives.set(folder, { archive, manifest });
   }
+  const patches = await snapshotReviewedPatches({
+    patches: workspace.patchedDependencies ?? {},
+    archives,
+    root,
+    directory,
+  });
   for (const folder of (await readdir(join(root, 'examples'))).sort()) {
     if (selected && folder !== selected) continue;
     const original = join(root, 'examples', folder),
@@ -100,15 +113,32 @@ try {
       dependencies,
     }),
   );
+  const configuration =
+    'packages: []\noverrides:\n' +
+    Object.entries(overrides)
+      .map(([name, value]) => '  ' + JSON.stringify(name) + ': ' + JSON.stringify(value))
+      .join('\n') +
+    '\n';
+  await writeFile(join(directory, 'pnpm-workspace.yaml'), configuration);
+  // Resolve without installing code, then apply exactly the reviewed patches present in this graph.
+  execute('pnpm', ['install', '--ignore-scripts', '--lockfile-only'], directory);
+  const activePatches = resolvedPatches(
+    patches,
+    parseAllDocuments(await readFile(join(directory, 'pnpm-lock.yaml'), 'utf8')).map((document) =>
+      document.toJS(),
+    ),
+  );
   await writeFile(
     join(directory, 'pnpm-workspace.yaml'),
-    'packages: []\noverrides:\n' +
-      Object.entries(overrides)
+    configuration +
+      'patchedDependencies:\n' +
+      Object.entries(activePatches)
         .map(([name, value]) => '  ' + JSON.stringify(name) + ': ' + JSON.stringify(value))
         .join('\n') +
       '\n',
   );
   execute('pnpm', ['install', '--ignore-scripts'], directory);
+  console.log('Applied reviewed compatibility diffs: ' + Object.keys(activePatches).length);
   for (const example of examples) {
     for (const configuration of ['tsconfig.json', 'tsconfig.test.json'])
       execute(
@@ -120,10 +150,7 @@ try {
     const flags = example.script.slice('node '.length).split(' '),
       pattern = flags.pop(),
       location = dirname(pattern),
-      files = (await readdir(join(example.target, location)))
-        .filter((name) => name.endsWith('.test.js'))
-        .sort()
-        .map((name) => join(location, name));
+      files = selectTestFiles(pattern, await readdir(join(example.target, location)));
     assert.ok(files.length > 0, 'The selected example must contain executable tests');
     execute(process.execPath, [...flags, ...files], example.target);
   }

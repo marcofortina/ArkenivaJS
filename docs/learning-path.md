@@ -80,6 +80,12 @@ unit/CLI suite against the installed artifacts:
 pnpm test:packed:examples
 ```
 
+Selected suites use their exact compiled filename pattern, including integration
+files without a `.test` suffix. The verifier resolves the independent dependency
+graph without executing install scripts, then applies only required reviewed
+compatibility diffs copied byte-for-byte from their package archives. An empty
+selected suite, absent diff or mismatch with reviewed source fails verification.
+
 During development, select one example for the same isolated package installation,
 strict source/test compilation and executable public-artifact check:
 
