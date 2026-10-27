@@ -97,6 +97,8 @@ const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
   'pdf.operation',
+  'sftp.operation',
+  'sftp.outcome',
   'pdf.outcome',
   'xlsx.operation',
   'xlsx.outcome',
@@ -141,6 +143,8 @@ const labels = new Set([
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   'pdf.operation': ['create', 'inspect', 'extract', 'merge', 'add'],
+  'sftp.operation': ['connect', 'upload', 'download', 'list', 'rename', 'exec'],
+  'sftp.outcome': ['ok', 'error'],
   'pdf.outcome': ['ok', 'error'],
   'xlsx.operation': ['open', 'read', 'write'],
   'xlsx.outcome': ['ok', 'error'],
@@ -235,6 +239,12 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
 };
 const units: Record<string, string> = {
   'pdf.operation.duration.ms': 'ms',
+  'sftp.operation.duration.ms': 'ms',
+  'sftp.upload.bytes': 'By',
+  'sftp.download.bytes': 'By',
+  'sftp.command.output.bytes': 'By',
+  'sftp.connections.active': '{connection}',
+  'sftp.operations.active': '{operation}',
   'pdf.native.duration.ms': 'ms',
   'pdf.native.cpu.ms': 'ms',
   'pdf.input.bytes': 'By',

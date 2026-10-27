@@ -1,0 +1,24 @@
+{
+  "name": "@arkenivajs/example-sftp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/*.test.js",
+    "test:integration": "node --test dist-test/*.integration.js",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/sftp": "workspace:*"
+  },
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "ssh2-sftp-client": "12.1.1",
+    "@types/ssh2-sftp-client": "9.0.6"
+  },
+  "license": "AGPL-3.0-or-later"
+}

@@ -114,6 +114,10 @@ The optional [PDF adapter](packages/documents-pdf/README.md) composes the native
 document engines for searchable text, inspection and protected rewriting. Its
 [consumer](examples/pdf/README.md) verifies page composition and private SDK metrics.
 
+The optional [SFTP and SSH adapter](packages/sftp/README.md) pins named remote
+servers, streams bounded files and proves supported atomic renames. Its
+[consumer](examples/sftp/README.md) runs against owned OpenSSH infrastructure.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
