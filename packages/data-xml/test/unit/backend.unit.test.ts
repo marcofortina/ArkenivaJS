@@ -4,7 +4,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KitError } from '@arkenivajs/core';
-import { parseNative, inputText, stringifyNative, documentSnapshot } from '../../dist/backend.js';
+import {
+  parseNative,
+  inputText,
+  stringifyNative,
+  documentSnapshot,
+  preflight,
+  schemaDependencies,
+} from '../../dist/backend.js';
 import { options, capture } from '../../dist/settings.js';
 
 const code = (name: string) => (error: unknown) => error instanceof KitError && error.code === name;
@@ -107,17 +114,19 @@ test('Input decoding rejects malformed UTF-8, unsupported XML versions and calle
   );
   assert.throws(
     () => parseNative('<?xml version="1.1"?><r/>', options(undefined)),
-    code('EK_XML_SECURITY'),
+    code('EK_UNSUPPORTED_CAPABILITY'),
   );
   assert.throws(
     () => parseNative('<?xml version="1.0" encoding="UTF-16"?><r/>', options(undefined)),
-    code('EK_XML_SECURITY'),
+    code('EK_UNSUPPORTED_CAPABILITY'),
   );
   assert.throws(
     () => inputText(new Uint8Array(new SharedArrayBuffer(4)), 4),
     code('EK_XML_SECURITY'),
   );
   assert.throws(() => inputText('\ud800', 8), code('EK_XML_SECURITY'));
+  for (const bytes of [Uint8Array.of(0xff, 0xfe, 0x3c, 0), Uint8Array.of(0xfe, 0xff, 0, 0x3c)])
+    assert.throws(() => inputText(bytes, 16), code('EK_UNSUPPORTED_CAPABILITY'));
 });
 test('Strict XML configuration is captured without filesystem access and forbids security relaxation', () => {
   const setting = {
@@ -220,6 +229,45 @@ test('Document snapshots reject accessors, cycles, sparse content, unsupported v
   assert.throws(
     () =>
       stringifyNative({ root: { '{urn:missing}r': [] } }, options({ namespaceMode: 'expanded' })),
+    code('EK_XML_SECURITY'),
+  );
+});
+
+test('Native schema metadata cannot use XML base overrides and instance guards cannot select their own schemas', () => {
+  const policy = options(undefined),
+    namespace = 'http://www.w3.org/2001/XMLSchema';
+  assert.deepEqual(
+    schemaDependencies(
+      '<x:schema xmlns:x="' + namespace + '"><x:include schemaLocation="types.xsd"/></x:schema>',
+      policy,
+    ),
+    ['types.xsd'],
+  );
+  assert.throws(
+    () =>
+      schemaDependencies('<x:schema xmlns:x="' + namespace + '" xml:base="file:///etc/"/>', policy),
+    code('EK_XML_SECURITY'),
+  );
+  assert.throws(
+    () =>
+      preflight(
+        '<r xmlns:i="http://www.w3.org/2001/XMLSchema-instance" i:schemaLocation="http://127.0.0.1:1/schema.xsd"/>',
+        policy,
+        true,
+      ),
+    code('EK_XML_SECURITY'),
+  );
+});
+
+test('XML tree node admission is enforced before allocation and malformed metadata nesting cannot overflow the main stack', () => {
+  assert.throws(
+    () => parseNative('<r>' + '<c/>'.repeat(100000) + '</r>', options(undefined)),
+    code('EK_XML_SECURITY'),
+  );
+  let nested: Record<string, unknown> = { '#text': 'data' };
+  for (let i = 0; i < 300; i++) nested = { '#cdata': [nested] };
+  assert.throws(
+    () => documentSnapshot({ root: { r: [nested] } }, options({ maxDepth: 32 })),
     code('EK_XML_SECURITY'),
   );
 });

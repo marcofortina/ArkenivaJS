@@ -3,6 +3,7 @@
 
 import { Worker } from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
+import { KitError } from '@arkenivajs/core';
 import type { OperationOptions, ErrorCode } from '@arkenivajs/core';
 import { failure, fields, integer } from './validation.js';
 import type { XmlDocument } from './contracts.js';
@@ -41,8 +42,9 @@ const safeErrors = new Set<ErrorCode>([
   'EK_UNSUPPORTED_CAPABILITY',
 ]);
 export interface Measurement {
-  readonly operation: 'parse' | 'stringify';
-  readonly outcome: 'ok' | 'error';
+  readonly operation:
+    'parse' | 'stringify' | 'xsd-guard' | 'xsd-schema' | 'xsd-gate' | 'validate-xsd';
+  readonly outcome: 'ok' | 'error' | 'invalid';
   readonly durationMs: number;
   readonly inputBytes: number;
   readonly outputBytes: number;
@@ -69,18 +71,19 @@ export class Runtime {
     readonly ready: () => boolean,
     readonly observe: (value: Measurement) => void = () => undefined,
   ) {}
-  check(): void {
+  check(bootstrap = false): void {
     if (this.closed || this.signal.aborted) throw failure('EK_RESOURCE_CLOSED');
-    if (!this.ready()) throw failure('EK_LIFECYCLE_STATE');
+    if (!bootstrap && !this.ready()) throw failure('EK_LIFECYCLE_STATE');
     if (this.active.size >= this.settings.maxConcurrent) throw failure('EK_XML_SECURITY');
   }
   execute<T extends string | XmlDocument>(
-    command: 'parse' | 'stringify',
+    command: 'parse' | 'stringify' | 'xsd-guard' | 'xsd-schema',
     input: string | XmlDocument,
     policy: ReturnType<typeof options>,
     requested?: OperationOptions,
+    bootstrap = false,
   ): Promise<T> {
-    this.check();
+    this.check(bootstrap);
     const config = operation(requested, this.settings.timeoutMs);
     if (config.signal?.aborted) return Promise.reject(failure('EK_ABORTED'));
     const started = performance.now(),
@@ -141,7 +144,12 @@ export class Runtime {
     };
     try {
       worker = new Worker(new URL('./worker.js', import.meta.url), {
-        workerData: { command, input, policy, maxOutputBytes: this.settings.maxOutputBytes },
+        workerData: {
+          command,
+          input,
+          policy,
+          maxOutputBytes: command === 'xsd-schema' ? 256 * 1024 : this.settings.maxOutputBytes,
+        },
         env: { TZ: 'UTC' },
         execArgv: [],
         stdout: true,
@@ -188,6 +196,82 @@ export class Runtime {
       error ??= 'EK_XML_PARSE';
       settle();
     }
+    return result;
+  }
+
+  /** Retain external native work and its admission until the actual process closes. */
+  external<T>(
+    requested: OperationOptions | undefined,
+    inputBytes: number,
+    work: (signal: AbortSignal, timeoutMs: number) => Promise<T>,
+    bootstrap = false,
+    classify: (value: T) => 'ok' | 'invalid' = () => 'ok',
+  ): Promise<T> {
+    this.check(bootstrap);
+    const config = operation(requested, this.settings.timeoutMs),
+      controller = new AbortController(),
+      started = performance.now();
+    if (config.signal?.aborted) return Promise.reject(failure('EK_ABORTED'));
+    let error: ErrorCode | undefined,
+      reject!: (error: unknown) => void,
+      outcome: 'ok' | 'invalid' = 'ok';
+    const canceled = new Promise<never>((_resolve, no) => {
+      reject = no;
+    });
+    void canceled.catch(() => undefined);
+    const abort = () => run.stop('EK_ABORTED');
+    const timer = setTimeout(() => run.stop('EK_TIMEOUT'), config.timeoutMs);
+    const run: Run = {
+      done: Promise.resolve(),
+      stop(code) {
+        error ??= code;
+        controller.abort();
+        reject(failure(error));
+      },
+    };
+    this.active.add(run);
+    this.signal.addEventListener('abort', abort, { once: true });
+    config.signal?.addEventListener('abort', abort, { once: true });
+    const owned = Promise.resolve()
+      .then(async () => {
+        if (error) throw failure(error);
+        const value = await work(controller.signal, config.timeoutMs);
+        outcome = classify(value);
+        if (!error && performance.now() - started >= config.timeoutMs) error = 'EK_TIMEOUT';
+        if (error) throw failure(error);
+        return value;
+      })
+      .catch((cause: unknown) => {
+        error ??= cause instanceof KitError ? cause.code : 'EK_XML_SCHEMA';
+        throw failure(error);
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        this.signal.removeEventListener('abort', abort);
+        config.signal?.removeEventListener('abort', abort);
+        this.active.delete(run);
+        try {
+          this.observe({
+            operation: bootstrap ? 'xsd-gate' : 'validate-xsd',
+            outcome: error ? 'error' : outcome,
+            durationMs: Math.max(0, performance.now() - started),
+            inputBytes,
+            outputBytes: 0,
+            heapBytes: 0,
+          });
+        } catch {
+          /* Diagnostics cannot change native validation. */
+        }
+      });
+    Object.defineProperty(run, 'done', {
+      value: owned.then(
+        () => undefined,
+        () => undefined,
+      ),
+    });
+    if (this.signal.aborted || config.signal?.aborted) run.stop('EK_ABORTED');
+    const result = Promise.race([owned, canceled]);
+    void result.catch(() => undefined);
     return result;
   }
   async close(): Promise<void> {

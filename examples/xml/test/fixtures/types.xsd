@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it> -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:arkenivajs:invoice" elementFormDefault="qualified">
+  <xs:complexType name="InvoiceType">
+    <xs:sequence>
+      <xs:element name="id" type="xs:string"/>
+      <xs:element name="amount" type="xs:decimal"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

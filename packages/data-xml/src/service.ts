@@ -6,8 +6,9 @@ import { Runtime, operation } from './runtime.js';
 import { options, optionKeys } from './settings.js';
 import { fields, failure } from './validation.js';
 import { documentSnapshot, inputText } from './backend.js';
+import type { Xsd } from './xsd.js';
 
-export function service(runtime: Runtime): XmlService {
+export function service(runtime: Runtime, xsd?: Xsd): XmlService {
   return Object.freeze<XmlService>({
     async parse(input, requested) {
       runtime.check();
@@ -43,13 +44,14 @@ export function service(runtime: Runtime): XmlService {
       const call = operation(requested, runtime.settings.timeoutMs);
       if (call.signal?.aborted) throw failure('EK_ABORTED');
       if (!(input instanceof Uint8Array)) throw failure('EK_XML_PARSE');
-      inputText(
+      const text = inputText(
         input,
         Math.min(runtime.settings.defaults.maxBytes, runtime.settings.maxInputBytes),
       );
       if (typeof schemaId !== 'string' || !Object.hasOwn(runtime.settings.schemas, schemaId))
         throw failure('EK_XML_SCHEMA');
-      throw failure('EK_UNSUPPORTED_CAPABILITY');
+      if (!xsd) throw failure('EK_UNSUPPORTED_CAPABILITY');
+      return xsd.validate(text, schemaId, call);
     },
   });
 }

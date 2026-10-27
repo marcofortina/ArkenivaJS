@@ -5,6 +5,25 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+test('XML integration requires vetted native schema binaries and isolated real consumers on every supported Node line', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
+    job = workflow.jobs['xml-integration'];
+  assert.equal(job['runs-on'], 'ubuntu-24.04');
+  assert.equal(job.env.ARKENIVA_XML_DISPOSABLE, '1');
+  assert.deepEqual(job.strategy.matrix.node, ['22.23.4', '24.22.1', '26.12.1']);
+  assert.equal(job.strategy['fail-fast'], false);
+  const commands = (job.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  assert.ok(commands.some((value) => value.includes('libxml2-utils=2.9.14+dfsg-1.3ubuntu3.10')));
+  for (const command of [
+    'python3 examples/xml/test/fixtures/run.py -- pnpm --filter @arkenivajs/data-xml test:integration',
+    'python3 examples/xml/test/fixtures/run.py -- pnpm --filter @arkenivajs/example-xml test:integration',
+    'pnpm test:packed:examples --integration xml',
+  ])
+    assert.ok(commands.includes(command));
+  assert.ok(!JSON.stringify(job).includes('continue-on-error'));
+});
 test('AMQP integration requires an owned verified broker, restart and packed native consumers on every supported Node line', () => {
   const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
     job = workflow.jobs['amqp-integration'];

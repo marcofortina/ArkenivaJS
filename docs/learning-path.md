@@ -74,6 +74,11 @@ native publisher confirms, mandatory returns and single-use manual acknowledgmen
 Its owned broker fixture and compiled consumer also verify private SDK observations;
 wire tenant metadata never establishes tenant authority.
 
+The [XML project](../examples/xml/README.md) roundtrips ordered namespace-aware
+documents and validates against registered offline XSD assets with a vetted
+native engine. Its disposable fixture isolates networking and verifies actual
+standard/detailed SDK exports without document contents or schema locations.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs
