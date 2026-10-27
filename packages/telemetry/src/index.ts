@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'xlsx.operation',
+  'xlsx.outcome',
   'ldap.operation',
   'ldap.outcome',
   'webhook.operation',
@@ -136,6 +138,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'xlsx.operation': ['open', 'read', 'write'],
+  'xlsx.outcome': ['ok', 'error'],
   'ldap.operation': ['find', 'groups', 'search', 'verify', 'ping'],
   'ldap.outcome': ['ok', 'error', 'timeout'],
   'webhook.operation': ['sign', 'verify', 'send'],
@@ -226,6 +230,13 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'xlsx.operation.duration.ms': 'ms',
+  'xlsx.first-row.duration.ms': 'ms',
+  'xlsx.input.bytes': 'By',
+  'xlsx.output.bytes': 'By',
+  'xlsx.worker.memory.sampled-peak.bytes': 'By',
+  'xlsx.cells': '{cell}',
+  'xlsx.cells.per.second': '{cell}/s',
   'oauth.begin_authorization.duration': 'ms',
   'oauth.exchange_code.duration': 'ms',
   'oauth.client_credentials.duration': 'ms',

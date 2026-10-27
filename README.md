@@ -105,6 +105,11 @@ uses the native OIDC SDK for PKCE grants and shared encrypted refresh state.
 The [PostgreSQL consumer](examples/postgres/oauth-client.md) verifies signed
 local authorization independently of outgoing provider grants.
 
+The optional [XLSX adapter](packages/data-xlsx/README.md) reads typed worksheets
+and writes native streaming workbooks with controlled styles, formula policies
+and finite process ownership. Its [consumer](examples/xlsx/README.md) verifies
+two-sheet roundtrips and actual SDK diagnostic privacy.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later

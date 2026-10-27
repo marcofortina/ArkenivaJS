@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { parse as parseYaml } from 'yaml';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = process.argv.slice(2);
@@ -31,7 +32,12 @@ try {
   const archiveDirectory = join(directory, 'packages');
   await mkdir(archiveDirectory, { mode: 0o700 });
   const dependencies = {},
-    overrides = {};
+    overrides =
+      parseYaml(await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8')).overrides ?? {};
+  for (const [selector, version] of Object.entries(overrides)) {
+    assert.match(selector, /^[a-z@][a-z0-9@/.*>^~-]+$/);
+    assert.match(version, /^\d+\.\d+\.\d+$/);
+  }
   const tooling = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   dependencies['@types/node'] = tooling.devDependencies['@types/node'];
   await cp(join(root, 'tsconfig.base.json'), join(directory, 'tsconfig.base.json'));
