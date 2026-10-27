@@ -8,9 +8,13 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { ChannelModel } from 'amqplib';
 import type { Duplex } from 'node:stream';
+import { execFile } from 'node:child_process';
 import { createApplication, KitError } from '@arkenivajs/core';
 import { AMQP_CAPABILITY, amqpPlugin } from '../../dist/index.js';
 import type { AmqpService, AmqpPluginSettings, AmqpDelivery } from '../../dist/index.js';
+import { Connection } from '../../dist/connection.js';
+import { capture } from '../../dist/settings.js';
+import { Task } from '../../dist/operation.js';
 
 const metadataPath = process.env.ARKENIVA_AMQP_FIXTURE;
 if (!metadataPath) throw new Error('The owned AMQPS fixture metadata path is required');
@@ -18,12 +22,13 @@ const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as {
   container: string;
   caFile: string;
   uris: { admin: string; service: string; denied: string };
+  restartCommand: string[];
 };
 if (!metadata.container.startsWith('arkenivajs-amqp-'))
   throw new Error('An owned disposable AMQP fixture is required');
 const code = (value: string) => (error: unknown) =>
   error instanceof KitError && error.code === value;
-async function fixture() {
+async function fixture(maxInFlightPublishes = 8) {
   const suffix = randomUUID(),
     exchange = 'fixture.exchange.' + suffix,
     queue = 'fixture.queue.' + suffix;
@@ -33,7 +38,7 @@ async function fixture() {
         name: 'events',
         connectionUriSecretRef: 'fixture-uri',
         tlsCaFile: metadata.caFile,
-        maxInFlightPublishes: 8,
+        maxInFlightPublishes,
         maxMessageBytes: 65536,
         allowTopologyProvisioning: true,
         topology: {
@@ -744,6 +749,253 @@ test('An early acknowledgment cannot exceed the configured local handler concurr
     release();
     entered.close();
     finished.close();
+    await f.app.stop();
+  }
+});
+
+test('An owned real broker restart restores one native consumer and redelivers its unacknowledged persistent message', async () => {
+  const f = await fixture(),
+    first = deferred<void>();
+  let resolve!: () => void,
+    reject!: (error: unknown) => void,
+    attempts = 0;
+  const redelivery = new Promise<void>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  void redelivery.catch(() => undefined);
+  const timer = setTimeout(
+    () => reject(new Error('The owned broker restart recovery deadline expired')),
+    60000,
+  );
+  try {
+    assert.ok(
+      Array.isArray(metadata.restartCommand) &&
+        metadata.restartCommand.length >= 2 &&
+        metadata.restartCommand.every(
+          (part) =>
+            typeof part === 'string' &&
+            part.length > 0 &&
+            part.length <= 1024 &&
+            !part.includes('\0'),
+        ),
+    );
+    const subscription = await f.service.subscribe(
+      {
+        connection: 'events',
+        queue: f.queue,
+        prefetch: 1,
+        maxMessageBytes: 65536,
+        failurePolicy: 'reject',
+      },
+      async (message) => {
+        try {
+          attempts++;
+          if (attempts === 1) first.resolve();
+          else {
+            assert.equal(message.redelivered, true);
+            await message.ack();
+            resolve();
+          }
+        } catch (error) {
+          reject(error);
+        }
+      },
+    );
+    assert.equal(
+      (
+        await f.service.publish({
+          connection: 'events',
+          exchange: f.exchange,
+          routingKey: 'created',
+          persistent: true,
+          body: Uint8Array.of(1),
+        })
+      ).status,
+      'confirmed',
+    );
+    await first.promise;
+    const [command, ...args] = metadata.restartCommand;
+    await new Promise<void>((resolve, reject) =>
+      execFile(command!, args, { timeout: 60000, maxBuffer: 65536 }, (error) =>
+        error ? reject(new Error('The owned broker restart controller failed')) : resolve(),
+      ),
+    );
+    await redelivery;
+    assert.equal(attempts, 2);
+    const channel = await (f.service.native('events') as ChannelModel).createChannel();
+    try {
+      assert.equal((await channel.checkQueue(f.queue)).consumerCount, 1);
+    } finally {
+      await channel.close();
+    }
+    await subscription.close();
+    assert.equal(
+      (
+        await f.service.publish({
+          connection: 'events',
+          exchange: f.exchange,
+          routingKey: 'created',
+          body: Uint8Array.of(2),
+        })
+      ).status,
+      'confirmed',
+    );
+  } finally {
+    first.close();
+    clearTimeout(timer);
+    await f.app.stop();
+  }
+});
+
+test('Actual native write backpressure bounds admission without fabricating confirmations or replaying submissions', async () => {
+  const f = await fixture(64);
+  try {
+    const body = new Uint8Array(65536);
+    const results = await Promise.allSettled(
+      Array.from({ length: 64 }, () =>
+        f.service.publish({
+          connection: 'events',
+          exchange: f.exchange,
+          routingKey: 'created',
+          body,
+        }),
+      ),
+    );
+    const accepted = results.filter((result) => result.status === 'fulfilled');
+    const blocked = results.filter((result) => result.status === 'rejected');
+    assert.ok(accepted.length > 0);
+    assert.ok(blocked.length > 0);
+    for (const result of accepted) assert.equal(result.value.status, 'confirmed');
+    for (const result of blocked)
+      assert.ok(result.reason instanceof KitError && result.reason.code === 'EK_AMQP_CONNECT');
+    assert.equal((await f.service.health('events')).available, true);
+    assert.equal(
+      (
+        await f.service.publish({
+          connection: 'events',
+          exchange: f.exchange,
+          routingKey: 'created',
+          body: Uint8Array.of(1),
+        })
+      ).status,
+      'confirmed',
+    );
+    const channel = await (f.service.native('events') as ChannelModel).createChannel();
+    try {
+      assert.equal((await channel.checkQueue(f.queue)).messageCount, accepted.length + 1);
+    } finally {
+      await channel.close();
+    }
+  } finally {
+    await f.app.stop();
+  }
+});
+
+test('A failed consumer uses the broker-configured dead-letter policy without an implicit requeue loop', async () => {
+  const f = await fixture(),
+    suffix = randomUUID(),
+    deadExchange = 'fixture.dead.' + suffix,
+    deadQueue = 'fixture.dead.queue.' + suffix,
+    workQueue = 'fixture.work.queue.' + suffix;
+  const channel = await (f.service.native('events') as ChannelModel).createChannel();
+  let other: Awaited<ReturnType<typeof createApplication>> | undefined;
+  let calls = 0;
+  try {
+    // Trusted fixture administration configures DLX before the application passively checks topology.
+    await channel.assertExchange(deadExchange, 'fanout', { durable: true });
+    await channel.assertQueue(deadQueue, { durable: true });
+    await channel.bindQueue(deadQueue, deadExchange, '');
+    await channel.assertQueue(workQueue, {
+      durable: true,
+      arguments: { 'x-dead-letter-exchange': deadExchange },
+    });
+    await channel.bindQueue(workQueue, f.exchange, 'created');
+    const connection = f.settings.connections[0]!;
+    other = await createApplication({
+      service: { name: 'amqp-dlx', version: '1.0.0', environment: 'test' },
+      plugins: [
+        amqpPlugin({
+          ...f.settings,
+          connections: [
+            {
+              ...connection,
+              allowTopologyProvisioning: false,
+              topology: {
+                ...connection.topology,
+                queues: [{ name: workQueue }],
+                bindings: [{ exchange: f.exchange, queue: workQueue, routingKey: 'created' }],
+              },
+            },
+          ],
+        }),
+      ],
+    });
+    await other.start();
+    const service = other.resolve<AmqpService>(AMQP_CAPABILITY);
+    await service.subscribe(
+      {
+        connection: 'events',
+        queue: workQueue,
+        prefetch: 1,
+        maxMessageBytes: 65536,
+        failurePolicy: 'reject',
+      },
+      async () => {
+        calls++;
+        throw new Error('The owned consumer deliberately rejects');
+      },
+    );
+    const receipt = await service.publish({
+      connection: 'events',
+      exchange: f.exchange,
+      routingKey: 'created',
+      body: Uint8Array.of(7),
+    });
+    assert.equal(receipt.status, 'confirmed');
+    let dead = await channel.get(deadQueue, { noAck: true });
+    for (let i = 0; !dead && i < 100; i++) {
+      await delay(10);
+      dead = await channel.get(deadQueue, { noAck: true });
+    }
+    assert.ok(dead);
+    assert.equal(dead.properties.messageId, receipt.messageId);
+    assert.deepEqual(dead.content, Buffer.from([7]));
+    const deaths = dead.properties.headers?.['x-death'] as { reason: string; queue: string }[];
+    assert.equal(deaths[0]?.reason, 'rejected');
+    assert.equal(deaths[0]?.queue, workQueue);
+    assert.equal(calls, 1);
+    assert.equal(await channel.get(deadQueue, { noAck: true }), false);
+  } finally {
+    await other?.stop();
+    await channel.close().catch(() => undefined);
+    await f.app.stop();
+  }
+});
+
+test('Closing the actual native producer channel triggers bounded reconnection instead of leaving a stale publisher', async () => {
+  const f = await fixture(),
+    settings = capture(f.settings),
+    owner = new Connection(settings, settings.connections[0]!);
+  try {
+    const task = new Task<void>(
+      undefined,
+      new AbortController().signal,
+      () => {
+        void owner.close();
+      },
+      (task) => owner.init(task),
+    );
+    await task.result;
+    const previous = owner.producer;
+    assert.ok(previous);
+    await previous.close();
+    for (let i = 0; !owner.available && i < 200; i++) await delay(10);
+    assert.equal(owner.available, true);
+    assert.ok(owner.producer);
+    assert.notEqual(owner.producer, previous);
+  } finally {
+    await owner.close();
     await f.app.stop();
   }
 });

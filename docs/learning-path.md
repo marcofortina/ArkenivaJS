@@ -69,6 +69,11 @@ The [SFTP project](../examples/sftp/README.md) streams files through host-pinned
 OpenSSH, publishes with a proven POSIX rename capability and executes only trusted
 command IDs. Its live suite also checks private SDK observations.
 
+The [AMQP project](../examples/amqp/README.md) uses verified RabbitMQ connections,
+native publisher confirms, mandatory returns and single-use manual acknowledgments.
+Its owned broker fixture and compiled consumer also verify private SDK observations;
+wire tenant metadata never establishes tenant authority.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs

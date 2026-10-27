@@ -5,6 +5,28 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+test('AMQP integration requires an owned verified broker, restart and packed native consumers on every supported Node line', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
+    job = workflow.jobs['amqp-integration'];
+  assert.deepEqual(job.strategy.matrix.node, ['22.23.4', '24.22.1', '26.12.1']);
+  assert.equal(job.strategy['fail-fast'], false);
+  const commands = (job.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  for (const command of [
+    'pnpm --filter @arkenivajs/messaging-amqp test:integration',
+    'pnpm --filter @arkenivajs/example-amqp test:integration',
+    'pnpm test:packed:examples --integration amqp',
+  ])
+    assert.ok(commands.includes(command));
+  assert.ok(commands.some((command) => command.includes('test/fixtures/prepare.py --github-env')));
+  const teardown = job.steps.find((step: { run?: string }) =>
+    step.run?.includes('control.py teardown'),
+  );
+  assert.equal(teardown?.if, "always() && env.ARKENIVA_AMQP_FIXTURE != ''");
+  assert.ok(!JSON.stringify(job).includes('NODE_TLS_REJECT_UNAUTHORIZED'));
+  assert.ok(!JSON.stringify(job).includes('continue-on-error'));
+});
 test('LDAP integration requires verified OpenLDAP and packed consumers on every supported Node line', () => {
   const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
     job = workflow.jobs['ldap-integration'];

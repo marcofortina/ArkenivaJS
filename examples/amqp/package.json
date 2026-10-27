@@ -1,0 +1,22 @@
+{
+  "name": "@arkenivajs/example-amqp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/*.test.js",
+    "test:integration": "node --test dist-test/*.integration.js",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/messaging-amqp": "workspace:*"
+  },
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*"
+  },
+  "license": "AGPL-3.0-or-later"
+}

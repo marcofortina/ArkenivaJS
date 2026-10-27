@@ -11,4 +11,5 @@
 - Implement native confirm publications, correlated mandatory returns and explicit unknown outcomes without automatic republishing.
 - Add bounded manual-ack consumers, generation-scoped acknowledgments, safe handler failure and lifecycle draining.
 - Add fixed-label diagnostics and real-broker permission, TLS, recovery and multi-instance tests.
-- Document outstanding broker-restart and independent packaged application validation.
+- Verify real broker restart, native producer channel closure, write backpressure and operator-configured dead-letter policy.
+- Add a compiled public example, independent packed consumer, actual SDK diagnostics privacy and owned broker CI fixtures.
