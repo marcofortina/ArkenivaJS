@@ -65,6 +65,10 @@ The [PDF project](../examples/pdf/README.md) composes searchable pages, adds rot
 text and verifies native resource observations while signature policy remains
 enforced independently by every rewriting operation.
 
+The [SFTP project](../examples/sftp/README.md) streams files through host-pinned
+OpenSSH, publishes with a proven POSIX rename capability and executes only trusted
+command IDs. Its live suite also checks private SDK observations.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs

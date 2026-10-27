@@ -1,0 +1,11 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "ssh2",
+   "version": "1.17.0",
++  "license": "MIT",
+   "author": "Brian White <mscdex@mscdex.net>",
+   "description": "SSH2 client and server modules written in pure JavaScript for node.js",
+   "main": "./lib/index.js",

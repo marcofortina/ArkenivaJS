@@ -161,6 +161,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-sessions',
       'security-x509',
       'socket',
+      'sftp',
       'upload',
       'webhooks',
     ],
@@ -218,4 +219,28 @@ test('Performance campaigns remain explicit manual main-only work while function
   }
   for (const job of Object.values(performance.jobs))
     assert.equal((job as { if: string }).if, "github.ref == 'refs/heads/main'");
+});
+
+test('SFTP integration requires real OpenSSH, host trust and packed consumers on all supported Node lines', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
+    job = workflow.jobs['sftp-integration'];
+  assert.deepEqual(job.strategy.matrix.node, ['22.23.4', '24.22.1', '26.12.1']);
+  assert.equal(job.strategy['fail-fast'], false);
+  const commands = job.steps.flatMap((step: { run?: string }) => (step.run ? [step.run] : []));
+  for (const command of [
+    'pnpm --filter @arkenivajs/sftp test:integration',
+    'pnpm --filter @arkenivajs/example-sftp test:integration',
+    'pnpm test:packed:examples --integration sftp',
+  ])
+    assert.ok(commands.includes(command));
+  const cleanup = job.steps.find((step: { run?: string }) =>
+    step.run?.includes('sftp/test/fixtures/teardown.py'),
+  );
+  assert.ok(cleanup.if.includes('always()'));
+  assert.ok(cleanup.if.includes('ARKENIVA_SFTP_FIXTURE'));
+  const fixture = readFileSync('packages/sftp/test/fixtures/prepare.py', 'utf8');
+  assert.ok(fixture.includes('StrictHostKeyChecking=yes'));
+  assert.ok(fixture.includes('arkenivajs.fixture=sftp'));
+  assert.ok(fixture.includes('--read-only'));
+  assert.ok(fixture.includes('--memory'));
 });
