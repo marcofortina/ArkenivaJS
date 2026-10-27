@@ -171,6 +171,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'data-identifiers',
       'data-time',
       'data-validation',
+      'data-xml',
       'dns',
       'mail',
       'messaging-amqp',

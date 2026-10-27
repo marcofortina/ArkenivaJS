@@ -64,6 +64,7 @@ jobs:
             'data-identifiers',
             'data-time',
             'data-validation',
+            'data-xml',
             'dns',
             'mail',
             'messaging-amqp',
