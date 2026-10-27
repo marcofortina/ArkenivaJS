@@ -134,13 +134,13 @@ function nativeSize(table: Record<string, unknown>): number {
 /** Snapshot public values into the pinned native representations before any publication. */
 export function outgoing(input: AmqpHeaders | undefined) {
   ensureNativeCodec();
-  const native = table(input ?? {}, false, budget(), 0);
+  const native = table(input === undefined ? {} : input, false, budget(), 0);
   return Object.freeze({ native, size: nativeSize(native) });
 }
 /** Copy native delivery metadata before its driver-owned lifetime ends. */
 export function incoming(input: unknown): AmqpHeaders {
   ensureNativeCodec();
-  const result = table(input ?? {}, true, budget(), 0) as AmqpHeaders;
+  const result = table(input === undefined ? {} : input, true, budget(), 0) as AmqpHeaders;
   // Re-encoding through the same native codec enforces the complete encoded-size budget.
   outgoing(result);
   return result;

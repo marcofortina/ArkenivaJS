@@ -25,7 +25,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node ../../scripts/test.mjs unit",
-    "lint": "eslint src test"
+    "lint": "eslint src test",
+    "test:integration": "node ../../scripts/test.mjs integration"
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
