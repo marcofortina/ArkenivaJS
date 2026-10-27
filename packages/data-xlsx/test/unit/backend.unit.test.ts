@@ -3,6 +3,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { realpathSync } from 'node:fs';
+import { Readable } from 'node:stream';
+import type { Duplex } from 'node:stream';
 import { options } from '../../dist/settings.js';
 import { createWriter, openReader } from '../../dist/backend.js';
 import { inspect } from '../../dist/archive.js';
@@ -86,4 +90,30 @@ test('Native XLSX controlled styles roundtrip and binary output is reproducible 
     }
   }
   assert.deepEqual(outputs[0], outputs[1]);
+});
+
+test('The reviewed CommonJS ZIP decoder preserves the native ExcelJS streaming entry API', async () => {
+  const require = createRequire(import.meta.url),
+    nativeRequire = createRequire(realpathSync(require.resolve('exceljs'))),
+    upstream = nativeRequire('unzipper') as {
+      Parse(options: { forceStream: true }): Duplex & AsyncIterable<Readable & { path: string }>;
+    },
+    writer = createWriter(options(), 1048576);
+  try {
+    writer.addSheet('Data');
+    writer.addRows(0, [[1]]);
+    const output = await writer.finish(),
+      stream = Readable.from([Buffer.concat(output.chunks)]).pipe(
+        upstream.Parse({ forceStream: true }),
+      ),
+      paths: string[] = [];
+    for await (const entry of stream) {
+      paths.push(entry.path);
+      for await (const chunk of entry) assert.ok(Buffer.isBuffer(chunk));
+    }
+    assert.ok(paths.includes('xl/workbook.xml'));
+    assert.ok(paths.includes('xl/worksheets/sheet1.xml'));
+  } finally {
+    writer.close();
+  }
 });
