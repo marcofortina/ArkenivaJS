@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'xml.operation',
+  'xml.outcome',
   'pdf.operation',
   'sftp.operation',
   'amqp.operation',
@@ -144,6 +146,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'xml.operation': ['parse', 'stringify', 'xsd-guard', 'xsd-schema', 'xsd-gate', 'validate-xsd'],
+  'xml.outcome': ['ok', 'error', 'invalid'],
   'pdf.operation': ['create', 'inspect', 'extract', 'merge', 'add'],
   'sftp.operation': ['connect', 'upload', 'download', 'list', 'rename', 'exec'],
   'amqp.operation': ['connect', 'publish', 'subscribe', 'health', 'unsubscribe'],
@@ -258,6 +262,13 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'xml.operations': '{operation}',
+  'xml.rejections': '{operation}',
+  'xml.operation.duration.ms': 'ms',
+  'xml.input.bytes': 'By',
+  'xml.output.bytes': 'By',
+  'xml.worker.heap.used.bytes': 'By',
+  'xml.process.rss.bytes': 'By',
   'pdf.operation.duration.ms': 'ms',
   'sftp.operation.duration.ms': 'ms',
   'amqp.operation.duration.ms': 'ms',

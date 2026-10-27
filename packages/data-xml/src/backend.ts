@@ -35,20 +35,37 @@ export function inputText(input: unknown, maximum: number): string {
       offset = get('byteOffset') as number,
       length = get('byteLength') as number;
     if (!(buffer instanceof ArrayBuffer) || length > maximum) throw failure('EK_XML_SECURITY');
-    return new TextDecoder('utf-8', { fatal: true }).decode(
-      Buffer.from(new Uint8Array(buffer, offset, length)),
-    );
+    const owned = Buffer.from(new Uint8Array(buffer, offset, length));
+    if (
+      (owned[0] === 0xff && owned[1] === 0xfe) ||
+      (owned[0] === 0xfe && owned[1] === 0xff) ||
+      (owned[0] === 0 && owned[1] === 0 && owned[2] === 0xfe && owned[3] === 0xff)
+    )
+      throw failure('EK_UNSUPPORTED_CAPABILITY');
+    return new TextDecoder('utf-8', { fatal: true }).decode(owned);
   } catch (error) {
     throw error instanceof KitError ? error : failure('EK_XML_PARSE');
   }
 }
 
 /** Native SAX validation rejects DTDs, undefined entities and namespace errors before tree allocation. */
-export function preflight(text: string, policy: Options): readonly Names[] {
+export function preflight(
+  text: string,
+  policy: Options,
+  rejectSchemaLocations = false,
+): readonly Names[] {
   const parser = new SaxesParser({ xmlns: true }),
     names: Names[] = [];
   let depth = 0,
-    attributes = 0;
+    attributes = 0,
+    nodes = 0;
+  const count = (value = 1) => {
+    nodes += value;
+    if (nodes > 100000) throw failure('EK_XML_SECURITY');
+  };
+  parser.on('text', () => count());
+  parser.on('comment', () => count(2));
+  parser.on('cdata', () => count(2));
   parser.on('error', () => {
     throw failure('EK_XML_PARSE');
   });
@@ -64,12 +81,19 @@ export function preflight(text: string, policy: Options): readonly Names[] {
       declaration.version !== '1.0' ||
       (declaration.encoding !== undefined && !/^utf-8$/i.test(declaration.encoding))
     )
-      throw failure('EK_XML_SECURITY');
+      throw failure('EK_UNSUPPORTED_CAPABILITY');
   });
   parser.on('opentag', (tag: SaxesTagNS) => {
+    count();
     if (++depth > policy.maxDepth || dangerous.has(tag.local)) throw failure('EK_XML_SECURITY');
     const mapping = new Map<string, string>();
     for (const attribute of Object.values(tag.attributes)) {
+      if (
+        rejectSchemaLocations &&
+        attribute.uri === 'http://www.w3.org/2001/XMLSchema-instance' &&
+        ['schemaLocation', 'noNamespaceSchemaLocation'].includes(attribute.local)
+      )
+        throw failure('EK_XML_SECURITY');
       if (++attributes > policy.maxAttributes || dangerous.has(attribute.local))
         throw failure('EK_XML_SECURITY');
       mapping.set(
@@ -90,6 +114,48 @@ export function preflight(text: string, policy: Options): readonly Names[] {
     throw error instanceof KitError ? error : failure('EK_XML_PARSE');
   }
   return names;
+}
+
+/** Enumerate native-parsed XSD references without pretending to validate schema semantics. */
+export function schemaDependencies(text: string, policy: Options): readonly string[] {
+  preflight(text, policy);
+  const parser = new SaxesParser({ xmlns: true }),
+    references = new Set<string>();
+  let root = false;
+  parser.on('error', () => {
+    throw failure('EK_XML_SCHEMA');
+  });
+  parser.on('opentag', (tag: SaxesTagNS) => {
+    if (
+      Object.values(tag.attributes).some(
+        (attribute) =>
+          attribute.uri === 'http://www.w3.org/XML/1998/namespace' && attribute.local === 'base',
+      )
+    )
+      throw failure('EK_XML_SECURITY');
+    if (!root) {
+      root = true;
+      if (tag.uri !== 'http://www.w3.org/2001/XMLSchema' || tag.local !== 'schema')
+        throw failure('EK_XML_SCHEMA');
+    }
+    if (
+      tag.uri === 'http://www.w3.org/2001/XMLSchema' &&
+      ['include', 'import', 'redefine', 'override'].includes(tag.local)
+    ) {
+      const location = Object.values(tag.attributes).find(
+        (attribute) => attribute.uri === '' && attribute.local === 'schemaLocation',
+      )?.value;
+      if (!location || location.length > 4096) throw failure('EK_XML_SCHEMA');
+      references.add(location);
+      if (references.size > 32) throw failure('EK_XML_SECURITY');
+    }
+  });
+  try {
+    parser.write(text).close();
+  } catch (error) {
+    throw error instanceof KitError ? error : failure('EK_XML_SCHEMA');
+  }
+  return Object.freeze([...references]);
 }
 
 /** The pinned native parser owns XML tokenization, entities and the ordered mixed-content tree. */
@@ -188,7 +254,7 @@ export function documentSnapshot(input: XmlDocument, policy: Options): XmlDocume
         const entry = Object.getOwnPropertyDescriptor(content, String(i));
         if (!entry || !Object.hasOwn(entry, 'value') || !entry.enumerable)
           throw failure('EK_XML_SECURITY');
-        children.push(node(entry.value, depth + (key.startsWith('#') ? 0 : 1)));
+        children.push(node(entry.value, depth + 1));
       }
       result[key] = Object.freeze(children);
       if (key === '#comment' || key === '#cdata') {

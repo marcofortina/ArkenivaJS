@@ -9,6 +9,7 @@ const messages: Partial<Record<ErrorCode, string>> = {
   EK_XML_PARSE: 'The XML document could not be processed',
   EK_XML_SCHEMA: 'The XML schema could not be processed',
   EK_UNSUPPORTED_CAPABILITY: 'The installed XML backend does not support this operation',
+  EK_BACKEND_UNAVAILABLE: 'The XML schema backend is unavailable',
   EK_ABORTED: 'The XML operation was aborted',
   EK_TIMEOUT: 'The XML operation deadline expired',
   EK_RESOURCE_CLOSED: 'The XML service is closed',

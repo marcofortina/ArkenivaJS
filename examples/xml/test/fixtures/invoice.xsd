@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it> -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:i="urn:arkenivajs:invoice" targetNamespace="urn:arkenivajs:invoice" elementFormDefault="qualified">
+  <xs:include schemaLocation="types.xsd"/>
+  <xs:element name="invoice" type="i:InvoiceType"/>
+</xs:schema>

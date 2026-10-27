@@ -746,6 +746,22 @@ importers:
         specifier: workspace:*
         version: link:../../packages/telemetry
 
+  examples/xml:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/data-xml':
+        specifier: workspace:*
+        version: link:../../packages/data-xml
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+
   packages/api:
     dependencies:
       '@arkenivajs/core':

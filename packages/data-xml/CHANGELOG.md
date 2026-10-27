@@ -9,4 +9,7 @@
 - Parse and build ordered XML with native SAX security preflight and expanded namespace support.
 - Isolate native operations with bounded worker admission, deadlines, cancellation and owned shutdown.
 - Reject nonrepresentable or malicious data without coercion, truncation or diagnostic payload disclosure.
-- Keep XSD explicitly unavailable until its independent external validator gate passes.
+- Gate optional native XSD 1.0 validation on reviewed vendor binaries and actual schema compilation.
+- Snapshot registered offline schema graphs and reject external references, cycles, base overrides and instance hints.
+- Bound and cancel actual validator processes without exposing native diagnostics or returning false acceptance.
+- Add fixed-label native observations and compiled public consumers with actual SDK privacy tests.

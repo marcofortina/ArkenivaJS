@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node ../../scripts/test.mjs unit",
+    "test:integration": "node ../../scripts/test.mjs integration",
     "lint": "eslint src test"
   },
   "dependencies": {

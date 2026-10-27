@@ -125,3 +125,32 @@ test('XSD never fabricates schema acceptance when its external validated backend
     await runtime.close();
   }
 });
+
+test('Canceled external work retains its shared XML admission and shutdown ownership until actual settlement', async () => {
+  const runtime = new Runtime(capture(settings), new AbortController().signal, () => true);
+  let release!: () => void, entered!: () => void;
+  const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+  const pending = runtime.external({ timeoutMs: 10 }, 0, async (signal) => {
+    entered();
+    await hold;
+    assert.equal(signal.aborted, true);
+  });
+  await started;
+  await assert.rejects(pending, code('EK_TIMEOUT'));
+  assert.equal(runtime.active.size, 1);
+  let settled = false;
+  const closed = runtime.close().then(() => {
+    settled = true;
+  });
+  await delay(5);
+  assert.equal(settled, false);
+  release();
+  await closed;
+  assert.equal(runtime.active.size, 0);
+  assert.equal(settled, true);
+});

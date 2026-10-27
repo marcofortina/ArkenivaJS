@@ -152,7 +152,13 @@ try {
       location = dirname(pattern),
       files = selectTestFiles(pattern, await readdir(join(example.target, location)));
     assert.ok(files.length > 0, 'The selected example must contain executable tests');
-    execute(process.execPath, [...flags, ...files], example.target);
+    if (selected === 'xml' && selectedScript === 'test:integration')
+      execute(
+        'python3',
+        [join(example.target, 'test/fixtures/run.py'), '--', process.execPath, ...flags, ...files],
+        example.target,
+      );
+    else execute(process.execPath, [...flags, ...files], example.target);
   }
   console.log('Packed public artifacts passed ' + examples.length + ' executable example suites.');
 } finally {
