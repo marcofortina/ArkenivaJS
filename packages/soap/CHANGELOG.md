@@ -12,3 +12,5 @@
 - Normalize an upstream MIT metadata declaration without altering runtime code.
 - Capture bounded local WSDL/XSD import graphs and compile them through the native
   cache without implicit filesystem or network resolution.
+- Add fixed native HTTPS transport, verified CA/mTLS, captured DNS, absolute
+  deadlines and physical socket cleanup with real SOAP client conformance tests.
