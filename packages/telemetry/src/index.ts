@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'pdf.operation',
+  'pdf.outcome',
   'xlsx.operation',
   'xlsx.outcome',
   'ldap.operation',
@@ -138,6 +140,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'pdf.operation': ['create', 'inspect', 'extract', 'merge', 'add'],
+  'pdf.outcome': ['ok', 'error'],
   'xlsx.operation': ['open', 'read', 'write'],
   'xlsx.outcome': ['ok', 'error'],
   'ldap.operation': ['find', 'groups', 'search', 'verify', 'ping'],
@@ -230,6 +234,13 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'pdf.operation.duration.ms': 'ms',
+  'pdf.native.duration.ms': 'ms',
+  'pdf.native.cpu.ms': 'ms',
+  'pdf.input.bytes': 'By',
+  'pdf.output.bytes': 'By',
+  'pdf.worker.memory.sampled-peak.bytes': 'By',
+  'pdf.pages.per.second': '{page}/s',
   'xlsx.operation.duration.ms': 'ms',
   'xlsx.first-row.duration.ms': 'ms',
   'xlsx.input.bytes': 'By',

@@ -110,6 +110,10 @@ and writes native streaming workbooks with controlled styles, formula policies
 and finite process ownership. Its [consumer](examples/xlsx/README.md) verifies
 two-sheet roundtrips and actual SDK diagnostic privacy.
 
+The optional [PDF adapter](packages/documents-pdf/README.md) composes the native
+document engines for searchable text, inspection and protected rewriting. Its
+[consumer](examples/pdf/README.md) verifies page composition and private SDK metrics.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
