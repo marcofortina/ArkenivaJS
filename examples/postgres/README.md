@@ -24,7 +24,7 @@ a dotenv file. Never paste a real URL into a tracked file, command transcript or
 
 ```sh
 pnpm --filter @arkenivajs/example-postgres start
-pnpm --filter @arkenivajs/example-postgres test:integration
+python3 packages/security-oauth-client/test/fixtures/run.py --test-only -- pnpm --filter @arkenivajs/example-postgres test:integration
 ```
 
 Expected output:
