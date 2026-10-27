@@ -5,7 +5,10 @@
 
 ## 0.1.0
 
-- Add explicit AMQP contracts and the capability symbol without a runtime availability claim.
+- Add the opt-in AMQPS plugin with verified TLS, secret references and bounded native recovery.
 - Complete the required typed trusted topology and publisher-routing catalog.
 - Normalize bounded header values through the pinned native codec with lossless int64 handling.
-- Add strict contract and native field-fidelity tests; broker runtime implementation remains pending.
+- Implement native confirm publications, correlated mandatory returns and explicit unknown outcomes without automatic republishing.
+- Add bounded manual-ack consumers, generation-scoped acknowledgments, safe handler failure and lifecycle draining.
+- Add fixed-label diagnostics and real-broker permission, TLS, recovery and multi-instance tests.
+- Document outstanding broker-restart and independent packaged application validation.

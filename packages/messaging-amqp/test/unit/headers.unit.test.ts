@@ -95,6 +95,8 @@ test('Public headers and native delivery bytes remain independent of caller and 
   assert.deepEqual(ownedBytes(new Uint8Array(), 0), Buffer.alloc(0));
 });
 test('AMQP rejects values that cannot be represented faithfully before native publication', () => {
+  assert.throws(() => outgoing(null as unknown as AmqpHeaders), code);
+  assert.throws(() => incoming(null), code);
   const values: unknown[] = [
     undefined,
     NaN,

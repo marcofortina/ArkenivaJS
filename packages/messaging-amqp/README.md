@@ -1,13 +1,14 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it> -->
 
-# AMQP contracts and native field foundation
+# Native AMQPS adapter
 
-This increment supplies public AMQP types, the `AMQP_CAPABILITY` symbol and tested
-internal field normalization through amqplib 2.2.0. The connection/plugin runtime,
-publisher, consumers and real-broker acceptance remain under implementation.
-There is no plugin factory or operational broker capability in this increment;
-it must not be described as a working or production-ready RabbitMQ adapter.
+`amqpPlugin(settings)` installs the optional `AMQP_CAPABILITY` through amqplib
+2.2.0. Startup resolves external connection secrets, verifies AMQPS peers and
+checks the trusted topology before making the service available. Importing the
+package or constructing the plugin does not resolve secrets or open connections.
+Broker-restart, independently packaged application and diagnostics validation
+remain incomplete; this package is not ready for production deployment.
 
 The contract preserves explicit publisher confirms, mandatory-return outcomes,
 single-use local acknowledgment submission, broker-specific consumer settings and
@@ -16,9 +17,10 @@ assert exactly-once delivery, business commitment or trusted wire tenant headers
 
 The required typed `AmqpConnectionConfig.topology` completes the trusted catalog
 already required by the routing policy. It declares exchanges and their exact
-approved publisher `routingKeys`, queues and bindings. The later runtime must
-validate it before connection, check existing topology by default and provision
-only with explicit `allowTopologyProvisioning: true`. Binding wildcard semantics
+approved publisher `routingKeys`, queues and bindings. The runtime validates it
+before connection, checks existing topology by default and provisions only with
+explicit `allowTopologyProvisioning: true`. Broker permissions remain authoritative;
+this option does not grant configure rights. Binding wildcard semantics
 belong to RabbitMQ; no alternate routing implementation is introduced.
 
 Internal capture already validates 1–8 uniquely named connections, up to 32
@@ -29,6 +31,40 @@ require explicit credentials and reject query overrides, fragments and invalid
 ports. The native heartbeat is 10 seconds and frame maximum is 128 KiB, matching
 the supported RabbitMQ line's minimum frame size. Secret resolution and CA file
 reads do not run during capture.
+
+## Delivery and ownership
+
+Publishers use a native confirm channel. A `confirmed` receipt acknowledges the
+broker confirm, while a correlated mandatory return produces `unroutable` even
+when concurrent messages share an application message ID. Cancellation, deadline
+or disconnection after submission can produce `unknown`. Recovery never republishes
+such messages. Native write backpressure stops new admission until `drain`; each
+profile also has an explicit concurrent publication bound, with no waiting queue.
+
+Consumers use native per-channel prefetch and manual acknowledgments. Each
+delivery permits one local `ack()` or `nack({ requeue })` submission; it does not
+claim broker-side transactional acknowledgment. A handler failure rejects without
+requeue unless its trusted subscription explicitly selects `requeue`. Dead-letter
+exchanges and bounded retry policy belong to the broker configuration. Wire tenant
+headers never populate `verifiedTenant` or establish authorization.
+
+The native frame assembly boundary rejects oversized content before retaining
+the whole body. Header-policy and size violations stop that profile instead of
+reconnecting indefinitely into the same poison delivery. A native reconnect has
+eight bounded attempts and restores consumer channels without migrating old
+acknowledgments or duplicating active handlers. Each profile permits at most
+eight subscriptions; aggregate prefetch body budgets cannot exceed 64 MiB.
+Local running handlers are bounded by prefetch even when they acknowledge early;
+at most one further prefetch window can wait unacknowledged on that channel.
+
+Shutdown stops new admission, cancels consumers, drains active handlers and closes
+owned connections. A deadline closes transport and returns an explicit error;
+already running handlers or uncooperative secret providers remain owned until
+they actually settle. A subsequent close may observe completed cleanup.
+`native(name)` returns the actual approved SDK model as `unknown` for trusted
+application integrations, whose native operations require explicit instrumentation.
+Built-in diagnostics contain only fixed operation/outcome labels and numeric
+measurements, excluding connection URIs, secrets, resource names and message data.
 
 ## Native field fidelity
 
@@ -79,5 +115,9 @@ Run `pnpm --filter @arkenivajs/messaging-amqp build`, `typecheck`, `lint` and
 `test:unit`. Native codec roundtrips cover both int64 boundaries, timestamps,
 binary values, negative zero, nested values and the exact 16 KiB boundary.
 Negative tests prove explicit rejection without a connection or publication.
-These offline tests do not replace the required future real RabbitMQ AMQPS,
-confirm/return, ack/nack, restart, permission and multi-pod integration matrix.
+`test:integration` requires `ARKENIVA_AMQP_FIXTURE` pointing to private metadata for
+an explicitly owned disposable AMQPS broker. Real-broker cases cover native
+confirms, correlated returns, single-use ack/nack, explicit requeue, handler failure,
+TLS rejection, least privilege, size rejection, transport recovery and redelivery
+between two application instances. Private metadata and broker credentials must
+remain outside the repository. Local runs use the owned integration VM.
