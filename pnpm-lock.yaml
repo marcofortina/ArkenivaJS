@@ -513,6 +513,9 @@ importers:
 
   examples/postgres:
     dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -528,6 +531,9 @@ importers:
       '@arkenivajs/security-apikey':
         specifier: workspace:*
         version: link:../../packages/security-apikey
+      '@arkenivajs/security-http':
+        specifier: workspace:*
+        version: link:../../packages/security-http
       '@arkenivajs/security-password':
         specifier: workspace:*
         version: link:../../packages/security-password
@@ -1102,6 +1108,43 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/security-http:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/security-sessions':
+        specifier: workspace:*
+        version: link:../security-sessions
+      '@fastify/cookie':
+        specifier: 11.1.3
+        version: 11.1.3
+      '@fastify/csrf':
+        specifier: 8.1.1
+        version: 8.1.1
+      '@fastify/csrf-protection':
+        specifier: 8.0.2
+        version: 8.0.2
+      '@fastify/helmet':
+        specifier: 13.2.0
+        version: 13.2.0
+      fastify:
+        specifier: 5.12.7
+        version: 5.12.7
+      helmet:
+        specifier: 8.3.0
+        version: 8.3.0
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+
   packages/security-mtls:
     dependencies:
       '@arkenivajs/core':
@@ -1419,6 +1462,15 @@ packages:
   '@fastify/busboy@3.2.4':
     resolution: {integrity: sha512-lQS8xcXT54rdJb+wlG/Q7SMSdtkZEpLPHooSDUZyyZm9LJD7X1kONPhVoPaHq+dsPtWUGGLIz9gBNhs9qKbylw==}
 
+  '@fastify/cookie@11.1.3':
+    resolution: {integrity: sha512-RBhlMNsmSG6C5KGiTkhSXBF75xIrUMSytDDBcpnVewhJ8XVYnJTu+SV6FYKXClIRsBuRjOfKbBSULvnPD3X/mg==}
+
+  '@fastify/csrf-protection@8.0.2':
+    resolution: {integrity: sha512-5EiY9fodwg0xvtSUrUaYZ4a2TFWpR+n+v9JRnFAJ1GIGwmfImZdqI286w9u7iK65Uq+hHU76tJqnAl8lN7sDZw==}
+
+  '@fastify/csrf@8.1.1':
+    resolution: {integrity: sha512-PWsrdJsT87+wda4M30XAOT34cpMP82rIklTYP3uAZ5VPUAa1I3vfBW1k1UfwuxdOBJaxezuqz6tzeoiXrWKqVA==}
+
   '@fastify/deepmerge@3.2.4':
     resolution: {integrity: sha512-kc8GQq5gX9RRhw0rov3DMrN8wS8yRlxJRdDzsYwwdBV/wazuVgc/1K7CKL90tlvu3RlHan6Y0R0aE3nJtBz2eQ==}
 
@@ -1430,6 +1482,9 @@ packages:
 
   '@fastify/forwarded@3.1.2':
     resolution: {integrity: sha512-89WiRG+hW3VQSfCwg4Hb8b43PeyEX15K5+lEfsZ4EUth/FyOjS/lv8HsVuswUNXWiSnxMGNouE/fq/0w3VumHQ==}
+
+  '@fastify/helmet@13.2.0':
+    resolution: {integrity: sha512-2u41U5hR9o1u3HUHLT3Njp7vWuWw+XXw8qCBwVY17pRQAN179YYKiU9f7/qEn1ITabgNTkq/Yk6gmrYPSraagA==}
 
   '@fastify/merge-json-schemas@0.2.2':
     resolution: {integrity: sha512-d/gx9sRbUCVgGRGzma46wLcwiY8noTqO2Nmjg/vbTARxHRE5bdh5PIL8s97Lt1X7ScRWRW52eVYxwIoPwIdVUA==}
@@ -2402,6 +2457,10 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
+  helmet@8.3.0:
+    resolution: {integrity: sha512-Qgpiaws3Sm30Av8Eah6sjMCZZwjlBu+E68rhpCWBshY1lb09HtLwj5GviX0OyQIn+ulUS0iX0AxN5n3tLZzz1w==}
+    engines: {node: '>=18.0.0'}
+
   hookified@1.15.1:
     resolution: {integrity: sha512-MvG/clsADq1GPM2KGo2nyfaWVyn9naPiXrqIe4jYjXNZQt238kWyOGrsyc/DmRAQ+Re6yeo6yX/yoNCG5KAEVg==}
 
@@ -3198,6 +3257,19 @@ snapshots:
 
   '@fastify/busboy@3.2.4': {}
 
+  '@fastify/cookie@11.1.3':
+    dependencies:
+      cookie: 2.0.1
+      fastify-plugin: 6.0.1
+
+  '@fastify/csrf-protection@8.0.2':
+    dependencies:
+      '@fastify/csrf': 8.1.1
+      '@fastify/error': 4.2.1
+      fastify-plugin: 6.0.1
+
+  '@fastify/csrf@8.1.1': {}
+
   '@fastify/deepmerge@3.2.4': {}
 
   '@fastify/error@4.2.1': {}
@@ -3207,6 +3279,11 @@ snapshots:
       fast-json-stringify: 7.1.3
 
   '@fastify/forwarded@3.1.2': {}
+
+  '@fastify/helmet@13.2.0':
+    dependencies:
+      fastify-plugin: 6.0.1
+      helmet: 8.3.0
 
   '@fastify/merge-json-schemas@0.2.2':
     dependencies:
@@ -4256,6 +4333,8 @@ snapshots:
       hookified: 1.15.1
 
   he@1.2.0: {}
+
+  helmet@8.3.0: {}
 
   hookified@1.15.1: {}
 
