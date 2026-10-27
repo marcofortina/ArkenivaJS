@@ -66,6 +66,7 @@ jobs:
             'data-validation',
             'dns',
             'mail',
+            'messaging-amqp',
             'security-apikey',
             'security-crypto',
             'security-http',

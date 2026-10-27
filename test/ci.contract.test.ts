@@ -151,6 +151,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'data-validation',
       'dns',
       'mail',
+      'messaging-amqp',
       'security-apikey',
       'security-crypto',
       'security-http',

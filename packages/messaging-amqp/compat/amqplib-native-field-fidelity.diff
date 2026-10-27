@@ -1,0 +1,27 @@
+diff --git a/lib/codec.js b/lib/codec.js
+--- a/lib/codec.js
++++ b/lib/codec.js
+@@ -251,7 +251,7 @@
+ // Assume we're given a slice of the buffer that contains just the
+ // fields.
+ function decodeFields(slice) {
+-  const fields = {};
++  const fields = Object.create(null);
+   let offset = 0;
+   const size = slice.length;
+   let len;
+@@ -318,10 +318,12 @@
+         val = slice.readFloatBE(offset);
+         offset += 4;
+         break;
+-      case 'l':
+-        val = Number(slice.readBigInt64BE(offset));
++      case 'l': {
++        const integer = slice.readBigInt64BE(offset);
++        val = integer >= BigInt(Number.MIN_SAFE_INTEGER) && integer <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(integer) : integer;
+         offset += 8;
+         break;
++      }
+       case 's':
+         val = slice.readInt16BE(offset);
+         offset += 2;

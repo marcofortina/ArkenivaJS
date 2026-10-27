@@ -167,6 +167,7 @@ overrides:
   exceljs@4.4.0>unzipper: 0.12.5
 
 patchedDependencies:
+  amqplib@2.2.0: 5d45a5b8ea0b717b9774ec3dbc6ff9f8b9a512997f4dde9fab3d4b912c284a36
   buildcheck@0.0.7: cee0504e84446de8efbf065c18b69cda151e12d481591dbed994338e0d5b7004
   cpu-features@0.0.10: ab769a758f015172649ebddb21db04c8d49fc5359c5035ef3d16b1ec9b2b77b0
   nats@2.29.3: f58ef54c31b92dbb1a5df622551011d56d875589f5723a9a275950dc1d0096d8
@@ -1206,6 +1207,22 @@ importers:
       jose:
         specifier: 6.2.13
         version: 6.2.13
+
+  packages/messaging-amqp:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      amqplib:
+        specifier: 2.2.0
+        version: 2.2.0(patch_hash=5d45a5b8ea0b717b9774ec3dbc6ff9f8b9a512997f4dde9fab3d4b912c284a36)
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
 
   packages/metering:
     dependencies:
@@ -2465,6 +2482,10 @@ packages:
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
+
+  amqplib@2.2.0:
+    resolution: {integrity: sha512-VifzN9aHs/Q3zTruVHXh2yCisQyXexBN91CQ2E5iSyUKyNjH6ilYhJGte5AXZH/Bj1PaH7SwPhyuSf6Msd2udw==}
+    engines: {node: '>=18'}
 
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
@@ -4763,6 +4784,8 @@ snapshots:
       fast-uri: 3.1.9
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
+
+  amqplib@2.2.0(patch_hash=5d45a5b8ea0b717b9774ec3dbc6ff9f8b9a512997f4dde9fab3d4b912c284a36): {}
 
   ansi-regex@5.0.1: {}
 
