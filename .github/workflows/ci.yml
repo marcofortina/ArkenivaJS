@@ -69,6 +69,7 @@ jobs:
             'security-apikey',
             'security-crypto',
             'security-http',
+            'security-ldap',
             'security-mtls',
             'security-password',
             'security-sessions',
@@ -93,6 +94,37 @@ jobs:
         run: pnpm --filter "@arkenivajs/${{ matrix.package }}" typecheck && pnpm --filter "@arkenivajs/${{ matrix.package }}" lint
       - name: Verify native security adapters, adversarial input and bounded lifecycle
         run: pnpm --filter "@arkenivajs/${{ matrix.package }}" test
+
+  ldap-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.4', '24.22.1', '26.12.1']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile
+      - name: Build the pinned disposable OpenLDAP image
+        run: docker build --tag arkenivajs-owned-ldap:r1 packages/security-ldap/test/fixtures
+      - name: Create isolated directory credentials and TLS fixtures
+        run: python3 packages/security-ldap/test/fixtures/prepare.py --github-env "$GITHUB_ENV"
+      - run: pnpm --filter '@arkenivajs/example-ldap...' build
+      - name: Verify real LDAPS, STARTTLS, pagination, injection and connection ownership
+        run: pnpm --filter @arkenivajs/security-ldap test:integration
+      - run: pnpm --filter @arkenivajs/example-ldap test:integration
+      - name: Verify the public LDAP consumer using packed artifacts
+        run: pnpm test:packed:examples --integration ldap
+      - name: Stop only this job's owned directory fixtures
+        if: always() && env.ARKENIVA_LDAP_FIXTURE != ''
+        run: python3 packages/security-ldap/test/fixtures/teardown.py "$ARKENIVA_LDAP_FIXTURE"
 
   mail-integration:
     runs-on: ubuntu-latest

@@ -49,6 +49,10 @@ The [DNS project](../examples/dns/README.md) additionally exercises all approved
 native DNS record families against its owned loopback authority, resolver
 isolation, OS lookup differences and actual SDK metric/log privacy.
 
+The [LDAP project](../examples/ldap/README.md) verifies enterprise directory lookup,
+isolated password binds, nested groups and private SDK metrics against the owned
+OpenLDAP fixture. Verified LDAPS and STARTTLS remain mandatory in test.
+
 ## Verify the distributed package boundary
 
 Workspace builds are useful during development. An independent check also packs

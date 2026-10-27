@@ -5,6 +5,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+test('LDAP integration requires verified OpenLDAP and packed consumers on every supported Node line', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
+    job = workflow.jobs['ldap-integration'];
+  assert.deepEqual(job.strategy.matrix.node, ['22.23.4', '24.22.1', '26.12.1']);
+  assert.equal(job.strategy['fail-fast'], false);
+  const commands = (job.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  for (const command of [
+    'pnpm --filter @arkenivajs/security-ldap test:integration',
+    'pnpm --filter @arkenivajs/example-ldap test:integration',
+    'pnpm test:packed:examples --integration ldap',
+  ])
+    assert.ok(commands.includes(command));
+  assert.ok(!JSON.stringify(job).includes('NODE_TLS_REJECT_UNAUTHORIZED'));
+  assert.ok(!JSON.stringify(job).includes('continue-on-error'));
+});
 test('SMTP integration verifies actual TLS, native recipient outcomes and packed consumers on each Node line', () => {
   const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
     job = workflow.jobs['mail-integration'];
@@ -137,6 +154,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-apikey',
       'security-crypto',
       'security-http',
+      'security-ldap',
       'security-mtls',
       'security-password',
       'security-sessions',

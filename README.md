@@ -95,6 +95,11 @@ approved native codecs with explicit headers, bounds and cancellation.
 The [DNS utility](packages/dns/README.md) isolates named native resolvers from OS
 lookup semantics. Its [loopback example](examples/dns/README.md) tests actual DNS records.
 
+The optional [LDAP adapter](packages/security-ldap/README.md) adds verified LDAPS,
+mandatory STARTTLS, native bound filters, isolated password binds and bounded
+paged/group searches. Its [consumer](examples/ldap/README.md) runs against an
+owned OpenLDAP fixture and checks actual SDK diagnostic privacy.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
