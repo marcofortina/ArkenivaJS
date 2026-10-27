@@ -10,6 +10,7 @@ import type { JsonValidation } from './contracts.js';
 const dialect = 'https://json-schema.org/draft/2020-12/schema';
 const idPattern = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
 const one = [
+  'additionalItems',
   'additionalProperties',
   'unevaluatedProperties',
   'propertyNames',
@@ -23,7 +24,14 @@ const one = [
   'contentSchema',
 ];
 const many = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
-const keyed = ['properties', 'patternProperties', 'dependentSchemas', '$defs', 'definitions'];
+const keyed = [
+  'properties',
+  'patternProperties',
+  'dependentSchemas',
+  'dependencies',
+  '$defs',
+  'definitions',
+];
 const escape = (value: string) => value.replaceAll('~', '~0').replaceAll('/', '~1');
 
 /** Ajv remains the schema authority; this audit only closes remote and recursive reference paths. */
@@ -39,6 +47,8 @@ function references(catalog: Readonly<Record<string, object>>): void {
       Object.hasOwn(schema, '$async') ||
       Object.hasOwn(schema, '$dynamicRef') ||
       Object.hasOwn(schema, '$dynamicAnchor') ||
+      Object.hasOwn(schema, '$recursiveRef') ||
+      Object.hasOwn(schema, '$recursiveAnchor') ||
       Object.hasOwn(schema, '$anchor') ||
       (Object.hasOwn(schema, '$id') && (path !== '' || schema.$id !== id)) ||
       (Object.hasOwn(schema, '$schema') && schema.$schema !== dialect)
@@ -53,8 +63,10 @@ function references(catalog: Readonly<Record<string, object>>): void {
         );
     for (const name of keyed)
       if (Object.hasOwn(schema, name))
-        for (const [entry, item] of Object.entries(record(schema[name])))
+        for (const [entry, item] of Object.entries(record(schema[name]))) {
+          if (name === 'dependencies' && Array.isArray(item)) continue;
           visit(id, item, path + '/' + name + '/' + escape(entry), key);
+        }
   }
   for (const [id, schema] of Object.entries(catalog)) visit(id, schema, '');
   for (const [key, node] of nodes) {
@@ -90,6 +102,7 @@ function references(catalog: Readonly<Record<string, object>>): void {
   for (const key of nodes.keys()) acyclic(key);
 }
 export class Schemas {
+  private readonly compiler: Ajv2020;
   readonly validators = new Map<string, ValidateFunction>();
   readonly catalog: Readonly<Record<string, object>>;
   constructor(source: Readonly<Record<string, object>>) {
@@ -117,6 +130,7 @@ export class Schemas {
         loopEnum: 128,
         loopRequired: 128,
       });
+      this.compiler = ajv;
       addFormats.default(ajv);
       const equality = ajv.compile({ const: { valueOf: 'data', toString: 'data' } });
       if (
@@ -135,6 +149,22 @@ export class Schemas {
     } catch {
       throw failure('EK_JSON_SCHEMA');
     }
+  }
+  /** Startup-only native checks reject statically incompatible literal fields and scalar conversions. */
+  acceptsProperty(
+    schemaId: string,
+    name: string,
+    kind?: string,
+    literal?: Readonly<{ value: unknown }>,
+  ): boolean {
+    const validate = this.compiler.getSchema(schemaId + '#/properties/' + escape(name));
+    if (!validate) return true;
+    if (literal) return !!validate(JSON.parse(JSON.stringify(literal.value)));
+    const schema = validate.schema;
+    if (schema === false) return false;
+    if (typeof schema !== 'object' || !kind || schema.type === undefined) return true;
+    const allowed = Array.isArray(schema.type) ? schema.type : [schema.type];
+    return allowed.includes(kind) || (kind === 'number' && allowed.includes('integer'));
   }
   validate(value: unknown, id: string): JsonValidation {
     if (typeof id !== 'string' || !this.validators.has(id)) throw failure('EK_JSON_SCHEMA');

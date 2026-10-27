@@ -62,6 +62,7 @@ jobs:
             'data-compression',
             'data-csv',
             'data-identifiers',
+            'data-json',
             'data-time',
             'data-validation',
             'data-xml',

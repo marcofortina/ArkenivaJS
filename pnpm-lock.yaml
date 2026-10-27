@@ -409,6 +409,22 @@ importers:
         specifier: workspace:*
         version: link:../../packages/logging
 
+  examples/json:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/data-json':
+        specifier: workspace:*
+        version: link:../../packages/data-json
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+
   examples/ldap:
     dependencies:
       '@arkenivajs/core':

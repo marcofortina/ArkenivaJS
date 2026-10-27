@@ -7,3 +7,6 @@
 
 - Define typed JSON data and deployment mapping contracts.
 - Add bounded native JSON snapshots and offline Draft 2020-12 schema foundations.
+- Register the explicit synchronous JSON capability with bounded native workers.
+- Compile complete immutable deployment mappings and validate both sides natively.
+- Add actual deadline/cleanup tests, private SDK facts and packed public consumers.

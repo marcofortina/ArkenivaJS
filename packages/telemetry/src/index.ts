@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'json.operation',
+  'json.outcome',
   'xml.operation',
   'xml.outcome',
   'pdf.operation',
@@ -146,6 +148,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'json.operation': ['parse', 'stringify', 'validate', 'transform'],
+  'json.outcome': ['ok', 'error', 'invalid'],
   'xml.operation': ['parse', 'stringify', 'xsd-guard', 'xsd-schema', 'xsd-gate', 'validate-xsd'],
   'xml.outcome': ['ok', 'error', 'invalid'],
   'pdf.operation': ['create', 'inspect', 'extract', 'merge', 'add'],
@@ -262,6 +266,13 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'json.operations': '{operation}',
+  'json.rejections': '{operation}',
+  'json.operation.duration.ms': 'ms',
+  'json.input.bytes': 'By',
+  'json.output.bytes': 'By',
+  'json.worker.heap.used.bytes': 'By',
+  'json.process.rss.bytes': 'By',
   'xml.operations': '{operation}',
   'xml.rejections': '{operation}',
   'xml.operation.duration.ms': 'ms',

@@ -137,3 +137,7 @@ while verified tenant metering remains active. Refer to each package's measured
 coverage before interpreting missing quantities.
 
 The [native socket project](../examples/socket/README.md) exchanges real TCP, verified TLS, UDP and Unix bytes with complete application-owned cleanup.
+
+The [JSON mapping project](../examples/json/README.md) validates offline Draft
+2020-12 schemas and deployment-approved transformations through bounded native
+workers, with explicit missing/null behavior and private SDK exports.
