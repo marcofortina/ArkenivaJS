@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { COMPONENTS, KitError } from '@arkenivajs/core';
 import type { Telemetry } from '@arkenivajs/core';
 import type { SupportPluginFactory } from '@arkenivajs/core/support';
+import { instrumentOperation } from '@arkenivajs/core/support';
 import type { GraphqlOperationKind } from './contracts.js';
 
 export const OBSERVERS = Symbol('graphql.observers');
@@ -36,6 +37,60 @@ export function observe(work: () => void) {
   } catch {
     /* The existing telemetry provider owns exporter failure accounting. */
   }
+}
+
+/** Retain the existing HTTP span semantics while forwarding only the bounded W3C carrier. */
+export async function traceRequest<T>(
+  observers: Observers,
+  method: string,
+  path: string,
+  headers: Readonly<Record<string, string | string[] | undefined>>,
+  work: () => T | Promise<T>,
+): Promise<T> {
+  let task: Promise<T> | undefined;
+  const invoke = () =>
+    (task ??= instrumentOperation(
+      observers.telemetry,
+      'http.server.request',
+      { route: path, method },
+      work,
+      () => {},
+    ));
+  const contextual = observers.telemetry as
+    | (Telemetry & {
+        withRemoteContext?: <R>(
+          headers: Readonly<Record<string, string | undefined>>,
+          work: () => R,
+        ) => R;
+      })
+    | undefined;
+  try {
+    const carrier: Record<string, string> = {};
+    for (const key of ['traceparent', 'tracestate']) {
+      const value = headers[key];
+      if (typeof value === 'string' && value.length <= 512 && /^[\x20-\x7e]+$/.test(value))
+        carrier[key] = value;
+    }
+    const contextualTask = contextual?.withRemoteContext?.(carrier, invoke);
+    void Promise.resolve(contextualTask).catch(() => undefined);
+  } catch {
+    /* The owned work promise retains its original result after provider failure. */
+  }
+  return invoke();
+}
+
+export function traceOperation<T>(
+  observers: Observers,
+  kind: GraphqlOperationKind | undefined,
+  work: () => T | Promise<T>,
+): Promise<T> {
+  return instrumentOperation(
+    observers.telemetry,
+    kind ? `graphql.${kind}` : 'graphql.invalid',
+    { 'graphql.kind': kind ?? 'invalid' },
+    work,
+    () => {},
+  );
 }
 
 /** Aggregate dimensions contain no documents, operation names, identifiers or arguments. */

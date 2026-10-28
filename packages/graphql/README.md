@@ -32,4 +32,8 @@ When a telemetry provider is installed, the adapter exports `arkenivajs.graphql.
 
 Metric labels use fixed operation kinds, outcomes and rejection categories. Documents, client-selected operation names, variables, arguments, tenant identifiers and tokens never become labels. Loader observations count actual scheduled batch items. Existing HTTP duration and body-byte observations stay in the API adapter; GraphQL does not repeat network bytes or treat overlapping durations as CPU consumption. Diagnostic failures never repeat application work or grant access.
 
-This package remains under development. Subscriptions, parented GraphQL spans and tenant usage sessions, and complete release evidence are pending. Subscription configuration is rejected at startup until implemented and verified. Do not treat this intermediate query/mutation transport as a completed GraphQL release.
+Tracing retains the framework's `http.server.request` server span and W3C `traceparent`/`tracestate` extraction. Operation spans use fixed names such as `graphql.query` and `graphql.mutation`, parented to that request. The trace carrier is bounded and never establishes identity. Malformed JSON still produces an HTTP span; IDE failures are not labeled as GraphQL operations. Trace providers cannot repeat business work even if context setup throws or invokes its continuation more than once.
+
+Include the configured endpoint in the telemetry plugin's finite route catalog, for example `labelValues: { route: ['/graphql'] }`, to enable existing HTTP route measurements and span attributes. This administrative catalog is not populated from request URLs.
+
+This package remains under development. Subscriptions, parented tenant usage sessions and complete release evidence are pending. Subscription configuration is rejected at startup until implemented and verified. Do not treat this intermediate query/mutation transport as a completed GraphQL release.
