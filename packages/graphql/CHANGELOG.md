@@ -16,3 +16,4 @@
 - Preserve W3C HTTP trace parents and attach normalized GraphQL child spans without replaying business work when diagnostic context fails.
 - Attach verified tenant usage to one HTTP parent and an owned GraphQL child, with exact parent bytes, successful field counts and actual loader items.
 - Preserve the timeout status during late upstream error formatting and report physically unfinished work with incomplete or unknown usage outcomes.
+- Bound IDE manifest and asset reads before allocation, reject links/nonregular files and validate aggregate bytes before loading another asset.
