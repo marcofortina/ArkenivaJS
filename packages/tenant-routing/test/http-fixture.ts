@@ -129,6 +129,7 @@ export async function fixture(
     tls?: ServerTlsFiles;
     http2?: boolean;
     telemetry?: ApplicationOptions['telemetry'];
+    metering?: ApplicationOptions['metering'];
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -180,6 +181,7 @@ export async function fixture(
       },
       logging: { level: 'debug' },
       ...(options.telemetry ? { telemetry: options.telemetry } : {}),
+      ...(options.metering ? { metering: options.metering } : {}),
       ...(options.databases ? { databases: options.databases } : {}),
       ...(authenticated
         ? {
@@ -200,7 +202,11 @@ export async function fixture(
           dependencies: [
             ...(authenticated ? ['security'] : []),
             ...(options.plugins ?? [])
-              .filter((plugin) => plugin.capabilities.has('telemetry'))
+              .filter(
+                (plugin) =>
+                  plugin.capabilities.has('telemetry') ||
+                  (options.metering?.enabled && plugin.capabilities.has('meter')),
+              )
               .map((plugin) => plugin.id),
           ],
         }),

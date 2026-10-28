@@ -2,27 +2,46 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { COMPONENTS } from '@arkenivajs/core';
-import type { Telemetry, VerifiedTenantContext } from '@arkenivajs/core';
+import type { Telemetry, VerifiedTenantContext, UsageMeter, MeterSession } from '@arkenivajs/core';
 import { instrumentOperation } from '@arkenivajs/core/support';
 import type { SupportPluginFactory } from '@arkenivajs/core/support';
 import type { SelectedOperation } from './table.js';
+import { routingFailure } from './errors.js';
 
 export const OBSERVERS = Symbol('tenant-routing.observers');
 export interface Observers {
   readonly telemetry?: Telemetry;
+  readonly meter?: UsageMeter & {
+    run<T>(session: MeterSession, work: () => T): T;
+    markMissing(
+      session: MeterSession,
+      reason: 'driver_bytes_unavailable' | 'span_not_instrumented',
+    ): void;
+  };
 }
 export const observations: SupportPluginFactory = (options) => {
   const owner = options.plugins?.find((plugin) => plugin.capabilities.has('telemetry'));
+  const accounting = options.metering?.enabled
+    ? options.plugins?.find((plugin) => plugin.capabilities.has('meter'))
+    : undefined;
   return {
     id: 'tenant-routing-observation',
     version: '0.1.0',
     capabilities: new Set(),
-    dependencies: owner ? [owner.id] : [],
+    dependencies: [owner?.id, accounting?.id].filter((id): id is string => id !== undefined),
     init(context) {
-      context.provide<Observers>(
-        OBSERVERS,
-        owner ? { telemetry: context.require<Telemetry>(COMPONENTS.telemetry) } : {},
-      );
+      const meter = accounting
+        ? context.require<NonNullable<Observers['meter']>>(COMPONENTS.meter)
+        : undefined;
+      if (
+        options.metering?.enabled &&
+        (!meter || typeof meter.run !== 'function' || typeof meter.markMissing !== 'function')
+      )
+        throw routingFailure();
+      context.provide<Observers>(OBSERVERS, {
+        ...(owner ? { telemetry: context.require<Telemetry>(COMPONENTS.telemetry) } : {}),
+        ...(meter ? { meter } : {}),
+      });
     },
     close() {},
   };

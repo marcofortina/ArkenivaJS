@@ -116,6 +116,7 @@ const token = (value: unknown, limit: number): value is string =>
   [...value].every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127);
 const defaultDimensions = Object.freeze({
   'http.requests': 'operations',
+  'tenant.routing.operations': 'operations',
   'http.request.bytes': 'bytes',
   'http.response.bytes': 'bytes',
   'graphql.operations': 'operations',

@@ -37,6 +37,7 @@ import { TENANT_ROUTING_CAPABILITY } from './index.js';
 import type { HttpUpstreams } from './http.js';
 import { OBSERVERS, observations, Observation, elapsed, traceRequest } from './observation.js';
 import type { Observers } from './observation.js';
+import { RequestUsage } from './usage.js';
 
 const AUTH = Symbol('tenant-routing.authority');
 const STORAGE = Symbol('tenant-routing.storage-readiness');
@@ -208,7 +209,7 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             settings,
             context.options.service.environment,
             owner,
-            observers.telemetry,
+            observers,
           );
         }
         const table = new RoutingTable(validated, settings, upstreams);
@@ -388,6 +389,8 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
         });
         server.register(async (child: FastifyInstance) => {
           const observed = new WeakMap<FastifyRequest, Observation>();
+          const metered = new WeakMap<FastifyRequest, RequestUsage>();
+          const requestBytes = new WeakMap<FastifyRequest, number>();
           child.addHook('onRequest', async (request, reply) => {
             const observation = new Observation(
               observers,
@@ -395,7 +398,10 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             );
             observed.set(request, observation);
             reply.raw.once('close', () => {
-              if (!reply.raw.writableEnded) observation.finish(499);
+              if (!reply.raw.writableEnded) {
+                observation.finish(499);
+                metered.get(request)?.finish(499);
+              }
             });
           });
           child.removeAllContentTypeParsers();
@@ -405,6 +411,7 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             (request, body, done) => {
               try {
                 if (!Buffer.isBuffer(body)) throw routingFailure('EK_TROUTE_CONTRACT');
+                requestBytes.set(request, body.length);
                 const maximum = request.routeOptions.bodyLimit;
                 const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
                   body,
@@ -425,11 +432,17 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             }
           >();
           child.setErrorHandler((error, request, reply) => reject(reply, error, request.id));
+          child.addHook('onSend', async (request, _reply, payload) => {
+            metered.get(request)?.response(payload);
+            return payload;
+          });
           child.addHook('onResponse', async (request, reply) => {
             observed.get(request)?.finish(reply.statusCode);
             observed.delete(request);
             const entry = scopes.get(request);
             entry?.operation.end();
+            metered.get(request)?.finish(reply.statusCode);
+            metered.delete(request);
             entry?.clean();
             scopes.delete(request);
             if (reply.statusCode >= 400)
@@ -502,57 +515,72 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
                   entry.headers,
                   async () => {
                     const { operation, tenant } = entry;
-                    const observation = observed.get(request)!;
-                    operation.check();
-                    const lookupBegan = performance.now();
-                    const selected = table.select(definition.id, tenant.tenantId);
-                    observation.lookup(selected, lookupBegan);
-                    if (!selected) throw routingFailure('EK_TROUTE_UNMAPPED');
-                    if (
-                      !(await observation.authorize(() =>
-                        authorized(auth, settings, tenant, definition, operation),
-                      ))
-                    )
-                      throw routingFailure('EK_TROUTE_FORBIDDEN');
-                    const context: RouteContext = Object.freeze({
-                      requestId: request.id,
-                      auth: tenant,
-                      signal: operation.signal,
-                      headers: entry.headers,
-                      params: table.input(definition, 'params', bag(request.params)) as Record<
-                        string,
-                        string
-                      >,
-                      query: table.input(definition, 'query', bag(request.query)) as Record<
-                        string,
-                        unknown
-                      >,
-                      body: table.input(definition, 'body', request.body),
-                    });
-                    operation.own(table.acquire(definition.id));
-                    let output: unknown;
-                    try {
-                      output = await operation.run(() =>
-                        observation.execute(
-                          selected,
-                          tenant,
-                          table.snapshot.revision,
-                          table.snapshot.activationGeneration,
-                          async () => selected.handler(context),
-                        ),
-                      );
-                    } catch (error) {
+                    const usage = new RequestUsage(
+                      observers,
+                      operation,
+                      tenant,
+                      request.id,
+                      requestBytes.get(request) ?? 0,
+                    );
+                    metered.set(request, usage);
+                    return usage.http(async () => {
+                      const observation = observed.get(request)!;
+                      operation.check();
+                      const lookupBegan = performance.now();
+                      const selected = table.select(definition.id, tenant.tenantId);
+                      observation.lookup(selected, lookupBegan);
+                      if (!selected) throw routingFailure('EK_TROUTE_UNMAPPED');
                       if (
-                        error instanceof KitError &&
-                        (error.code === 'EK_TROUTE_TIMEOUT' ||
-                          (selected.implementation.kind === 'http' &&
-                            error.code === 'EK_TROUTE_CONTRACT'))
+                        !(await observation.authorize(() =>
+                          authorized(auth, settings, tenant, definition, operation),
+                        ))
                       )
-                        throw error;
-                      throw routingFailure('EK_TROUTE_UPSTREAM');
-                    }
-                    operation.check();
-                    return reply.type('application/json').send(table.response(definition, output));
+                        throw routingFailure('EK_TROUTE_FORBIDDEN');
+                      const context: RouteContext = Object.freeze({
+                        requestId: request.id,
+                        auth: tenant,
+                        signal: operation.signal,
+                        headers: entry.headers,
+                        params: table.input(definition, 'params', bag(request.params)) as Record<
+                          string,
+                          string
+                        >,
+                        query: table.input(definition, 'query', bag(request.query)) as Record<
+                          string,
+                          unknown
+                        >,
+                        body: table.input(definition, 'body', request.body),
+                      });
+                      operation.own(table.acquire(definition.id));
+                      let output: unknown;
+                      try {
+                        output = await operation.run(() =>
+                          usage.operation(definition.id, () =>
+                            observation.execute(
+                              selected,
+                              tenant,
+                              table.snapshot.revision,
+                              table.snapshot.activationGeneration,
+                              async () => selected.handler(context),
+                            ),
+                          ),
+                        );
+                      } catch (error) {
+                        usage.reject(error);
+                        if (
+                          error instanceof KitError &&
+                          (error.code === 'EK_TROUTE_TIMEOUT' ||
+                            (selected.implementation.kind === 'http' &&
+                              error.code === 'EK_TROUTE_CONTRACT'))
+                        )
+                          throw error;
+                        throw routingFailure('EK_TROUTE_UPSTREAM');
+                      }
+                      operation.check();
+                      return reply
+                        .type('application/json')
+                        .send(table.response(definition, output));
+                    });
                   },
                 );
               },
