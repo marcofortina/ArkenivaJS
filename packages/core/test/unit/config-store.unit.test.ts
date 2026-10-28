@@ -217,12 +217,23 @@ test('Operation scopes reject forged or shadowed native signals before invoking 
     accesses = 0;
   const shadowed = new AbortController().signal;
   Object.defineProperty(shadowed, 'aborted', { value: false });
+  const intercepted = Object.setPrototypeOf(
+    new AbortController().signal,
+    new Proxy(AbortSignal.prototype, {
+      getPrototypeOf() {
+        accesses++;
+        return Object.prototype;
+      },
+    }),
+  );
   for (const input of [
     null,
     {},
     Object.create(AbortSignal.prototype),
     { aborted: false, addEventListener() {}, removeEventListener() {} },
     shadowed,
+    new Proxy(new AbortController().signal, {}),
+    intercepted,
   ]) {
     assert.throws(() => captureAbortSignal(input), code('EK_CONFIG_INVALID'));
     await assert.rejects(
