@@ -47,6 +47,55 @@ async function collection(
   return result;
 }
 
+/** Shared policy applies to business and upstream metadata resolvers with their actual parent and path. */
+export async function authorizedField(
+  scope: Operation | undefined,
+  settings: CapturedSettings,
+  parent: unknown,
+  args: Record<string, unknown>,
+  info: GraphQLResolveInfo,
+  output: GraphQLOutputType,
+  execute: () => unknown | Promise<unknown>,
+) {
+  try {
+    if (!scope) throw failure('EK_GQL_FORBIDDEN');
+    scope.check();
+    if (info.operation.operation === 'mutation' && info.path.prev === undefined)
+      scope.mutationEpoch++;
+    if (++scope.fields > scope.limits.maxFieldExecutions) throw failure('EK_GQL_COMPLEXITY');
+    const metadata = fieldInfo(info);
+    let authorized = false;
+    try {
+      authorized =
+        (await scope.run(() =>
+          settings.security.authorizeField(
+            Object.freeze({
+              context: scope.context,
+              field: metadata,
+              args,
+              parent,
+            }),
+          ),
+        )) === true;
+    } catch {
+      scope.check();
+    }
+    if (!authorized) throw failure('EK_GQL_FORBIDDEN');
+    const value = await scope.run(execute);
+    scope.check();
+    return await scope.run(() =>
+      collection(value, output, scope.limits.maxCollectionItems, () => scope.check()),
+    );
+  } catch (error) {
+    const safe =
+      error instanceof KitError &&
+      ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(error.code)
+        ? failure(error.code)
+        : failure('EK_GQL_EXECUTION');
+    throw new GraphQLError(safe.message, { extensions: { code: safe.code } });
+  }
+}
+
 /** Install policy before the upstream executor can read either explicit or default fields. */
 export function protectFields(
   schema: GraphQLSchema,
@@ -59,54 +108,18 @@ export function protectFields(
       const configured = settings.resolvers[type.name]?.[name];
       const resolve = typeof configured === 'function' ? configured : undefined;
       const native = field.resolve ?? defaultFieldResolver;
-      field.resolve = async (parent, args: Record<string, unknown>, context: object, info) => {
+      field.resolve = (parent, args: Record<string, unknown>, context: object, info) => {
         const scope = scopes.get(context);
-        try {
-          if (!scope) throw failure('EK_GQL_FORBIDDEN');
-          scope.check();
-          if (info.operation.operation === 'mutation' && info.path.prev === undefined)
-            scope.mutationEpoch++;
-          if (++scope.fields > scope.limits.maxFieldExecutions) throw failure('EK_GQL_COMPLEXITY');
-          const metadata = fieldInfo(info);
-          let authorized = false;
-          try {
-            authorized =
-              (await scope.run(() =>
-                settings.security.authorizeField(
-                  Object.freeze({
-                    context: scope.context,
-                    field: metadata,
-                    args,
-                    parent,
-                  }),
-                ),
-              )) === true;
-          } catch {
-            scope.check();
-          }
-          if (!authorized) throw failure('EK_GQL_FORBIDDEN');
-          const value = await scope.run(() =>
-            resolve
-              ? resolve(parent, args, scope.context, metadata)
-              : native(
-                  parent,
-                  args,
-                  native === defaultFieldResolver ? scope.context : context,
-                  info,
-                ),
-          );
-          scope.check();
-          return await scope.run(() =>
-            collection(value, field.type, scope.limits.maxCollectionItems, () => scope.check()),
-          );
-        } catch (error) {
-          const safe =
-            error instanceof KitError &&
-            ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(error.code)
-              ? failure(error.code)
-              : failure('EK_GQL_EXECUTION');
-          throw new GraphQLError(safe.message, { extensions: { code: safe.code } });
-        }
+        return authorizedField(scope, settings, parent, args, info, field.type, () =>
+          resolve
+            ? resolve(parent, args, scope!.context, fieldInfo(info))
+            : native(
+                parent,
+                args,
+                native === defaultFieldResolver ? scope!.context : context,
+                info,
+              ),
+        );
       };
     }
   }

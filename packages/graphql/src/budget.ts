@@ -15,6 +15,9 @@ import {
   isObjectType,
   isInterfaceType,
   Kind,
+  SchemaMetaFieldDef,
+  TypeMetaFieldDef,
+  TypeNameMetaFieldDef,
 } from 'graphql';
 import type { DocumentNode, GraphQLCompositeType, GraphQLSchema, SelectionSetNode } from 'graphql';
 import type { CapturedSettings } from './policy.js';
@@ -29,6 +32,9 @@ export function budget(
   context: GraphqlRequestContext,
   settings: CapturedSettings,
   method: string,
+  authorizeIntrospection: () => void = () => {
+    throw failure('EK_GQL_FORBIDDEN');
+  },
 ) {
   const operation = getOperationAST(document, context.operationName);
   if (
@@ -81,8 +87,7 @@ export function budget(
         walk(node.selectionSet, fragmentType, depth, multiplier, expanding);
       } else {
         const name = node.name.value;
-        // Meta fields have upstream-owned resolvers; deny them until administrative coverage is established.
-        if (name.startsWith('__')) throw failure('EK_GQL_FORBIDDEN');
+        if (name === '__schema' || name === '__type') authorizeIntrospection();
         if (
           !context.auth &&
           !settings.security.auth.required &&
@@ -92,7 +97,15 @@ export function budget(
           throw failure('EK_GQL_AUTH');
         if (node.alias && ++aliases > limits.maxAliases) throw failure('EK_GQL_COMPLEXITY');
         const definition =
-          isObjectType(type) || isInterfaceType(type) ? type.getFields()[name] : undefined;
+          name === '__typename'
+            ? TypeNameMetaFieldDef
+            : type === schema.getQueryType() && name === '__schema'
+              ? SchemaMetaFieldDef
+              : type === schema.getQueryType() && name === '__type'
+                ? TypeMetaFieldDef
+                : isObjectType(type) || isInterfaceType(type)
+                  ? type.getFields()[name]
+                  : undefined;
         if (!definition) throw failure('EK_GQL_VALIDATION');
         const args = getArgumentValues(definition, node, values);
         let output = definition.type,

@@ -253,7 +253,7 @@ test('GraphQL rejects invalid documents, arrays, introspection, CSRF and GET mut
     for (const body of [
       { query: '{ missing }' },
       [{ query: '{ ping }' }],
-      { query: '{ __typename }' },
+      { query: '{ __schema { queryType { name } } }' },
       { query: 'query A { ping } query B { ping }' },
       { query: '{ ping }', unknown: true },
     ]) {

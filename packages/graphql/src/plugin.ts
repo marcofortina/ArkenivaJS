@@ -14,6 +14,7 @@ import type { GraphqlPluginSettings, GraphqlService, GraphqlRequestContext } fro
 import { budget } from './budget.js';
 import { protectFields } from './fields.js';
 import { installLoaders } from './loaders.js';
+import { installMetadata, assertMetadata, ownMetadata, authorizeMetadata } from './metadata.js';
 import { Operation } from './operation.js';
 import { capture, failure, record } from './policy.js';
 import { compileSchema } from './schema.js';
@@ -66,12 +67,7 @@ function rejected(reply: FastifyReply, error: unknown, maximum: number) {
 export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
   const settings = capture(input);
   // These optional transports are enabled only after their independent runtime gates pass.
-  if (
-    settings.subscriptions ||
-    settings.security.developerIDE ||
-    settings.security.introspection !== 'disabled'
-  )
-    throw failure();
+  if (settings.subscriptions || settings.security.developerIDE) throw failure();
   const readiness = new WeakMap<object, () => boolean>();
   const instances = new WeakMap<PluginContext, { close(): Promise<void> }>();
   const plugin: ComposablePlugin = {
@@ -87,7 +83,11 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
     async init(context) {
       if (!context.options.http) throw failure();
       const auth = context.require<AuthService | undefined>(AUTHORITY);
-      if (settings.security.auth.required && !auth) throw failure();
+      if (
+        (settings.security.auth.required || settings.security.introspection === 'authenticated') &&
+        !auth
+      )
+        throw failure();
       if (
         settings.security.auth.required &&
         settings.security.auth.assurance !== undefined &&
@@ -190,12 +190,14 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           counters.loaderBatches++;
         });
         protectFields(child.graphql.schema, settings, scopes);
+        installMetadata();
         child.graphql.addHook(
           'preExecution',
           (currentSchema, document, engineContext: object, variables: Record<string, unknown>) => {
             const scope = scopes.get(engineContext);
             if (!scope) throw failure('EK_GQL_FORBIDDEN');
             scope.check();
+            assertMetadata();
             budget(
               currentSchema,
               document,
@@ -203,6 +205,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
               scope.context,
               settings,
               methods.get(scope) ?? 'POST',
+              () => authorizeMetadata(engineContext),
             );
           },
         );
@@ -325,6 +328,24 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
             Object.defineProperty(current, 'context', { value: authenticated });
             const engineContext = {};
             scopes.set(engineContext, current);
+            ownMetadata(engineContext, {
+              scope: current,
+              settings,
+              authorizeIntrospection() {
+                current.check();
+                if (
+                  settings.security.introspection !== 'authenticated' ||
+                  !authenticated.identity ||
+                  !auth
+                )
+                  throw failure('EK_GQL_FORBIDDEN');
+                try {
+                  auth.requireScope(authenticated.identity, settings.security.introspectionScope!);
+                } catch {
+                  throw failure('EK_GQL_FORBIDDEN');
+                }
+              },
+            });
             methods.set(current, request.method);
             try {
               // Use the upstream parser before Mercurius to exclude its JSON-encoded AST fallback.
