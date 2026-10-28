@@ -5,6 +5,8 @@ packages:
   - packages/*
   - examples/*
   - tools/*
+# Dependency installation is explicit; running a script must not start native compilation.
+verifyDepsBeforeRun: false
 overrides:
   # ExcelJS uses only the compatible CommonJS v4 API; retain the upstream bounds-check fix.
   exceljs@4.4.0>uuid: 11.1.1

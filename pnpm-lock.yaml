@@ -454,6 +454,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/telemetry
 
+  examples/kafka:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/messaging-kafka':
+        specifier: workspace:*
+        version: link:../../packages/messaging-kafka
+
   examples/ldap:
     dependencies:
       '@arkenivajs/core':

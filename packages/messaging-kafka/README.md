@@ -44,6 +44,8 @@ Operation deadlines default to 10 seconds and accept integer milliseconds from 1
 
 ## Observation and executable consumers
 
+See the [public Kafka example](../../examples/kafka/README.md) for a complete typed consumer using only package exports.
+
 Optional existing logger, telemetry and usage-meter capabilities are discovered through the support SPI. Observations include actual value/key/header bytes, confirmed publications, delivery and handler latency, retained in-flight work, assignment/revocation, commit/authentication errors and sampled broker-derived lag. Lag probes are limited to four concurrent calls per cluster and one sample per partition every five seconds. An unsafe integer lag is unavailable rather than rounded.
 
 For the framework telemetry SDK, explicitly approve static `kafka.cluster` and `kafka.topic` values through `TelemetryOptions.labelValues`. Partition labels are bounded integers; outcome labels are fixed. Existing series/instrument limits still apply. Rejected or failed diagnostics increment `kafka.diagnostics.failures` where reporting remains available. No payload, key, header value, group ID, client ID, tenant ID or credential becomes a metric label. Consumer spans run outside the original request scope. Without independently verified tenant provenance, the adapter does not manufacture a tenant usage session.
