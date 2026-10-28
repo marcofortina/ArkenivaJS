@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { TextDecoder } from 'node:util';
-import type { Environment, RouteContext } from '@arkenivajs/core';
+import type { Environment, RouteContext, Telemetry } from '@arkenivajs/core';
+import { instrumentOperation } from '@arkenivajs/core/support';
 import { createFixedUpstreamPool } from '@arkenivajs/proxy/support';
 import type {
   ApprovedUpstream,
@@ -14,6 +15,7 @@ import { data } from './provider-support.js';
 import { jsonSnapshot } from './json.js';
 import { parseRegistryJson } from './registry.js';
 import { routingFailure } from './errors.js';
+import { elapsed, injectTrace } from './observation.js';
 type Pool = Awaited<ReturnType<typeof createFixedUpstreamPool>>;
 
 const forbiddenProduction = [
@@ -89,13 +91,17 @@ interface Target {
 export class HttpUpstreams {
   private readonly targets = new Map<string, Target>();
   private closed = false;
-  private constructor(private readonly configuration: Settings) {}
+  private constructor(
+    private readonly configuration: Settings,
+    private readonly telemetry?: Telemetry,
+  ) {}
   static async create(
     configuration: Settings,
     environment: Environment,
     signal: AbortSignal,
+    telemetry?: Telemetry,
   ): Promise<HttpUpstreams> {
-    const service = new HttpUpstreams(configuration);
+    const service = new HttpUpstreams(configuration, telemetry);
     try {
       for (const raw of configuration.approvedUpstreams) {
         signal.throwIfAborted();
@@ -262,79 +268,99 @@ export class HttpUpstreams {
       if (expires <= Date.now()) throw routingFailure('EK_TROUTE_UPSTREAM');
       timer = setTimeout(() => expiry.abort(), Math.max(1, Math.floor(expires - Date.now())));
     }
+    const networkBegan = performance.now();
+    let networkEnded = false;
+    const networkDone = () => {
+      if (networkEnded) return;
+      networkEnded = true;
+      elapsed(this.telemetry, 'arkenivajs.routing.upstream.duration', networkBegan);
+    };
     try {
-      const response = await target.pool.request({
-        method: implementation.method,
-        path,
-        headers,
-        ...(body === undefined ? {} : { body }),
-        signal: AbortSignal.any([context.signal, expiry.signal]),
-        headersTimeout: operation.timeoutMs,
-        bodyTimeout: operation.timeoutMs,
-        idempotent: false,
-      });
-      // Rejected headers still require destroying an unread native stream. Its
-      // cancellation error is owned here; async iteration retains its own errors.
-      response.body.on('error', () => {});
-      try {
-        context.signal.throwIfAborted();
-        if (response.statusCode < 200 || response.statusCode >= 300)
-          throw routingFailure('EK_TROUTE_UPSTREAM');
-        const type = response.headers['content-type'];
-        if (
-          typeof type !== 'string' ||
-          !/^application\/json(?:\s*;\s*charset\s*=\s*"?utf-8"?)?\s*$/i.test(type)
-        )
-          throw routingFailure('EK_TROUTE_CONTRACT', true);
-        const declared = response.headers['content-length'];
-        if (
-          declared !== undefined &&
-          (typeof declared !== 'string' ||
-            !/^\d+$/.test(declared) ||
-            BigInt(declared) > BigInt(operation.maxResponseBytes))
-        )
-          throw routingFailure('EK_TROUTE_CONTRACT', true);
-        const parts: Buffer[] = [];
-        let bytes = 0;
-        for await (const chunk of response.body) {
-          context.signal.throwIfAborted();
-          const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          bytes += value.length;
-          if (bytes > operation.maxResponseBytes) throw routingFailure('EK_TROUTE_CONTRACT', true);
-          parts.push(value);
-        }
-        let result: unknown;
-        try {
-          result = parseRegistryJson(
-            new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
-              Buffer.concat(parts, bytes),
-            ),
-            operation.maxResponseBytes,
-          );
-        } catch {
-          throw routingFailure('EK_TROUTE_CONTRACT', true);
-        }
-        const responseKey = implementation.responseTransformerKey ?? implementation.transformerKey;
-        const transform =
-          responseKey === undefined
-            ? undefined
-            : this.configuration.responseTransformers.get(responseKey);
-        try {
-          result = jsonSnapshot(result, operation.maxResponseBytes);
-        } catch {
-          throw routingFailure('EK_TROUTE_CONTRACT', true);
-        }
-        if (transform) result = await transform(result, context);
-        context.signal.throwIfAborted();
-        try {
-          return jsonSnapshot(result, operation.maxResponseBytes);
-        } catch {
-          throw routingFailure('EK_TROUTE_CONTRACT', true);
-        }
-      } finally {
-        response.body.destroy();
-      }
+      return await instrumentOperation(
+        this.telemetry,
+        'http.client.request',
+        { 'routing.kind': 'http' },
+        async () => {
+          injectTrace(this.telemetry, headers);
+          const response = await target.pool.request({
+            method: implementation.method,
+            path,
+            headers,
+            ...(body === undefined ? {} : { body }),
+            signal: AbortSignal.any([context.signal, expiry.signal]),
+            headersTimeout: operation.timeoutMs,
+            bodyTimeout: operation.timeoutMs,
+            idempotent: false,
+          });
+          // Rejected headers still require destroying an unread native stream. Its
+          // cancellation error is owned here; async iteration retains its own errors.
+          response.body.on('error', () => {});
+          try {
+            context.signal.throwIfAborted();
+            if (response.statusCode < 200 || response.statusCode >= 300)
+              throw routingFailure('EK_TROUTE_UPSTREAM');
+            const type = response.headers['content-type'];
+            if (
+              typeof type !== 'string' ||
+              !/^application\/json(?:\s*;\s*charset\s*=\s*"?utf-8"?)?\s*$/i.test(type)
+            )
+              throw routingFailure('EK_TROUTE_CONTRACT', true);
+            const declared = response.headers['content-length'];
+            if (
+              declared !== undefined &&
+              (typeof declared !== 'string' ||
+                !/^\d+$/.test(declared) ||
+                BigInt(declared) > BigInt(operation.maxResponseBytes))
+            )
+              throw routingFailure('EK_TROUTE_CONTRACT', true);
+            const parts: Buffer[] = [];
+            let bytes = 0;
+            for await (const chunk of response.body) {
+              context.signal.throwIfAborted();
+              const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              bytes += value.length;
+              if (bytes > operation.maxResponseBytes)
+                throw routingFailure('EK_TROUTE_CONTRACT', true);
+              parts.push(value);
+            }
+            networkDone();
+            let result: unknown;
+            try {
+              result = parseRegistryJson(
+                new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+                  Buffer.concat(parts, bytes),
+                ),
+                operation.maxResponseBytes,
+              );
+            } catch {
+              throw routingFailure('EK_TROUTE_CONTRACT', true);
+            }
+            const responseKey =
+              implementation.responseTransformerKey ?? implementation.transformerKey;
+            const transform =
+              responseKey === undefined
+                ? undefined
+                : this.configuration.responseTransformers.get(responseKey);
+            try {
+              result = jsonSnapshot(result, operation.maxResponseBytes);
+            } catch {
+              throw routingFailure('EK_TROUTE_CONTRACT', true);
+            }
+            if (transform) result = await transform(result, context);
+            context.signal.throwIfAborted();
+            try {
+              return jsonSnapshot(result, operation.maxResponseBytes);
+            } catch {
+              throw routingFailure('EK_TROUTE_CONTRACT', true);
+            }
+          } finally {
+            response.body.destroy();
+          }
+        },
+        () => {},
+      );
     } finally {
+      networkDone();
       if (timer) clearTimeout(timer);
     }
   }

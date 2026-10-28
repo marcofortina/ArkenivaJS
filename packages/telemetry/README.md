@@ -45,3 +45,14 @@ uses the OpenTelemetry root context for inbound/background work. It does not
 extract user baggage or grant tenant identity. The surrounding trace scope is
 restored after the callback, while its asynchronous children retain their own
 new scope.
+
+Tenant routing adds fixed `routing.kind`, `routing.outcome` and `routing.match`
+metric categories; deployments cannot override their value sets through
+`labelValues`. Routing duration instruments use seconds. Only
+`withSpan('tenant.routing.operation', ...)` additionally permits the private
+trace attributes `tenant.id`, `routing.operation`, `routing.implementation`,
+`routing.revision` and `routing.activation_generation`. String identifiers are
+bounded to 256 UTF-8 bytes without controls; activation generations are positive
+safe integers. These keys remain forbidden in all metric methods, `measure`,
+other span names and label catalogs. Private trace evidence requires protected
+collector access and retention; it never supplies authorization.

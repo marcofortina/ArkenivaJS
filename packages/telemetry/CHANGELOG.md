@@ -6,6 +6,7 @@
 
 ## 0.1.0
 
+- Add fixed routing metric categories and narrowly scoped private routing-span identities while rejecting those identities from every metric path.
 - Export messaging publication, subscription, health and processing durations in seconds with explicit buckets.
 
 - Export cache and health duration histograms with second units and the shared explicit duration buckets.

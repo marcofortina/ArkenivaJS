@@ -128,6 +128,7 @@ export async function fixture(
     onCreated?: (app: Application) => void;
     tls?: ServerTlsFiles;
     http2?: boolean;
+    telemetry?: ApplicationOptions['telemetry'];
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -178,6 +179,7 @@ export async function fixture(
         ...(options.http2 === undefined ? {} : { http2: options.http2 }),
       },
       logging: { level: 'debug' },
+      ...(options.telemetry ? { telemetry: options.telemetry } : {}),
       ...(options.databases ? { databases: options.databases } : {}),
       ...(authenticated
         ? {
@@ -194,7 +196,14 @@ export async function fixture(
       plugins: [
         loggingPlugin({ destination: sink }),
         ...(authenticated ? [securityPlugin({ allowInsecureLoopback: true })] : []),
-        apiPlugin({ dependencies: authenticated ? ['security'] : [] }),
+        apiPlugin({
+          dependencies: [
+            ...(authenticated ? ['security'] : []),
+            ...(options.plugins ?? [])
+              .filter((plugin) => plugin.capabilities.has('telemetry'))
+              .map((plugin) => plugin.id),
+          ],
+        }),
         ...(options.plugins ?? []),
         tenantRoutingPlugin(input),
       ],
