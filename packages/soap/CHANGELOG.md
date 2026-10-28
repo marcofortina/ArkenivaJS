@@ -5,6 +5,11 @@
 
 ## 0.1.0
 
+- Register the explicit SOAP capability with immutable offline catalogs,
+  approved operations, provider credentials and owned client lifecycle.
+- Preserve native scalar fidelity and verify compatibility at worker startup.
+- Record fixed-label observations with actual SDK privacy coverage.
+
 - Define optional SOAP client, profile and native ownership contracts.
 - Admit bounded offline contracts before using the actual native WSDL compiler.
 - Decode versioned SOAP responses in owned workers with deadlines and cleanup.

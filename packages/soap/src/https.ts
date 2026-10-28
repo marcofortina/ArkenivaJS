@@ -73,7 +73,6 @@ export class HttpsConnection {
         endpoint.protocol !== 'https:' ||
         endpoint.username ||
         endpoint.password ||
-        endpoint.search ||
         endpoint.hash ||
         profile.endpoint.length > 2048 ||
         !['1.1', '1.2'].includes(profile.protocol) ||

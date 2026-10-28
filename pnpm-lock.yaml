@@ -176,6 +176,7 @@ patchedDependencies:
   openid-client@6.8.8: 44db73c59877ea006f5685ab89cf8376825af3e19216af871aa6f07a19b2deaf
   png-js@2.0.0: c71ba99371851d691995bf7056ea1b426a4194634433ed44fba49ad30903c7f9
   saxes@6.0.0: 983b813a63f631c02964c4647bad7918ee8742f3b697a116892b3a1cb9d1b7d1
+  soap@1.14.0: 0140406b1f7dec78ea76acc1bb2e93c9ddd0fa5e3f2905bcdd597e137a57dcf5
   ssh2@1.17.0: daf8770608cc25a112f1b7c9ce2dc798f8e4e997854f6cc701c1ae508a35baf5
 
 importers:
@@ -675,6 +676,28 @@ importers:
       ssh2-sftp-client:
         specifier: 12.1.1
         version: 12.1.1
+
+  examples/soap:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/soap':
+        specifier: workspace:*
+        version: link:../../packages/soap
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+      '@types/sax':
+        specifier: 1.2.7
+        version: 1.2.7
+      soap:
+        specifier: 1.14.0
+        version: 1.14.0(patch_hash=0140406b1f7dec78ea76acc1bb2e93c9ddd0fa5e3f2905bcdd597e137a57dcf5)
 
   examples/socket:
     dependencies:
@@ -1545,7 +1568,7 @@ importers:
         version: 6.0.0(patch_hash=983b813a63f631c02964c4647bad7918ee8742f3b697a116892b3a1cb9d1b7d1)
       soap:
         specifier: 1.14.0
-        version: 1.14.0
+        version: 1.14.0(patch_hash=0140406b1f7dec78ea76acc1bb2e93c9ddd0fa5e3f2905bcdd597e137a57dcf5)
     devDependencies:
       '@types/sax':
         specifier: 1.2.7
@@ -6438,7 +6461,7 @@ snapshots:
       nodemailer: 10.2.1
       punycode.js: 2.3.1
 
-  soap@1.14.0:
+  soap@1.14.0(patch_hash=0140406b1f7dec78ea76acc1bb2e93c9ddd0fa5e3f2905bcdd597e137a57dcf5):
     dependencies:
       axios: 1.20.0(debug@4.4.3)
       axios-ntlm: 1.4.6(debug@4.4.3)
