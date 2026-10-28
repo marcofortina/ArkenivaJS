@@ -2073,6 +2073,12 @@ importers:
         specifier: workspace:*
         version: link:../logging
 
+  packages/tenant-routing:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/upload:
     dependencies:
       '@arkenivajs/api':
