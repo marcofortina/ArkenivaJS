@@ -381,6 +381,28 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-etcd
 
+  examples/graphql:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/graphql':
+        specifier: workspace:*
+        version: link:../../packages/graphql
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+    devDependencies:
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+
   examples/grpc:
     dependencies:
       '@arkenivajs/core':
