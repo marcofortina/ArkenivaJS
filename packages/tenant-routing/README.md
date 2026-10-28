@@ -237,3 +237,30 @@ declare prior stream loss in quality rather than claiming complete history.
 `service.events.flush(options?)` is bounded and reports accumulated loss; graceful
 drain also flushes and preserves a typed cleanup failure after event loss.
 Forced cleanup aborts exports and explicitly drops undelivered queued events.
+
+## Offline deployment validation
+
+The installed package provides:
+
+```sh
+pnpm exec arkenivajs-tenant-registry validate --file /run/config/tenant-registry.json
+```
+
+It uses the same bounded private-file provider, strict JSON/schema and reference
+validation, offline operation-schema compiler and RFC 8785 checksum checks. It
+starts no application, listener or database pool and executes no registry code.
+Successful output contains only version/revision/generation and operation/binding
+counts. Exit codes are 0 for valid/help, 1 for file/registry/cancellation failure,
+and 2 for invalid command syntax. Error messages do not include paths or contents.
+
+Production ownership rules apply by default. A controlled development/test
+fixture may explicitly use `--environment development` or `--environment test`;
+private file modes and link checks remain mandatory. `--max-bytes` accepts an
+integer from 1 to 134217728, defaulting to 8388608. Repeat `--public-root` for all
+served deployment directories. Invalid or duplicate singleton flags are rejected.
+
+Offline validation checks declarative references within the snapshot. Actual
+startup additionally checks deployed handlers, transforms, approved upstreams
+and listener collisions. A one-shot CLI cannot prove historical activation
+admission across recreated processes; retain the operator's audited promotion
+history or durable checkpoint authority. Registry edits still require restart.
