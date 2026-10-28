@@ -391,7 +391,8 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
     for (const { plugin, context } of started.splice(0).reverse()) {
       try {
         const remaining = Math.ceil(deadline - performance.now());
-        const closing = Promise.resolve().then(() => plugin.close(context));
+        // Start cleanup while this hook's owned and dependent capabilities still exist.
+        const closing = Promise.resolve(plugin.close(context));
         void closing.catch(() => undefined);
         if (remaining <= 0) {
           // Invoke every close hook, but do not extend a shared expired deadline.
@@ -646,7 +647,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
             if (!drain) continue;
             try {
               const remaining = Math.ceil(deadline - performance.now());
-              const draining = Promise.resolve().then(() => drain(context));
+              const draining = Promise.resolve(drain(context));
               void draining.catch(() => undefined);
               if (remaining <= 0) {
                 errors.push(

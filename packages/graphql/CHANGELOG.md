@@ -11,3 +11,4 @@
 - Enforce result byte limits during standard JSON encoding and recheck the total operation deadline before sending.
 - Add a development/test-only authenticated GraphiQL IDE with local workers, disabled persistent storage and preserved bundled dependency notices.
 - Verify shared secure HTTP/2 queries and mutations, HTTP/1.1 fallback, tenant isolation, stream cancellation and graceful listener drain.
+- Verify physical admission at 128 concurrent operations and preserve actual mutation ownership through forced shutdown.
