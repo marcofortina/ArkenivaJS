@@ -1,0 +1,35 @@
+diff --git a/lib/wsdl/index.js b/lib/wsdl/index.js
+--- a/lib/wsdl/index.js
++++ b/lib/wsdl/index.js
+@@ -377,6 +377,13 @@
+                     return;
+                 }
+             }
++            const scalarType = typeof cur.schema === 'string' ? (0, utils_2.splitQName)(cur.schema).name : undefined;
++            const deserialize = scalarType && this.options.customDeserializer && this.options.customDeserializer[scalarType];
++            if (cur.nil !== true && cur.text !== undefined && typeof deserialize === 'function') {
++                const value = deserialize(cur.text, cur);
++                if (obj && obj[this.options.attributesKey]) obj[this.options.valueKey] = value;
++                else obj = cur.object = value;
++            }
+             if ((0, utils_1.isPlainObject)(obj) && !Object.keys(obj).length) {
+                 obj = null;
+             }
+@@ -444,7 +451,8 @@
+             const name = (0, utils_2.splitQName)(top.schema).name;
+             let value;
+             if (this.options && this.options.customDeserializer && this.options.customDeserializer[name]) {
+-                value = this.options.customDeserializer[name](text, top);
++                top.text = (top.text || '') + originalText;
++                return;
+             }
+             else {
+                 if (name === 'int' || name === 'integer' || name === 'short' || name === 'long') {
+@@ -1162,6 +1170,7 @@
+         // Works only in client
+         this.options.forceSoap12Headers = options.forceSoap12Headers;
+         this.options.customDeserializer = options.customDeserializer;
++        this.options.preserveWhitespace = options.preserveWhitespace;
+         this.options.forceUseSchemaXmlns = options.forceUseSchemaXmlns;
+         if (options.overrideElementKey !== undefined) {
+             this.options.overrideElementKey = options.overrideElementKey;

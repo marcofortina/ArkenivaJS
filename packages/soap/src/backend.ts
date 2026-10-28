@@ -7,6 +7,8 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { inspectWsdl, inspectXml } from './xml.js';
 import { importedPath } from './assets.js';
 import type { ContractAssets } from './assets.js';
+import { protocols } from './catalog.js';
+import { scalarOptions } from './scalars.js';
 import { failure } from './validation.js';
 
 /** Contract construction itself may not obtain a URL or silently read an unregistered include. */
@@ -15,10 +17,15 @@ const deniedTransport: IHttpClient = {
     throw failure();
   },
 };
-export async function nativeWsdl(source: string): Promise<WSDL> {
+export async function nativeWsdl(source: string, safeScalars = false): Promise<WSDL> {
   const inventory = inspectWsdl(source);
   if (inventory.imports.length) throw failure('EK_UNSUPPORTED_CAPABILITY');
+  protocols({
+    entry: '/offline/contract.wsdl',
+    documents: [{ path: '/offline/contract.wsdl', source }],
+  });
   const options: IOptions = {
+    ...(safeScalars ? scalarOptions() : {}),
     httpClient: deniedTransport,
     disableCache: true,
     handleNilAsNull: true,
@@ -38,7 +45,8 @@ export async function nativeClient(source: string, endpoint: string): Promise<Cl
 }
 
 /** Populate the actual native cache in dependency order; a cache miss fails before native I/O. */
-export async function nativeGraph(assets: ContractAssets): Promise<WSDL> {
+export async function nativeGraph(assets: ContractAssets, safeScalars = false): Promise<WSDL> {
+  protocols(assets);
   const cache: Record<string, WSDL> = Object.create(null);
   if (
     !isAbsolute(assets.entry) ||
@@ -84,6 +92,7 @@ export async function nativeGraph(assets: ContractAssets): Promise<WSDL> {
       throw failure();
     // The native implementation consumes this cache option but omits it from its public declaration.
     const options: IOptions & { WSDL_CACHE: Record<string, WSDL> } = {
+      ...(safeScalars ? scalarOptions() : {}),
       httpClient: deniedTransport,
       disableCache: true,
       handleNilAsNull: true,

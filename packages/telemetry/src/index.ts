@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'soap.operation',
+  'soap.outcome',
   'json.operation',
   'json.outcome',
   'xml.operation',
@@ -148,6 +150,8 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'soap.operation': ['startup', 'createClient', 'call', 'nativeCall'],
+  'soap.outcome': ['ok', 'error', 'fault'],
   'json.operation': ['parse', 'stringify', 'validate', 'transform'],
   'json.outcome': ['ok', 'error', 'invalid'],
   'xml.operation': ['parse', 'stringify', 'xsd-guard', 'xsd-schema', 'xsd-gate', 'validate-xsd'],
@@ -266,6 +270,13 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'soap.operations': '{operation}',
+  'soap.faults': '{fault}',
+  'soap.operation.duration.ms': 'ms',
+  'soap.payload.request.bytes': 'By',
+  'soap.payload.response.bytes': 'By',
+  'soap.operations.active': '{operation}',
+  'soap.process.rss.bytes': 'By',
   'json.operations': '{operation}',
   'json.rejections': '{operation}',
   'json.operation.duration.ms': 'ms',

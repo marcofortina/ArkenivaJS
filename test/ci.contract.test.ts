@@ -206,6 +206,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-x509',
       'socket',
       'sftp',
+      'soap',
       'upload',
       'webhooks',
     ],

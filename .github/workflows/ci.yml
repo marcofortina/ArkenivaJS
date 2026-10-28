@@ -80,6 +80,7 @@ jobs:
             'security-x509',
             'socket',
             'sftp',
+            'soap',
             'upload',
             'webhooks',
           ]

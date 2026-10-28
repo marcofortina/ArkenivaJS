@@ -1,0 +1,23 @@
+{
+  "name": "@arkenivajs/example-soap",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/*.test.js",
+    "start": "node dist/main.js --fixture"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/soap": "workspace:*"
+  },
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "soap": "1.14.0",
+    "@types/sax": "1.2.7"
+  },
+  "license": "AGPL-3.0-or-later"
+}

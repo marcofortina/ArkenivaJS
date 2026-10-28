@@ -17,3 +17,8 @@ const messages: Partial<Record<ErrorCode, string>> = {
 export function failure(code: ErrorCode = 'EK_SOAP_WSDL'): KitError {
   return new KitError({ code, message: messages[code] ?? 'The SOAP operation failed' });
 }
+export function hasControls(value: string): boolean {
+  return [...value].some(
+    (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+  );
+}
