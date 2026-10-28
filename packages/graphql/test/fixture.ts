@@ -63,6 +63,7 @@ export async function fixture(
   options: {
     authenticated?: boolean;
     tls?: ServerTlsFiles;
+    http2?: boolean;
     plugins?: readonly Plugin[];
     databases?: ApplicationOptions['databases'];
     environment?: ApplicationOptions['service']['environment'];
@@ -129,6 +130,7 @@ export async function fixture(
         host: '127.0.0.1',
         port,
         ...(options.tls ? { protocol: 'https' as const, tls: options.tls } : {}),
+        ...(options.http2 === undefined ? {} : { http2: options.http2 }),
       },
       logging: { level: 'debug' },
       ...(options.databases ? { databases: options.databases } : {}),
