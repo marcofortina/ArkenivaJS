@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { packPackage } from './pack.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-message-package-'));
@@ -19,7 +20,7 @@ function execute(command, args, cwd) {
 }
 try {
   for (const name of ['core', 'messaging']) {
-    execute('pnpm', ['pack', '--pack-destination', directory], join(root, 'packages', name));
+    await packPackage(join(root, 'packages', name), directory);
   }
   const core = 'file:' + join(directory, 'arkenivajs-core-0.1.0.tgz');
   await writeFile(

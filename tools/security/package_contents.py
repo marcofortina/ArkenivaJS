@@ -24,6 +24,49 @@ def sha256(value):
     return hashlib.sha256(value).hexdigest()
 
 
+def bundled_ide_files(location, manifest):
+    """Recognize only the owned GraphQL IDE build, its exact asset manifest and notices."""
+    if manifest.get("name") != "@arkenivajs/graphql":
+        return set()
+    root = location / "dist/ide"
+    if not root.exists():
+        return set()
+    if not (location / "browser/ide.ts").is_file() or not (location / "scripts/build-ide.mjs").is_file():
+        raise ValueError("GraphQL IDE artifacts require their owned build sources")
+    data = json.loads((root / "manifest.json").read_bytes())
+    if (not isinstance(data, dict) or type(data.get("format")) is not int or data["format"] != 1
+            or not isinstance(data.get("files"), list) or not 1 <= len(data["files"]) <= 1000):
+        raise ValueError("GraphQL IDE manifest is invalid")
+    paths = {"dist/ide/manifest.json", "dist/ide/THIRD_PARTY_NOTICES.txt"}
+    total = 0
+    for entry in data["files"]:
+        if (not isinstance(entry, dict) or not isinstance(entry.get("name"), str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]+\.(?:js|css|(?:js|css)\.LEGAL\.txt|ttf|woff2)", entry["name"])
+                or type(entry.get("bytes")) is not int or not 0 <= entry["bytes"] <= 32 * 1024 * 1024
+                or not isinstance(entry.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"])):
+            raise ValueError("GraphQL IDE asset declaration is invalid")
+        path = "dist/ide/assets/" + entry["name"]
+        if path in paths:
+            raise ValueError("GraphQL IDE manifest contains duplicate assets")
+        payload = (location / path).read_bytes()
+        total += len(payload)
+        if total > 64 * 1024 * 1024 or len(payload) != entry["bytes"] or sha256(payload) != entry["sha256"]:
+            raise ValueError("GraphQL IDE asset differs from its bounded manifest")
+        paths.add(path)
+    if not {"dist/ide/assets/app.js", "dist/ide/assets/app.css"} <= paths:
+        raise ValueError("GraphQL IDE manifest omitted its application entry points")
+    notices = list((root / "licenses").glob("*/*"))
+    if not notices or not (root / "THIRD_PARTY_NOTICES.txt").is_file():
+        raise ValueError("GraphQL IDE omitted bundled dependency notices")
+    for notice in notices:
+        if (not notice.is_file() or notice.is_symlink()
+                or not re.fullmatch(r"[A-Za-z0-9_@.-]+", notice.parent.name)
+                or not re.fullmatch(r"(?:licen[cs]e|notice|copying|third[-_]?party[-_]?notices?)(?:[._-].*)?", notice.name, re.I)):
+            raise ValueError("GraphQL IDE contains an unexpected dependency notice")
+        paths.add(notice.relative_to(location).as_posix())
+    return paths
+
+
 def inspect_archive(archive, location, manifest, workspace_versions, license_bytes):
     """Reject unexpected paths, altered content and unresolved dependency references."""
     if archive.stat().st_size > MAX_ARCHIVE_BYTES:
@@ -31,6 +74,7 @@ def inspect_archive(archive, location, manifest, workspace_versions, license_byt
     if sha256(license_bytes) != LICENSE_SHA256:
         raise ValueError("Root LICENSE differs from the reviewed upstream text")
     declared = set(manifest["files"])
+    bundled = bundled_ide_files(location, manifest)
     if not declared <= {"dist", "compat", *ROOT_FILES}:
         raise ValueError("Package file allowlist requires an explicit content review")
     contents, total = {}, 0
@@ -52,9 +96,9 @@ def inspect_archive(archive, location, manifest, workspace_versions, license_byt
                 allowed = relative.parts[0] in declared and len(relative.parts) > 1
             if not allowed:
                 raise ValueError("Package archive contains an undeclared product file")
-            if relative.parts[0] == "dist" and not relative.name.endswith((".js", ".d.ts", ".map")):
+            if relative.parts[0] == "dist" and relative.as_posix() not in bundled and not relative.name.endswith((".js", ".d.ts", ".map")):
                 raise ValueError("Package archive contains an unexpected compiled file format")
-            if relative.parts[0] == "dist":
+            if relative.parts[0] == "dist" and relative.as_posix() not in bundled:
                 source = re.sub(r"(?:\.js|\.d\.ts)(?:\.map)?$", ".ts", str(PurePosixPath(*relative.parts[1:])))
                 if not source.endswith(".ts") or not (location / "src" / source).is_file():
                     raise ValueError("Package archive contains a stale or unowned compiled artifact")
@@ -77,6 +121,7 @@ def inspect_archive(archive, location, manifest, workspace_versions, license_byt
                 metadata = json.loads(payload)
     required = {"package/" + name for name in ["package.json", "README.md", "CHANGELOG.md", "LICENSE"]}
     required |= {"package/" + name for name in declared if name in ROOT_FILES}
+    required |= {"package/" + name for name in bundled}
     if (location / "THIRD_PARTY_NOTICES.md").is_file():
         required.add("package/THIRD_PARTY_NOTICES.md")
     if not required <= contents.keys():
@@ -150,7 +195,7 @@ def create_evidence(destination):
     results = []
     license_bytes = (ROOT / "LICENSE").read_bytes()
     for index, (location, manifest) in enumerate(manifests):
-        execute(["pnpm", "--filter", manifest["name"], "pack", "--pack-destination", str(output)],
+        execute(["node", "scripts/pack.mjs", str(location), str(output)],
                 "pack-" + str(index) + ".log")
         archive = output / (manifest["name"].replace("@", "").replace("/", "-") + "-" + manifest["version"] + ".tgz")
         archive.chmod(0o600)

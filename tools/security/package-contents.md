@@ -16,6 +16,12 @@ tar archives without extracting their contents. It rejects prepack, prepare and
 postpack hooks; a future hook needs a separately reviewed update to the verifier.
 Current package manifests contain no such hooks.
 
+The shared `scripts/pack.mjs` entry point verifies the root LICENSE digest and
+temporarily supplies its exact bytes to the package before invoking the pinned
+pnpm with scripts disabled. It removes only the copy it created, including after
+pack failures. Existing files must already match; links and altered licenses
+fail without replacement. Packed-example checks use the same entry point.
+
 The evidence directory is private (0700), and archives, command logs and
 `packages.json` have owner-only permissions (0600). Existing destinations are
 rejected. No dependency installation, package publication, version changes or
@@ -31,6 +37,13 @@ Compiled files without a corresponding owned TypeScript source fail, catching
 stale output left after source removal. Duplicate entries, links, traversal,
 hidden configuration, tests, raw source directories and private keys fail.
 Archive inspection has compressed/expanded byte and file-count ceilings.
+
+The optional GraphQL IDE has a separate, narrowly scoped build-artifact check.
+Its owned browser entry and build script must exist. Every bundled asset must
+match the finite manifest's exact size/hash, and all declared assets and bundled
+dependency notices must be present. Extra chunks and the same files under any
+other package remain rejected. Ordinary backend output retains the TypeScript
+source-ownership check.
 
 The report identifies the exact clean source commit and package manager,
 each archive's SHA-256 and each contained file's size/hash. Declaration hashes

@@ -19,6 +19,7 @@ import { Operation } from './operation.js';
 import { capture, failure, record } from './policy.js';
 import { compileSchema } from './schema.js';
 import { encodeResult } from './encoding.js';
+import { registerIde } from './ide.js';
 
 const AUTHORITY = Symbol('graphql.authority');
 const authority: SupportPluginFactory = (options) => {
@@ -68,7 +69,7 @@ function rejected(reply: FastifyReply, error: unknown, maximum: number) {
 export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
   const settings = capture(input);
   // These optional transports are enabled only after their independent runtime gates pass.
-  if (settings.subscriptions || settings.security.developerIDE) throw failure();
+  if (settings.subscriptions) throw failure();
   const readiness = new WeakMap<object, () => boolean>();
   const instances = new WeakMap<PluginContext, { close(): Promise<void> }>();
   const plugin: ComposablePlugin = {
@@ -83,9 +84,13 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
     },
     async init(context) {
       if (!context.options.http) throw failure();
+      if (settings.security.developerIDE && context.options.service.environment === 'production')
+        throw failure();
       const auth = context.require<AuthService | undefined>(AUTHORITY);
       if (
-        (settings.security.auth.required || settings.security.introspection === 'authenticated') &&
+        (settings.security.auth.required ||
+          settings.security.introspection === 'authenticated' ||
+          settings.security.developerIDE) &&
         !auth
       )
         throw failure();
@@ -210,8 +215,8 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
             );
           },
         );
-        child.setErrorHandler((error, _request, reply) => {
-          counters.rejected++;
+        child.setErrorHandler((error, request, reply) => {
+          if (request.routeOptions.url === settings.path) counters.rejected++;
           return rejected(
             reply,
             (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
@@ -221,6 +226,37 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           );
         });
         const methods = new WeakMap<Operation, string>();
+        if (settings.security.developerIDE)
+          await registerIde(child, settings.path, ownership, async (request) => {
+            if (closed || !ready() || active.size >= 128) throw failure('EK_GQL_EXECUTION');
+            const scope = new Operation({ requestId: request.id }, settings.security.limits, owner);
+            active.add(scope);
+            void scope.completion.then(() => active.delete(scope));
+            try {
+              if (!auth) throw failure('EK_GQL_AUTH');
+              const identity = await scope.run(() =>
+                auth.verifyBearer(request.headers.authorization, {
+                  signal: scope.controller.signal,
+                  timeoutMs: settings.security.limits.maxOperationMs,
+                }),
+              );
+              auth.tenantFrom(identity);
+              if (settings.security.auth.required) {
+                for (const name of settings.security.auth.scopes ?? [])
+                  auth.requireScope(identity, name);
+                if (settings.security.auth.assurance)
+                  auth.requireAssurance(identity, settings.security.auth.assurance);
+              }
+              if (settings.security.introspection === 'authenticated')
+                auth.requireScope(identity, settings.security.introspectionScope!);
+              scope.check();
+            } catch {
+              scope.check();
+              throw failure('EK_GQL_AUTH');
+            } finally {
+              scope.end();
+            }
+          });
         const handler = async (request: FastifyRequest, reply: FastifyReply) => {
           let scope: Operation | undefined;
           let detach = () => {};

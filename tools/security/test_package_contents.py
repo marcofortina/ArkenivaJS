@@ -4,6 +4,7 @@
 """Exercise real tar archives, including hostile headers and misleading metadata."""
 
 import io
+import hashlib
 import json
 from pathlib import Path
 import tarfile
@@ -120,6 +121,82 @@ class PackageContentsTests(unittest.TestCase):
             create_evidence(Path("relative"))
         with self.assertRaisesRegex(ValueError, "outside Git"):
             create_evidence(ROOT / "private-package-results")
+
+    def add_ide(self):
+        self.manifest["name"] = self.metadata["name"] = "@arkenivajs/graphql"
+        self.update_metadata()
+        for path in ["browser/ide.ts", "scripts/build-ide.mjs"]:
+            target = self.location / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("// Synthetic owned build fixture.\n")
+        assets = {"app.js": b"export {};\n", "app.css": b"body { margin: 0; }\n"}
+        data = {"format": 1, "files": [{"name": name, "bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest()} for name, payload in assets.items()]}
+        files = {"dist/ide/assets/" + name: payload for name, payload in assets.items()}
+        files.update({"dist/ide/manifest.json": json.dumps(data).encode(),
+                      "dist/ide/THIRD_PARTY_NOTICES.txt": b"Synthetic dependency notices.\n",
+                      "dist/ide/licenses/fixture@1.0.0/LICENSE": b"Synthetic license fixture.\n"})
+        for path, payload in files.items():
+            target = self.location / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            self.entries["package/" + path] = payload
+        return data
+
+    def test_graphql_ide_accepts_only_manifest_assets_and_complete_notices(self):
+        self.add_ide()
+        result = self.inspect()
+        self.assertIn("package/dist/ide/assets/app.css", result["files"])
+        for name in ["package/dist/ide/assets/app.js", "package/dist/ide/licenses/fixture@1.0.0/LICENSE"]:
+            value = self.entries.pop(name)
+            with self.assertRaises(ValueError):
+                self.inspect()
+            self.entries[name] = value
+
+    def test_ide_exception_cannot_apply_to_other_packages_or_unowned_builds(self):
+        self.add_ide()
+        self.manifest["name"] = self.metadata["name"] = "@arkenivajs/other"
+        self.update_metadata()
+        with self.assertRaises(ValueError):
+            self.inspect()
+        self.manifest["name"] = self.metadata["name"] = "@arkenivajs/graphql"
+        self.update_metadata()
+        (self.location / "browser/ide.ts").unlink()
+        with self.assertRaisesRegex(ValueError, "owned build sources"):
+            self.inspect()
+
+    def test_graphql_ide_rejects_manifest_drift_traversal_and_extra_chunks(self):
+        data = self.add_ide()
+        path = self.location / "dist/ide/manifest.json"
+        original = path.read_bytes()
+        for field, value in [("name", "../outside.js"), ("sha256", "0" * 64), ("bytes", True)]:
+            before = data["files"][0][field]
+            data["files"][0][field] = value
+            path.write_text(json.dumps(data))
+            self.entries["package/dist/ide/manifest.json"] = path.read_bytes()
+            with self.assertRaises(ValueError):
+                self.inspect()
+            data["files"][0][field] = before
+        path.write_bytes(original)
+        self.entries["package/dist/ide/manifest.json"] = original
+        extra = self.location / "dist/ide/assets/stale.js"
+        extra.write_bytes(b"export {};\n")
+        self.entries["package/dist/ide/assets/stale.js"] = extra.read_bytes()
+        with self.assertRaisesRegex(ValueError, "stale"):
+            self.inspect()
+
+    def test_graphql_ide_retains_private_key_rejection_inside_manifest_assets(self):
+        data = self.add_ide()
+        payload = b"-----BEGIN " + b"PRIVATE KEY-----\n"
+        target = self.location / "dist/ide/assets/app.js"
+        target.write_bytes(payload)
+        self.entries["package/dist/ide/assets/app.js"] = payload
+        data["files"][0].update(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+        manifest = json.dumps(data).encode()
+        (self.location / "dist/ide/manifest.json").write_bytes(manifest)
+        self.entries["package/dist/ide/manifest.json"] = manifest
+        with self.assertRaisesRegex(ValueError, "private key"):
+            self.inspect()
 
 
 if __name__ == "__main__":

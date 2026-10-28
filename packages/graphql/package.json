@@ -19,20 +19,30 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p tsconfig.browser.json && node scripts/build-ide.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.browser.json",
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node ../../scripts/test.mjs unit",
-    "lint": "eslint src test"
+    "test:browser": "node ../../scripts/test.mjs browser",
+    "lint": "eslint src test browser scripts"
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/api": "workspace:*",
     "fastify": "5.12.7",
     "mercurius": "16.12.1",
-    "graphql": "16.14.2"
+    "graphql": "16.14.2",
+    "graphiql": "5.4.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "graphql-ws": "6.4.1"
   },
   "devDependencies": {
+    "playwright-core": "1.64.0",
+    "graphql-config": "6.0.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild-wasm": "0.28.2",
     "fast-check": "4.10.2",
     "@arkenivajs/database-postgres": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
