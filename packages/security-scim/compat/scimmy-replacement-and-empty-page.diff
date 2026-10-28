@@ -3,8 +3,46 @@ diff --git a/dist/lib/messages.js b/dist/lib/messages.js
 +++ b/dist/lib/messages.js
 @@ -222,0 +223 @@
 +        if (this.startIndex > this.totalResults) this.Resources = [];
-@@ -650,0 +652,4 @@
+@@ -462,0 +464 @@
++        const resolved = [];
+@@ -478,0 +481 @@
++            resolved.push(key);
+@@ -491 +494 @@
+-                        targets.push(...(new Types.Filter(filter.substring(1, filter.length - 1)).match(target[key])));
++                        targets.push(...(new Types.Filter(filter.substring(1, filter.length - 1)).match(target[key], this.#schema.attribute(resolved.join(".")))));
+@@ -650,0 +654,4 @@
 +            if (path === undefined && value !== null && typeof value === "object" && !Array.isArray(value)) {
 +                for (const [key, val] of Object.entries(value)) this.#replace(index, key, val);
 +                return;
 +            }
+diff --git a/dist/lib/types.js b/dist/lib/types.js
+--- a/dist/lib/types.js
++++ b/dist/lib/types.js
+@@ -925 +925 @@
+-    match(values) {
++    match(values, schema) {
+@@ -929,2 +929,3 @@
+-                const [,actual] = Object.entries(value).find(([key]) => key.toLowerCase() === attr.toLowerCase()) ?? [];
+-                const isActualDate = (actual instanceof Date || (new Date(actual).toString() !== "Invalid Date" && String(actual).match(isoDate)));
++                let [,actual] = Object.entries(value).find(([key]) => key.toLowerCase() === attr.toLowerCase()) ?? [];
++                const definition = schema instanceof SchemaDefinition ? schema.attribute(attr) : schema instanceof Attribute ? (schema.name.toLowerCase() === attr.toLowerCase() ? schema : schema.subAttributes?.find(a => a.name.toLowerCase() === attr.toLowerCase())) : undefined;
++                const isActualDate = definition ? definition.type === "dateTime" : (actual instanceof Date || (new Date(actual).toString() !== "Invalid Date" && String(actual).match(isoDate)));
+@@ -934 +935 @@
+-                    return !!(Array.isArray(expressions) ? expressions : [expressions])
++                    return !!(Array.isArray(expressions) && typeof expressions[0] === "string" ? [expressions] : Array.isArray(expressions) ? expressions : [expressions])
+@@ -936 +937 @@
+-                        .some(e => new Filter(Array.isArray(e) ? {[attr]: e} : e).match(actual).length);
++                        .some(e => new Filter(Array.isArray(e) ? {[attr]: e} : e).match(Array.isArray(e) ? actual.map(v => ({[attr]: v})) : actual, Array.isArray(e) ? schema : definition).length);
+@@ -939 +940 @@
+-                    return !!(new Filter([expressions]).match([actual]).length);
++                    return !!(new Filter([expressions]).match([actual], definition).length);
+@@ -955,0 +957,3 @@
++                        if (definition?.type === "string" && definition.config.caseExact !== true && typeof actual === "string" && typeof expected === "string") {
++                            actual = actual.toLowerCase(); expected = expected.toLowerCase();
++                        }
+diff --git a/dist/scimmy.d.ts b/dist/scimmy.d.ts
+--- a/dist/scimmy.d.ts
++++ b/dist/scimmy.d.ts
+@@ -261 +261 @@
+-                match(values: any[]): any[];
++                match(values: any[], schema?: SCIMMY.Types.SchemaDefinition | SCIMMY.Types.Attribute): any[];

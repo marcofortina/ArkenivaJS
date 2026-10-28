@@ -1,6 +1,6 @@
 # Third-party notices
 
-This package uses SCIMMY 1.3.5 under the MIT license. The compatibility diff modifies only the distributed native ESM message implementation. Its pathless replacement correction follows the existing native explicit-path algorithm and the approach described in [upstream pull request 110](https://github.com/scimmyjs/scimmy/pull/110); out-of-range result pages are explicitly empty. The native filter, schema and patch implementations remain in SCIMMY. Review these assumptions and rerun conformance controls before changing versions. Original notice:
+This package uses SCIMMY 1.3.5 under the MIT license. The compatibility diff modifies the distributed native ESM messages and types implementations and their TypeScript declaration. Its pathless replacement correction follows the existing native explicit-path algorithm and the approach described in [upstream pull request 110](https://github.com/scimmyjs/scimmy/pull/110); out-of-range result pages are explicitly empty. Optional schema context makes native comparisons respect caseExact and date metadata, including complex value paths and scalar arrays, without changing stored values or generic comparisons without schema context. The native filter, schema and patch implementations remain in SCIMMY. Review these assumptions and rerun conformance controls before changing versions. Original notice:
 
 MIT License
 

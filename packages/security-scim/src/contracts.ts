@@ -109,6 +109,7 @@ export interface ScimPluginSettings {
 }
 /** Standalone HTTP work needs the same actual authentication and authorization boundaries as the plugin. */
 export interface ScimServiceSettings {
+  readonly environment?: 'development' | 'test' | 'production';
   readonly maxPageSize?: number;
   readonly maxFilterDepth?: number;
   readonly auth?: AuthService;

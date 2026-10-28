@@ -96,6 +96,10 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'scim.operation',
+  'scim.resource',
+  'scim.direction',
+  'scim.outcome',
   'saml.operation',
   'saml.outcome',
   'realtime.protocol',
@@ -172,6 +176,19 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
     'invalid_message',
   ],
   'proxy.outcome': ['ok', 'error'],
+  'scim.operation': ['list', 'get', 'create', 'replace', 'patch', 'delete', 'discovery', 'invalid'],
+  'scim.resource': ['Users', 'Groups', 'discovery', 'unknown'],
+  'scim.direction': ['request', 'response'],
+  'scim.outcome': [
+    'ok',
+    'rejected',
+    'conflict',
+    'precondition',
+    'unavailable',
+    'unknown',
+    'cancelled',
+    'timeout',
+  ],
   'saml.operation': [
     'begin_login',
     'consume_response',
@@ -324,6 +341,10 @@ const units: Record<string, string> = {
   'realtime.disconnects': '{connection}',
   'magiclink.operations': '{operation}',
   'saml.operations': '{operation}',
+  'scim.operations': '{operation}',
+  'scim.operation.duration.ms': 'ms',
+  'scim.operations.active': '{operation}',
+  'scim.payload.json.bytes': 'By',
   'saml.operation.duration.ms': 'ms',
   'saml.operations.active': '{operation}',
   'magiclink.issued': '{credential}',
