@@ -1,0 +1,10 @@
+diff --git a/dist/lib/messages.js b/dist/lib/messages.js
+--- a/dist/lib/messages.js
++++ b/dist/lib/messages.js
+@@ -222,0 +223 @@
++        if (this.startIndex > this.totalResults) this.Resources = [];
+@@ -650,0 +652,4 @@
++            if (path === undefined && value !== null && typeof value === "object" && !Array.isArray(value)) {
++                for (const [key, val] of Object.entries(value)) this.#replace(index, key, val);
++                return;
++            }

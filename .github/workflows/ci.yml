@@ -80,6 +80,7 @@ jobs:
             'security-mtls',
             'security-password',
             'security-saml',
+            'security-scim',
             'security-sessions',
             'security-x509',
             'socket',
