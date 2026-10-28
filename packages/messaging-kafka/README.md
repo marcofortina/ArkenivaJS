@@ -14,6 +14,10 @@ Run `pnpm --filter @arkenivajs/messaging-kafka build` and `pnpm --filter @arkeni
 
 ## Native build and compatibility controls
 
+The corrected asynchronous commit worker waits for librdkafka's confirmed commit result instead of reporting that a request was merely queued. Administrative offset reads preserve the same exact decimal metadata as the producer and consumer. Partition-only committed-offset queries retain their missing-offset sentinel. Timestamp zero remains `"0"`, including when produced by the independent Kafka Java client.
+
+The actual compiled addon exports a compatibility version marker. This is a build capability check, not cryptographic attestation. Source compilation must include the complete reviewed correction; changing only the JavaScript wrapper cannot supply the compiled marker. Independent consumers must explicitly carry the packaged compatibility diff into their own pnpm dependency policy.
+
 The reviewed SDK correction requires source compilation with a C++20 compiler, Python and make. It bounds native build jobs, accommodates pnpm archive paths, preserves exact offset strings through native serialization and promisified commit/seek arithmetic, and distinguishes empty bytes from null headers. The original native callback numeric offset fields remain for compatibility; exact decimal fields are authoritative when values exceed the safe JavaScript integer range. A configurable hard message cache limit complements the native byte queue bounds.
 
 The integration fixtures run on Linux/glibc x64 with Node 22.23.4, 24.22.1 and 26.12.1. The Node 26 path also builds the bundled C/C++ libraries from source. Other ABI runs can reuse those independently compiled, hash-reviewed static libraries while compiling each Node binding separately. This is a build cache, not a substitute for running the actual broker tests on each Node version. Other operating systems and architectures are unverified for this optional package.
@@ -21,3 +25,5 @@ The integration fixtures run on Linux/glibc x64 with Node 22.23.4, 24.22.1 and 2
 With the package built and an explicitly owned local broker, set `ARKENIVA_KAFKA_DISPOSABLE=1` and `ARKENIVA_KAFKA_BROKER=127.0.0.1:19092`, then run `node --test packages/messaging-kafka/dist-test/integration/*.test.js`. Create `orders.created` explicitly with two partitions and retain compaction records for the test duration. The tests do not create topics. The native integer fixture additionally compiles a temporary bridge linked to the actual installed SDK, exercising its C++ conversions across the full nonnegative signed 64-bit range. Broker tests cover tombstones, empty values, nullable/repeated binary headers, embedded zero bytes, prototype-sensitive names, manual commits and disconnection. The SDK's declared `stop()` method is not implemented; direct consumers must use its supported disconnect lifecycle.
 
 See [third-party notices](THIRD_PARTY_NOTICES.md). These controls establish local native behavior, not a completed framework adapter, production conformance, full platform support or final CI acceptance.
+
+The timestamp interoperability fixture additionally requires `ARKENIVA_KAFKA_CONTROL=1` and Docker access within the owned disposable environment. It invokes only the named `arkenivajs-kafka-test` broker's official Java producer; provision the fixture before running it.
