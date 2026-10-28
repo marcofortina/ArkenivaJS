@@ -1,6 +1,6 @@
 # @arkenivajs/messaging-kafka
 
-Kafka producer/consumer data contracts and bounded input snapshots. This foundation does not yet expose a plugin or runtime client. It cannot be used to publish or consume records. The selected backend is the pinned Confluent JavaScript client. Native compatibility fixtures exercise it against a real broker; the framework service, lifecycle and security acceptance remain separate requirements.
+Kafka producer/consumer data contracts and bounded input snapshots. This foundation does not yet expose a plugin or runtime client. It cannot be used to publish or consume records. The selected backend is the pinned Confluent JavaScript client. Internal producer integration now validates physical admission, broker acknowledgements, secure connection setup and cancellation; the public plugin and consumer lifecycle are not yet exported. Native compatibility fixtures exercise it against a real broker; the framework service, lifecycle and security acceptance remain separate requirements.
 
 Payloads are bytes or null tombstones. Tombstones require a nonempty compaction key. Empty byte arrays remain empty payloads. Header snapshots retain binary values, strings, nulls and duplicate ordering; wire tenant headers remain untrusted data. An eventual native adapter must explicitly reject any unsupported value before publication instead of coercing it. Independent snapshots prevent caller mutation from changing an admitted operation.
 
@@ -27,3 +27,5 @@ With the package built and an explicitly owned local broker, set `ARKENIVA_KAFKA
 See [third-party notices](THIRD_PARTY_NOTICES.md). These controls establish local native behavior, not a completed framework adapter, production conformance, full platform support or final CI acceptance.
 
 The timestamp interoperability fixture additionally requires `ARKENIVA_KAFKA_CONTROL=1` and Docker access within the owned disposable environment. It invokes only the named `arkenivajs-kafka-test` broker's official Java producer; provision the fixture before running it.
+
+Producer integration tests cover caller-owned byte snapshots and cancellation after a real broker acknowledgement, retaining capacity until the actual native work settles. The native compatibility guard rejects unsupported compiled addons before reading secrets or opening connections. Technical observations use bounded startup catalogs and safe fixed outcomes; message contents, keys, correlation values and consumer groups are excluded from metric labels.

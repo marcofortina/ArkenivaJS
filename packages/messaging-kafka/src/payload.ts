@@ -7,7 +7,7 @@ import { array, bytes, failure, fields, text, topic } from './validation.js';
 
 /** Independent header snapshots preserve duplicate order without trusting wire identity fields. */
 export function headers(value: unknown): KafkaHeaders {
-  const source = fields(value ?? {}),
+  const source = fields(value === undefined ? {} : value, undefined, true),
     output: Record<string, string | Buffer | null | readonly (string | Buffer | null)[]> =
       Object.create(null);
   let size = 0,
