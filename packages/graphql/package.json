@@ -33,9 +33,12 @@
     "graphql": "16.14.2"
   },
   "devDependencies": {
+    "@arkenivajs/database-postgres": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/security": "workspace:*",
-    "jose": "6.2.13"
+    "jose": "6.2.13",
+    "pg": "8.23.1",
+    "@types/pg": "8.23.1"
   },
   "license": "AGPL-3.0-or-later"
 }

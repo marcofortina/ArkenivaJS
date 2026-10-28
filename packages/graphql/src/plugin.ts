@@ -13,6 +13,7 @@ import { GRAPHQL_CAPABILITY } from './index.js';
 import type { GraphqlPluginSettings, GraphqlService, GraphqlRequestContext } from './contracts.js';
 import { budget } from './budget.js';
 import { protectFields } from './fields.js';
+import { installLoaders } from './loaders.js';
 import { Operation } from './operation.js';
 import { capture, failure, record } from './policy.js';
 import { compileSchema } from './schema.js';
@@ -66,7 +67,6 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
   const settings = capture(input);
   // These optional transports are enabled only after their independent runtime gates pass.
   if (
-    settings.loaders ||
     settings.subscriptions ||
     settings.security.developerIDE ||
     settings.security.introspection !== 'disabled'
@@ -125,7 +125,6 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           }
         })());
       instances.set(context, { close });
-      protectFields(schema, settings, scopes);
       const ownership = Symbol('graphql.route.owner');
       server.addHook('onRoute', (options) => {
         if (
@@ -187,6 +186,10 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
             };
           },
         });
+        installLoaders(child, settings, scopes, () => {
+          counters.loaderBatches++;
+        });
+        protectFields(child.graphql.schema, settings, scopes);
         child.graphql.addHook(
           'preExecution',
           (currentSchema, document, engineContext: object, variables: Record<string, unknown>) => {
@@ -334,7 +337,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
                 throw failure('EK_GQL_VALIDATION');
               }
               const result = await current.run(() =>
-                child.graphql(
+                reply.graphql(
                   document,
                   engineContext,
                   variables as Record<string, unknown> | undefined,

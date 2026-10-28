@@ -14,6 +14,7 @@ export class Operation {
   readonly began = performance.now();
   readonly completion: Promise<void>;
   fields = 0;
+  mutationEpoch = 0;
   private readonly pending = new Set<Promise<unknown>>();
   private release!: () => void;
   private ended = false;
@@ -29,9 +30,10 @@ export class Operation {
       this.release = resolve;
     });
     const abort = () => this.controller.abort(failure('EK_GQL_TIMEOUT'));
-    owner.addEventListener('abort', abort, { once: true });
-    this.detach = () => owner.removeEventListener('abort', abort);
-    if (owner.aborted) abort();
+    const lifecycle = AbortSignal.any([owner]);
+    lifecycle.addEventListener('abort', abort, { once: true });
+    this.detach = () => lifecycle.removeEventListener('abort', abort);
+    if (lifecycle.aborted) abort();
   }
 
   check() {
