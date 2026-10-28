@@ -177,6 +177,7 @@ patchedDependencies:
   cpu-features@0.0.10: ab769a758f015172649ebddb21db04c8d49fc5359c5035ef3d16b1ec9b2b77b0
   dev-null@0.1.1: cb66f076c57f0a29d5790f00c3187ae351d2b0fcfc38e8b893fba0a50c3aed65
   fast-deep-equal@3.1.3: d66d617c2bbf84327e634e5e353f3fd58bcb23d92c6b77ddaa76c53df8c2d095
+  jsonc-parser@3.3.1: f96f96fc4dc3f676a4ddee52ce201e38bf4b2cf14d941d0da4c478b548a0a64e
   nats@2.29.3: f58ef54c31b92dbb1a5df622551011d56d875589f5723a9a275950dc1d0096d8
   openid-client@6.8.8: 44db73c59877ea006f5685ab89cf8376825af3e19216af871aa6f07a19b2deaf
   png-js@2.0.0: c71ba99371851d691995bf7056ea1b426a4194634433ed44fba49ad30903c7f9
@@ -1025,7 +1026,7 @@ importers:
         version: link:../core
       jsonc-parser:
         specifier: 3.3.1
-        version: 3.3.1
+        version: 3.3.1(patch_hash=f96f96fc4dc3f676a4ddee52ce201e38bf4b2cf14d941d0da4c478b548a0a64e)
 
   packages/config:
     dependencies:
@@ -2078,6 +2079,18 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../core
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: 3.0.1
+        version: 3.0.1(ajv@8.20.0)
+      canonicalize:
+        specifier: 5.1.0
+        version: 5.1.0
+      jsonc-parser:
+        specifier: 3.3.1
+        version: 3.3.1(patch_hash=f96f96fc4dc3f676a4ddee52ce201e38bf4b2cf14d941d0da4c478b548a0a64e)
 
   packages/upload:
     dependencies:
@@ -3890,6 +3903,11 @@ packages:
   camelcase@5.3.1:
     resolution: {integrity: sha512-L28STB170nwWS63UjtlEOE3dldQApaJXZkOI1uMFfzf3rRuPegHaHesyee+YxQ+W6SvRDQV6UrdOdRiR153wJg==}
     engines: {node: '>=6'}
+
+  canonicalize@5.1.0:
+    resolution: {integrity: sha512-bab9+WefZljqQ8jT0qRwVmTyzAUU63K97QIQD3agynIBrb6sa5M2eAy8Hv8K3p4V9+ONVYZKtGYl4Dg+/5Gumw==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   chownr@3.0.0:
     resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
@@ -6195,7 +6213,7 @@ snapshots:
       get-value: 4.1.0
       graphql: 16.14.2
       graphql-language-service: 5.7.0(graphql@16.14.2)
-      jsonc-parser: 3.3.1
+      jsonc-parser: 3.3.1(patch_hash=f96f96fc4dc3f676a4ddee52ce201e38bf4b2cf14d941d0da4c478b548a0a64e)
       markdown-it: 15.0.3
       monaco-editor: 0.52.2
       monaco-graphql: 1.9.0(graphql@16.14.2)(monaco-editor@0.52.2)(prettier@3.9.10)
@@ -7831,6 +7849,8 @@ snapshots:
 
   camelcase@5.3.1: {}
 
+  canonicalize@5.1.0: {}
+
   chownr@3.0.0: {}
 
   cliui@6.0.0:
@@ -8620,7 +8640,7 @@ snapshots:
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
-  jsonc-parser@3.3.1: {}
+  jsonc-parser@3.3.1(patch_hash=f96f96fc4dc3f676a4ddee52ce201e38bf4b2cf14d941d0da4c478b548a0a64e): {}
 
   jsonfile@6.2.1:
     dependencies:
