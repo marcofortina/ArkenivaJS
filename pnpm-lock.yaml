@@ -1394,6 +1394,9 @@ importers:
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1

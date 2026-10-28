@@ -20,6 +20,8 @@ import { capture, failure, record } from './policy.js';
 import { compileSchema } from './schema.js';
 import { encodeResult } from './encoding.js';
 import { registerIde } from './ide.js';
+import { OBSERVERS, Observation, observations } from './observation.js';
+import type { Observers } from './observation.js';
 
 const AUTHORITY = Symbol('graphql.authority');
 const authority: SupportPluginFactory = (options) => {
@@ -76,8 +78,8 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
     id: 'graphql',
     version: '0.1.0',
     capabilities: new Set(['graphql']),
-    dependencies: ['api', 'graphql-authority'],
-    [SUPPORT_PLUGINS]: [authority],
+    dependencies: ['api', 'graphql-authority', 'graphql-observation'],
+    [SUPPORT_PLUGINS]: [authority, observations],
     [PREPARE_PLUGIN](context) {
       readiness.set(context.options, () => context.state() === 'READY');
       return new Map();
@@ -87,6 +89,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
       if (settings.security.developerIDE && context.options.service.environment === 'production')
         throw failure();
       const auth = context.require<AuthService | undefined>(AUTHORITY);
+      const observers = context.require<Observers>(OBSERVERS);
       if (
         (settings.security.auth.required ||
           settings.security.introspection === 'authenticated' ||
@@ -146,6 +149,18 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
       )
         throw failure();
       server.register(async (child) => {
+        const observed = new WeakMap<FastifyRequest, Observation>();
+        child.addHook('onRequest', async (request, reply) => {
+          if (request.routeOptions.url !== settings.path) return;
+          const observation = new Observation(observers);
+          observed.set(request, observation);
+          reply.raw.once('close', () => {
+            if (!reply.raw.writableEnded) observation.finish(499);
+          });
+        });
+        child.addHook('onResponse', async (request, reply) => {
+          observed.get(request)?.finish(reply.statusCode);
+        });
         const { default: mercurius } = await import('mercurius');
         child.removeContentTypeParser('application/json');
         child.addContentTypeParser(
@@ -204,7 +219,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
             if (!scope) throw failure('EK_GQL_FORBIDDEN');
             scope.check();
             assertMetadata();
-            budget(
+            const estimate = budget(
               currentSchema,
               document,
               variables,
@@ -213,10 +228,18 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
               methods.get(scope) ?? 'POST',
               () => authorizeMetadata(engineContext),
             );
+            scope.observation?.budget(estimate.operation, estimate.complexity);
           },
         );
         child.setErrorHandler((error, request, reply) => {
           if (request.routeOptions.url === settings.path) counters.rejected++;
+          observed
+            .get(request)
+            ?.reject(
+              (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
+                ? failure('EK_GQL_INPUT_LIMIT')
+                : error,
+            );
           return rejected(
             reply,
             (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
@@ -317,7 +340,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
                 ? {}
                 : { operationName: body.operationName as string }),
             };
-            scope = new Operation(metadata, settings.security.limits, owner);
+            scope = new Operation(metadata, settings.security.limits, owner, observed.get(request));
             const current = scope;
             const disconnected = () => {
               if (!reply.raw.writableEnded) current.abort();
@@ -405,13 +428,25 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
               current.check();
               const encoded = encodeResult(result, settings.security.limits.maxResultBytes);
               current.check();
-              if (result.errors?.length) counters.rejected++;
+              if (result.errors?.length) {
+                counters.rejected++;
+                const code = result.errors[0]?.extensions?.code;
+                current.observation?.reject(
+                  failure(
+                    typeof code === 'string' &&
+                      ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(code)
+                      ? (code as 'EK_GQL_FORBIDDEN')
+                      : 'EK_GQL_EXECUTION',
+                  ),
+                );
+              }
               return reply.type('application/json').send(encoded);
             } finally {
               detach();
             }
           } catch (error) {
             counters.rejected++;
+            observed.get(request)?.reject(error);
             return rejected(reply, error, settings.security.limits.maxResultBytes);
           } finally {
             detach();

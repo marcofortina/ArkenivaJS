@@ -68,6 +68,7 @@ export async function fixture(
     databases?: ApplicationOptions['databases'];
     environment?: ApplicationOptions['service']['environment'];
     port?: number;
+    telemetry?: ApplicationOptions['telemetry'];
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -133,6 +134,7 @@ export async function fixture(
         ...(options.http2 === undefined ? {} : { http2: options.http2 }),
       },
       logging: { level: 'debug' },
+      ...(options.telemetry ? { telemetry: options.telemetry } : {}),
       ...(options.databases ? { databases: options.databases } : {}),
       ...(authenticated
         ? { security: { issuer, audience: 'api://graphql', algorithms: ['ES256'] } }
@@ -140,7 +142,12 @@ export async function fixture(
       plugins: [
         loggingPlugin({ destination: sink }),
         ...(authenticated ? [securityPlugin({ allowInsecureLoopback: true })] : []),
-        apiPlugin({ dependencies: authenticated ? ['security'] : [] }),
+        apiPlugin({
+          dependencies: [
+            ...(authenticated ? ['security'] : []),
+            ...(options.telemetry ? ['telemetry'] : []),
+          ],
+        }),
         ...(options.plugins ?? []),
         graphqlPlugin(settings),
       ],

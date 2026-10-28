@@ -96,6 +96,10 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'graphql.kind',
+  'graphql.outcome',
+  'graphql.category',
+  'graphql.field_group',
   'kafka.cluster',
   'kafka.topic',
   'kafka.partition',
@@ -169,6 +173,10 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'graphql.kind': ['query', 'mutation', 'subscription', 'invalid'],
+  'graphql.outcome': ['ok', 'rejected', 'error', 'timeout', 'aborted'],
+  'graphql.category': ['authorization', 'complexity', 'size', 'policy'],
+  'graphql.field_group': ['business', 'metadata'],
   'kafka.outcome': [
     'connected',
     'connect-error',
@@ -350,6 +358,12 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'arkenivajs.graphql.requests': '{operation}',
+  'arkenivajs.graphql.operation.duration': 's',
+  'arkenivajs.graphql.operation.complexity': '1',
+  'arkenivajs.graphql.field.duration': 's',
+  'arkenivajs.graphql.loader.batch_size': '{item}',
+  'arkenivajs.graphql.denied': '{rejection}',
   'kafka.records.confirmed': '{message}',
   'kafka.publish.value.bytes': 'By',
   'kafka.publish.key.bytes': 'By',

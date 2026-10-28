@@ -6,6 +6,7 @@ import { KitError } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
 import type { GraphqlExecutionLimits, GraphqlRequestContext } from './contracts.js';
 import { failure } from './policy.js';
+import type { Observation } from './observation.js';
 
 /** Public timeout does not relinquish ownership of still-running application work. */
 export class Operation {
@@ -24,6 +25,7 @@ export class Operation {
     context: Omit<GraphqlRequestContext, 'signal'>,
     readonly limits: GraphqlExecutionLimits,
     owner: AbortSignal,
+    readonly observation?: Observation,
   ) {
     this.context = Object.freeze({ ...context, signal: this.controller.signal });
     this.completion = new Promise((resolve) => {
