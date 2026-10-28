@@ -1,0 +1,268 @@
+diff --git a/deps/librdkafka.gyp b/deps/librdkafka.gyp
+--- a/deps/librdkafka.gyp
++++ b/deps/librdkafka.gyp
+@@ -35 +35 @@
+-                  "make", "-j", "-C", "librdkafka", "libs", "install-subdirs"
++                  "make", "-j2", "-C", "librdkafka", "libs", "install-subdirs"
+diff --git a/deps/librdkafka/mklove/Makefile.base b/deps/librdkafka/mklove/Makefile.base
+--- a/deps/librdkafka/mklove/Makefile.base
++++ b/deps/librdkafka/mklove/Makefile.base
+@@ -138 +138 @@
+-	(_tmp=$$(mktemp arstaticXXXXXX) ; \
++	(_tmp=$$(mktemp arstaticXXXXXX) ; _libs=$$(mktemp -d arstaticlibsXXXXXX) ; _index=0 ; \
+@@ -141 +141,2 @@
+-		echo "ADDLIB $$_f" >> $$_tmp ; \
++		cp "$$_f" "$$_libs/lib$$_index.a" ; \
++		echo "ADDLIB $$_libs/lib$$_index.a" >> $$_tmp ; _index=$$((_index + 1)) ; \
+@@ -147 +148 @@
+-	rm $$_tmp)
++	rm "$$_tmp" "$$_libs"/*.a ; rmdir "$$_libs")
+diff --git a/lib/kafkajs/_common.js b/lib/kafkajs/_common.js
+--- a/lib/kafkajs/_common.js
++++ b/lib/kafkajs/_common.js
+@@ -535,0 +536,13 @@
++function exactOffset(value) {
++  if ((typeof value === 'number' && !Number.isSafeInteger(value)) ||
++      !['number', 'string', 'bigint'].includes(typeof value) ||
++      !/^-?(?:0|[1-9][0-9]*)$/.test(String(value))) {
++    throw new error.KafkaJSError('The Kafka offset is not an exact integer', { code: error.ErrorCodes.ERR__INVALID_ARG });
++  }
++  const offset = BigInt(value);
++  if (offset < -9223372036854775808n || offset > 9223372036854775807n) {
++    throw new error.KafkaJSError('The Kafka offset exceeds the signed 64-bit range', { code: error.ErrorCodes.ERR__INVALID_ARG });
++  }
++  return offset;
++}
++
+@@ -541 +554 @@
+-    offset: Number(tpo.offset),
++    offset: exactOffset(tpo.offset),
+@@ -558 +571 @@
+-    offset: tpo.offset ? Number(tpo.offset) : null,
++    offset: tpo.offset == null ? null : exactOffset(tpo.offset),
+@@ -576 +589 @@
+-    offset: tpo.offset ? tpo.offset.toString() : null,
++    offset: tpo.offsetString ?? (tpo.offset == null ? null : exactOffset(tpo.offset).toString()),
+@@ -639 +652 @@
+-        const header = {};
++        const header = Object.create(null);
+@@ -644 +657 @@
+-      const header = {};
++      const header = Object.create(null);
+@@ -1174,0 +1188 @@
++  exactOffset,
+diff --git a/lib/kafkajs/_consumer.js b/lib/kafkajs/_consumer.js
+--- a/lib/kafkajs/_consumer.js
++++ b/lib/kafkajs/_consumer.js
+@@ -6,0 +7 @@
++  exactOffset,
+@@ -187,0 +189 @@
++  #maxCachedMessages = Number.MAX_SAFE_INTEGER;
+@@ -383 +385 @@
+-          offset: lastConsumedOffsets.offset + 1,
++          offset: lastConsumedOffsets.offset + 1n,
+@@ -748,0 +751,8 @@
++    if (Object.hasOwn(rdKafkaConfig, 'js.consumer.max.cache.messages')) {
++      const limit = rdKafkaConfig['js.consumer.max.cache.messages'];
++      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10000) {
++        throw new error.KafkaJSError('The consumer message cache limit is invalid', { code: error.ErrorCodes.ERR__INVALID_ARG });
++      }
++      this.#maxCachedMessages = limit;
++      delete rdKafkaConfig['js.consumer.max.cache.messages'];
++    }
+@@ -880 +890 @@
+-      headers = {};
++      headers = Object.create(null);
+@@ -885 +895 @@
+-          } else if (headers[key].constructor === Array) {
++          } else if (Array.isArray(headers[key])) {
+@@ -943,7 +953 @@
+-    const offset = +offsetToResolve;
+-
+-    if (isNaN(offset)) {
+-      /* Not much we can do but throw and log an error. */
+-      const e = new error.KafkaJSError(`Invalid offset to resolve: ${offsetToResolve}`, { code: error.ErrorCodes.ERR__INVALID_ARG });
+-      throw e;
+-    }
++    const offset = exactOffset(offsetToResolve);
+@@ -965 +969 @@
+-        offset + 1,
++        offset + 1n,
+@@ -1016,3 +1020,4 @@
+-    if (Number.isInteger(watermarkOffsets.highOffset) &&
+-        watermarkOffsets.highOffset >= 0) {
+-      highWatermark = watermarkOffsets.highOffset.toString();
++    if ((watermarkOffsets.highOffsetString !== undefined || Number.isSafeInteger(watermarkOffsets.highOffset)) &&
++        exactOffset(watermarkOffsets.highOffsetString ?? watermarkOffsets.highOffset) >= 0n) {
++      const highOffset = exactOffset(watermarkOffsets.highOffsetString ?? watermarkOffsets.highOffset);
++      highWatermark = highOffset.toString();
+@@ -1021,2 +1026,2 @@
+-      offsetLag_ = (watermarkOffsets.highOffset - 1) - messages[messages.length - 1].offset;
+-      offsetLagLow_ = (watermarkOffsets.highOffset - 1) - messages[0].offset;
++      offsetLag_ = (highOffset - 1n) - messages[messages.length - 1].offset;
++      offsetLagLow_ = (highOffset - 1n) - messages[0].offset;
+@@ -1025,2 +1030,2 @@
+-      offsetLag_ = offsetLag_ > 0 ? offsetLag_ : 0;
+-      offsetLagLow_ = offsetLagLow_ > 0 ? offsetLagLow_ : 0;
++      offsetLag_ = offsetLag_ > 0n ? offsetLag_ : 0n;
++      offsetLagLow_ = offsetLagLow_ > 0n ? offsetLagLow_ : 0n;
+@@ -1072 +1077 @@
+-      _lastResolvedOffset: { offset: -1, leaderEpoch: -1 },
++      _lastResolvedOffset: { offset: -1n, leaderEpoch: -1 },
+@@ -1165 +1170 @@
+-      this.#internalClient.consume(size, (err, messages) =>
++      this.#internalClient.consume(Math.min(size, this.#maxCachedMessages), (err, messages) =>
+@@ -1178,0 +1184,3 @@
++      for (const message of messages) {
++        message.offset = exactOffset(message.offsetString ?? message.offset);
++      }
+@@ -1685 +1693 @@
+-        this.#internalClient._offsetsStoreSingle(m.topic, m.partition, m.offset + 1, m.leaderEpoch);
++        this.#internalClient._offsetsStoreSingle(m.topic, m.partition, m.offset + 1n, m.leaderEpoch);
+@@ -1720 +1728 @@
+-    let lastOffsetProcessed = { offset: -1, leaderEpoch: -1 };
++    let lastOffsetProcessed = { offset: -1n, leaderEpoch: -1 };
+@@ -1723 +1731 @@
+-    const lastOffset = +(lastMessage.offset);
++    const lastOffset = lastMessage.offset;
+@@ -1768,2 +1776,2 @@
+-      const offsetToSeekTo = lastOffsetProcessed.offset === -1 ? firstMessage.offset : (lastOffsetProcessed.offset + 1);
+-      const leaderEpoch = lastOffsetProcessed.offset === -1 ? firstMessage.leaderEpoch : lastOffsetProcessed.leaderEpoch;
++      const offsetToSeekTo = lastOffsetProcessed.offset === -1n ? firstMessage.offset : (lastOffsetProcessed.offset + 1n);
++      const leaderEpoch = lastOffsetProcessed.offset === -1n ? firstMessage.leaderEpoch : lastOffsetProcessed.leaderEpoch;
+@@ -1793 +1801 @@
+-          offset: firstMessage.offset - 1,
++          offset: firstMessage.offset - 1n,
+@@ -2195 +2203 @@
+-          offset: seekOffset.offset + 1,
++          offset: seekOffset.offset + 1n,
+@@ -2241 +2249 @@
+-    if (isNaN(rdKafkaTopicPartitionOffset.offset) || (rdKafkaTopicPartitionOffset.offset < 0 && rdKafkaTopicPartitionOffset.offset !== -2 && rdKafkaTopicPartitionOffset.offset !== -3)) {
++    if (rdKafkaTopicPartitionOffset.offset < 0n && rdKafkaTopicPartitionOffset.offset !== -2n && rdKafkaTopicPartitionOffset.offset !== -3n) {
+diff --git a/lib/kafkajs/_producer.js b/lib/kafkajs/_producer.js
+--- a/lib/kafkajs/_producer.js
++++ b/lib/kafkajs/_producer.js
+@@ -24,0 +25 @@
++  exactOffset,
+@@ -401,0 +403,3 @@
++    let exact;
++    try { exact = exactOffset(report.offsetString ?? report.offset).toString(); }
++    catch (error) { opaque.reject(error); return; }
+@@ -406 +410 @@
+-      baseOffset: report.offset,
++      baseOffset: exact,
+diff --git a/lib/topic-partition.js b/lib/topic-partition.js
+--- a/lib/topic-partition.js
++++ b/lib/topic-partition.js
+@@ -85,0 +86,5 @@
++  } else if (typeof offset === 'bigint') {
++    if (offset < -9223372036854775808n || offset > 9223372036854775807n) {
++      throw new RangeError('The Kafka offset exceeds the signed 64-bit range');
++    }
++    this.offset = offset;
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -13 +13 @@
+-    "install": "node-pre-gyp install --fallback-to-build",
++    "install": "node-pre-gyp install --build-from-source --fallback-to-build",
+diff --git a/src/callbacks.cc b/src/callbacks.cc
+--- a/src/callbacks.cc
++++ b/src/callbacks.cc
+@@ -45,0 +46,2 @@
++      Nan::Set(tp_obj, Nan::New("offsetString").ToLocalChecked(),
++        Nan::New(std::to_string(tp.offset)).ToLocalChecked());
+@@ -317,0 +320,2 @@
++    Nan::Set(jsobj, Nan::New("offsetString").ToLocalChecked(),
++      Nan::New(std::to_string(event.offset)).ToLocalChecked());
+diff --git a/src/common.cc b/src/common.cc
+--- a/src/common.cc
++++ b/src/common.cc
+@@ -43,0 +44,5 @@
++    if (v->IsBigInt()) {
++      bool lossless = false;
++      const int64_t value = v.As<v8::BigInt>()->Int64Value(&lossless);
++      return lossless ? value : def;
++    }
+@@ -374,0 +380,2 @@
++        Nan::Set(obj, Nan::New("offsetString").ToLocalChecked(),
++          Nan::New(std::to_string(topic_partition->offset())).ToLocalChecked());
+@@ -443,0 +451,2 @@
++      Nan::Set(obj, Nan::New("offsetString").ToLocalChecked(),
++        Nan::New(std::to_string(topic_partition.offset)).ToLocalChecked());
+@@ -772,0 +782 @@
++        Nan::SetPrototype(v8header, Nan::Null()).FromJust();
+@@ -773,0 +784 @@
++          it->value_string() == nullptr ? Nan::Null().As<v8::Value>() :
+@@ -801,0 +813,2 @@
++    Nan::Set(pack, Nan::New("offsetString").ToLocalChecked(),
++      Nan::New(std::to_string(message->offset())).ToLocalChecked());
+@@ -1349,0 +1363,2 @@
++      Nan::Set(partition_object, Nan::New("offsetString").ToLocalChecked(),
++        Nan::New(std::to_string(partition->offset)).ToLocalChecked());
+@@ -1595,0 +1611,2 @@
++    Nan::Set(partition_object, Nan::New("offsetString").ToLocalChecked(),
++      Nan::New(std::to_string(partition->offset)).ToLocalChecked());
+diff --git a/src/kafka-consumer.cc b/src/kafka-consumer.cc
+--- a/src/kafka-consumer.cc
++++ b/src/kafka-consumer.cc
+@@ -1224 +1224,8 @@
+-  int64_t offset = Nan::To<int64_t>(info[2]).FromJust();
++  int64_t offset;
++  if (info[2]->IsBigInt()) {
++    bool lossless = false;
++    offset = info[2].As<v8::BigInt>()->Int64Value(&lossless);
++    if (!lossless) return Nan::ThrowRangeError("The Kafka offset exceeds the signed 64-bit range");
++  } else {
++    offset = Nan::To<int64_t>(info[2]).FromJust();
++  }
+@@ -1532,0 +1540,2 @@
++    Nan::Set(offsetsObj, Nan::New("lowOffsetString").ToLocalChecked(),
++      Nan::New(std::to_string(low_offset)).ToLocalChecked());
+@@ -1534,0 +1544,2 @@
++    Nan::Set(offsetsObj, Nan::New("highOffsetString").ToLocalChecked(),
++      Nan::New(std::to_string(high_offset)).ToLocalChecked());
+diff --git a/src/producer.cc b/src/producer.cc
+--- a/src/producer.cc
++++ b/src/producer.cc
+@@ -598 +598 @@
+-        // Valid types for the header are string or buffer.
++        // Header values retain null, text and byte semantics.
+@@ -603,2 +603,3 @@
+-        if (node::Buffer::HasInstance(v8Value)) {
+-          const char* value = node::Buffer::Data(v8Value);
++        if (v8Value->IsNull()) {
++          headers.push_back(RdKafka::Headers::Header(key, nullptr, 0));
++        } else if (node::Buffer::HasInstance(v8Value)) {
+@@ -605,0 +607 @@
++          const char* value = value_len == 0 ? "" : node::Buffer::Data(v8Value);
+@@ -609 +611 @@
+-          std::string value(*uValue);
++          std::string value(*uValue, uValue.length());
+@@ -613 +615 @@
+-          Nan::ThrowError("Header value must be a string or buffer");
++          return Nan::ThrowError("Header value must be null, a string or a buffer");
+diff --git a/src/workers.cc b/src/workers.cc
+--- a/src/workers.cc
++++ b/src/workers.cc
+@@ -167,0 +168,2 @@
++  Nan::Set(offsetsObj, Nan::New("lowOffsetString").ToLocalChecked(),
++    Nan::New(std::to_string(m_low_offset)).ToLocalChecked());
+@@ -169,0 +172,2 @@
++  Nan::Set(offsetsObj, Nan::New("highOffsetString").ToLocalChecked(),
++    Nan::New(std::to_string(m_high_offset)).ToLocalChecked());
+@@ -800,0 +805,2 @@
++        Nan::Set(eofEvent, Nan::New("offsetString").ToLocalChecked(),
++          Nan::New(std::to_string(msg->offset())).ToLocalChecked());
+@@ -950,0 +957,2 @@
++          Nan::Set(eofEvent, Nan::New("offsetString").ToLocalChecked(),
++            Nan::New(std::to_string(message->offset())).ToLocalChecked());
+diff --git a/types/kafkajs.d.ts b/types/kafkajs.d.ts
+--- a/types/kafkajs.d.ts
++++ b/types/kafkajs.d.ts
+@@ -211 +211 @@
+-  [key: string]: Buffer | string | (Buffer | string)[] | undefined
++  [key: string]: Buffer | string | null | (Buffer | string | null)[] | undefined
+@@ -356,0 +357,2 @@
++  /** Hard limit on prefetched messages when explicitly configured. */
++  'js.consumer.max.cache.messages'?: number,
