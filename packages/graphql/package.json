@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@arkenivajs/telemetry": "workspace:*",
+    "@arkenivajs/metering": "workspace:*",
     "playwright-core": "1.64.0",
     "graphql-config": "6.0.0",
     "@types/react": "19.3.0",

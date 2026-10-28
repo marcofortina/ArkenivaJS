@@ -15,6 +15,9 @@ export class Operation {
   readonly began = performance.now();
   readonly completion: Promise<void>;
   fields = 0;
+  resolvedFields = 0;
+  loaderBatches = 0;
+  loaderItems = 0;
   mutationEpoch = 0;
   private readonly pending = new Set<Promise<unknown>>();
   private release!: () => void;

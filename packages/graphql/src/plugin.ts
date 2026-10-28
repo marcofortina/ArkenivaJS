@@ -28,6 +28,7 @@ import {
   traceOperation,
 } from './observation.js';
 import type { Observers } from './observation.js';
+import { RequestUsage } from './usage.js';
 
 const AUTHORITY = Symbol('graphql.authority');
 const authority: SupportPluginFactory = (options) => {
@@ -156,6 +157,8 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         throw failure();
       server.register(async (child) => {
         const observed = new WeakMap<FastifyRequest, Observation>();
+        const metered = new WeakMap<FastifyRequest, RequestUsage>();
+        const requestBytes = new WeakMap<FastifyRequest, number>();
         const traced = new WeakSet<FastifyRequest>();
         function inbound<T>(request: FastifyRequest, work: () => T | Promise<T>): T | Promise<T> {
           if (request.routeOptions.url !== settings.path || traced.has(request)) return work();
@@ -167,19 +170,28 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           const observation = new Observation(observers);
           observed.set(request, observation);
           reply.raw.once('close', () => {
-            if (!reply.raw.writableEnded) observation.finish(499);
+            if (!reply.raw.writableEnded) {
+              observation.finish(499);
+              metered.get(request)?.finish(499);
+            }
           });
+        });
+        child.addHook('onSend', async (request, _reply, payload) => {
+          metered.get(request)?.response(payload);
+          return payload;
         });
         child.addHook('onResponse', async (request, reply) => {
           observed.get(request)?.finish(reply.statusCode);
+          metered.get(request)?.finish(reply.statusCode);
         });
         const { default: mercurius } = await import('mercurius');
         child.removeContentTypeParser('application/json');
         child.addContentTypeParser(
           'application/json',
           { parseAs: 'buffer' },
-          (_request, body, done) => {
+          (request, body, done) => {
             try {
+              requestBytes.set(request, (body as Buffer).length);
               done(
                 null,
                 JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body as Buffer)),
@@ -196,9 +208,10 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           jit: 0,
           graphiql: false,
           allowBatchedQueries: false,
-          errorFormatter(result) {
+          errorFormatter(result, engineContext) {
             return {
-              statusCode: 200,
+              // Late upstream error formatting must preserve the admitted timeout response.
+              statusCode: scopes.get(engineContext)?.controller.signal.aborted ? 504 : 200,
               response: {
                 data: result.data ?? null,
                 errors: result.errors.map((error) => {
@@ -400,72 +413,103 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
               ...(tenant ? { auth: tenant } : {}),
             });
             Object.defineProperty(current, 'context', { value: authenticated });
-            const engineContext = {};
-            scopes.set(engineContext, current);
-            ownMetadata(engineContext, {
-              scope: current,
-              settings,
-              authorizeIntrospection() {
-                current.check();
-                if (
-                  settings.security.introspection !== 'authenticated' ||
-                  !authenticated.identity ||
-                  !auth
-                )
-                  throw failure('EK_GQL_FORBIDDEN');
-                try {
-                  auth.requireScope(authenticated.identity, settings.security.introspectionScope!);
-                } catch {
-                  throw failure('EK_GQL_FORBIDDEN');
-                }
-              },
-            });
-            methods.set(current, request.method);
-            try {
-              // Use the upstream parser before Mercurius to exclude its JSON-encoded AST fallback.
-              let document;
+            const usage = new RequestUsage(
+              observers,
+              current,
+              tenant,
+              request.id,
+              request.method,
+              settings.path,
+              requestBytes.get(request) ?? 0,
+            );
+            metered.set(request, usage);
+            return await usage.http(async () => {
+              const engineContext = {};
+              scopes.set(engineContext, current);
+              ownMetadata(engineContext, {
+                scope: current,
+                settings,
+                authorizeIntrospection() {
+                  current.check();
+                  if (
+                    settings.security.introspection !== 'authenticated' ||
+                    !authenticated.identity ||
+                    !auth
+                  )
+                    throw failure('EK_GQL_FORBIDDEN');
+                  try {
+                    auth.requireScope(
+                      authenticated.identity,
+                      settings.security.introspectionScope!,
+                    );
+                  } catch {
+                    throw failure('EK_GQL_FORBIDDEN');
+                  }
+                },
+              });
+              methods.set(current, request.method);
               try {
-                document = parse(body.query as string, {
-                  maxTokens: settings.security.limits.maxDocumentBytes,
-                });
-              } catch {
-                throw failure('EK_GQL_VALIDATION');
-              }
-              const result = await current.run(() =>
-                traceOperation(
-                  observers,
-                  getOperationAST(document, body.operationName as string | undefined)?.operation,
-                  () =>
-                    reply.graphql(
-                      document,
-                      engineContext,
-                      variables as Record<string, unknown> | undefined,
-                      body.operationName as string | undefined,
-                    ),
-                ),
-              );
-              current.check();
-              const encoded = encodeResult(result, settings.security.limits.maxResultBytes);
-              current.check();
-              if (result.errors?.length) {
-                counters.rejected++;
-                const code = result.errors[0]?.extensions?.code;
-                current.observation?.reject(
-                  failure(
-                    typeof code === 'string' &&
-                      ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(code)
-                      ? (code as 'EK_GQL_FORBIDDEN')
-                      : 'EK_GQL_EXECUTION',
+                // Use the upstream parser before Mercurius to exclude its JSON-encoded AST fallback.
+                let document;
+                try {
+                  document = parse(body.query as string, {
+                    maxTokens: settings.security.limits.maxDocumentBytes,
+                  });
+                } catch {
+                  throw failure('EK_GQL_VALIDATION');
+                }
+                const result = await current.run(() =>
+                  usage.operation(
+                    getOperationAST(document, body.operationName as string | undefined)?.operation,
+                    () =>
+                      traceOperation(
+                        observers,
+                        getOperationAST(document, body.operationName as string | undefined)
+                          ?.operation,
+                        () =>
+                          reply.graphql(
+                            document,
+                            engineContext,
+                            variables as Record<string, unknown> | undefined,
+                            body.operationName as string | undefined,
+                          ),
+                      ),
                   ),
                 );
+                current.check();
+                const encoded = encodeResult(result, settings.security.limits.maxResultBytes);
+                current.check();
+                if (result.errors?.length) {
+                  counters.rejected++;
+                  const code = result.errors[0]?.extensions?.code;
+                  current.observation?.reject(
+                    failure(
+                      typeof code === 'string' &&
+                        ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(code)
+                        ? (code as 'EK_GQL_FORBIDDEN')
+                        : 'EK_GQL_EXECUTION',
+                    ),
+                  );
+                  usage.reject(
+                    failure(
+                      typeof code === 'string' &&
+                        ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(code)
+                        ? (code as 'EK_GQL_FORBIDDEN')
+                        : 'EK_GQL_EXECUTION',
+                    ),
+                  );
+                }
+                current.end();
+                return reply.type('application/json').send(encoded);
+              } finally {
+                detach();
               }
-              return reply.type('application/json').send(encoded);
-            } finally {
-              detach();
-            }
+            });
           } catch (error) {
             counters.rejected++;
             observed.get(request)?.reject(error);
+            metered.get(request)?.reject(error);
+            scope?.end();
             return rejected(reply, error, settings.security.limits.maxResultBytes);
           } finally {
             detach();

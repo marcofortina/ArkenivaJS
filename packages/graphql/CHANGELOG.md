@@ -14,3 +14,5 @@
 - Verify physical admission at 128 concurrent operations and preserve actual mutation ownership through forced shutdown.
 - Export normalized operation, complexity, loader and denial metrics through the existing telemetry provider, with detailed field timing and no duplicated HTTP byte measurements.
 - Preserve W3C HTTP trace parents and attach normalized GraphQL child spans without replaying business work when diagnostic context fails.
+- Attach verified tenant usage to one HTTP parent and an owned GraphQL child, with exact parent bytes, successful field counts and actual loader items.
+- Preserve the timeout status during late upstream error formatting and report physically unfinished work with incomplete or unknown usage outcomes.

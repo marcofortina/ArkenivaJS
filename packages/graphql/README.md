@@ -36,4 +36,10 @@ Tracing retains the framework's `http.server.request` server span and W3C `trace
 
 Include the configured endpoint in the telemetry plugin's finite route catalog, for example `labelValues: { route: ['/graphql'] }`, to enable existing HTTP route measurements and span attributes. This administrative catalog is not populated from request URLs.
 
-This package remains under development. Subscriptions, parented tenant usage sessions and complete release evidence are pending. Subscription configuration is rejected at startup until implemented and verified. Do not treat this intermediate query/mutation transport as a completed GraphQL release.
+With metering enabled, verified authenticated requests create exactly one HTTP usage parent and one GraphQL execution child. Resolver and downstream service work inherits the child scope. Anonymous public queries create no synthetic tenant or tenant event. HTTP request/response byte totals belong only to the parent; the child records `graphql.operations`, successful `graphql.resolved_fields`, actual `graphql.loader_batches` and `graphql.loader_items`.
+
+The input byte count comes from the received JSON buffer, rather than a claimed Content-Length or re-encoded variables. Output bytes are measured from the serialized response. Denied fields do not count as successful resolutions. Events retain verified tenant provenance, request identity and `parentOperationId`; query names, documents, variables, token values and payload contents are not copied into them.
+
+The HTTP event ends with the response. If physical work remains after timeout, its quality reports unobserved downstream work; the GraphQL child stays owned until that work settles and reports an unknown outcome. A timeout does not prove mutation rollback. Meter capacity/export diagnostics remain in the existing bounded meter; accounting failures never repeat business work or bypass field authorization. A meter rejection of tenant provenance fails authentication closed.
+
+This package remains under development. Subscriptions and complete release evidence are pending. Subscription configuration is rejected at startup until implemented and verified. Do not treat this intermediate query/mutation transport as a completed GraphQL release.

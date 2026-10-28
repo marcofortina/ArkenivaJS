@@ -626,7 +626,7 @@ test('EK-METER-001 byte bounds reject oversized records and saturated queues wit
   const f = fixture();
   const tenant = f.mint('tenant-A');
   const dimensions = Object.fromEntries(
-    Array.from({ length: 118 }, (_, index) => [
+    Array.from({ length: 112 }, (_, index) => [
       'u.' + 'a'.repeat(70) + String(index).padStart(3, '0'),
       'milliseconds' as const,
     ]),
