@@ -3,7 +3,7 @@
 
 import { Ajv } from 'ajv';
 import type { AnySchema } from 'ajv';
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepStrictEqual, types } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { isAbsolute } from 'node:path';
 import { KitError } from './errors.js';
@@ -404,17 +404,17 @@ export class ConfigStore<T extends Record<string, unknown>> implements ConfigSer
  */
 export function captureAbortSignal(input: unknown): AbortSignal {
   try {
-    if (!(input instanceof AbortSignal)) throw new Error();
+    if (!input || typeof input !== 'object' || types.isProxy(input)) throw new Error();
     let current: object | null = input,
       depth = 0;
     while (current !== AbortSignal.prototype) {
-      if (!current || ++depth > 64) throw new Error();
+      if (!current || types.isProxy(current) || ++depth > 64) throw new Error();
       for (const key of ['aborted', 'reason', 'addEventListener', 'removeEventListener'])
         if (Object.getOwnPropertyDescriptor(current, key)) throw new Error();
       current = Object.getPrototypeOf(current) as object | null;
     }
     Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!.call(input);
-    return AbortSignal.any([input]);
+    return AbortSignal.any([input as AbortSignal]);
   } catch {
     throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'The operation signal is invalid' });
   }
