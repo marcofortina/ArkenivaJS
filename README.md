@@ -103,6 +103,11 @@ Redirect/POST login and controlled logout with shared replay protection. Its
 [HTTPS form example](examples/saml/README.md) and [SQL mapping example](examples/postgres/saml.md)
 keep browser correlation and local tenant authorization explicit.
 
+The optional [SCIM server](packages/security-scim/README.md) adds authenticated
+User/Group provisioning on the existing HTTP API. Its [public consumer](examples/scim/README.md)
+checks native TLS transports and its [PostgreSQL reference](examples/postgres/scim.md)
+keeps tenant ownership, idempotency and ETag races inside shared transactions.
+
 The [identifier utility](packages/data-identifiers/README.md) uses native UUIDv4
 and the approved UUID library for UUIDv7, with strict version/canonical policy.
 The [utilities example](examples/utilities/README.md) runs without external services.

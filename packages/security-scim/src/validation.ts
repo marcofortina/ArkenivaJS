@@ -5,9 +5,10 @@ import { types, toUSVString } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type { ErrorCode } from '@arkenivajs/core';
 
-export function failure(code: ErrorCode = 'EK_SCIM_BAD_REQUEST'): KitError {
+export function failure(code: ErrorCode = 'EK_SCIM_BAD_REQUEST', unknown = false): KitError {
   return new KitError({
     code,
+    ...(unknown ? { details: { outcome: 'unknown' } } : {}),
     message:
       code === 'EK_SCIM_UNAUTHORIZED'
         ? 'The SCIM request is not authorized'
@@ -115,10 +116,60 @@ export function expression(value: unknown, maximumDepth = 8): string {
   if (
     quoted ||
     stack.length ||
+    /\b(?:and|or|not)\s*[\])]*\s*$/i.test(plain) ||
     /\b(?:__proto__|constructor|prototype)\b/i.test(plain) ||
     (plain.match(/\bor\b/gi)?.length ?? 0) > 8 ||
     (plain.match(/\b(?:and|or)\b/gi)?.length ?? 0) > 32
   )
     throw failure();
   return selected;
+}
+
+/** Capture top-level trusted ports without evaluating caller accessors or copying identity provenance. */
+export function fields(input: unknown, allowed: readonly string[]): Record<string, unknown> {
+  if (
+    !input ||
+    typeof input !== 'object' ||
+    types.isProxy(input) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(input))
+  )
+    throw failure('EK_CONFIG_INVALID');
+  const output: Record<string, unknown> = Object.create(null);
+  for (const key of Reflect.ownKeys(input)) {
+    const descriptor = Object.getOwnPropertyDescriptor(input, key);
+    if (
+      typeof key !== 'string' ||
+      !allowed.includes(key) ||
+      !descriptor ||
+      !('value' in descriptor)
+    )
+      throw failure('EK_CONFIG_INVALID');
+    output[key] = descriptor.value;
+  }
+  return output;
+}
+export function integer(value: unknown, maximum: number, minimum = 1): number {
+  if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum)
+    throw failure('EK_CONFIG_INVALID');
+  return value as number;
+}
+export function method<T>(input: unknown, name: string): T {
+  if (!input || typeof input !== 'object' || types.isProxy(input))
+    throw failure('EK_CONFIG_INVALID');
+  let current: object | null = input;
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw failure('EK_CONFIG_INVALID');
+    const descriptor = Object.getOwnPropertyDescriptor(current, name);
+    if (descriptor) {
+      if (
+        !('value' in descriptor) ||
+        typeof descriptor.value !== 'function' ||
+        types.isProxy(descriptor.value)
+      )
+        throw failure('EK_CONFIG_INVALID');
+      return Function.prototype.bind.call(descriptor.value, input) as T;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  throw failure('EK_CONFIG_INVALID');
 }

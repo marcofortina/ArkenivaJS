@@ -1,0 +1,21 @@
+{
+  "name": "@arkenivajs/example-scim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/unit/*.test.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/security-scim": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "jose": "6.2.13",
+    "scimmy": "1.3.5"
+  },
+  "license": "AGPL-3.0-or-later"
+}

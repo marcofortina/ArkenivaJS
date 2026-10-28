@@ -187,6 +187,55 @@ test('Provider pages remain exactly one-based and native out-of-range pages stay
     );
 });
 
+test('Native schema-aware comparisons respect caseExact and preserve value-path resource values', async () => {
+  const input = new SCIMMY.Schemas.User({
+    ...user,
+    id: 'Owned-Identifier',
+    userName: 'MixedCase',
+    emails: [{ type: 'work', value: 'Initial@Fixture.invalid' }],
+  });
+  assert.equal(
+    new SCIMMY.Types.Filter('userName eq "mixedcase"').match(
+      [input],
+      SCIMMY.Schemas.User.definition,
+    ).length,
+    1,
+  );
+  assert.equal(
+    new SCIMMY.Types.Filter('userName sw "MIXED"').match([input], SCIMMY.Schemas.User.definition)
+      .length,
+    1,
+  );
+  assert.equal(
+    new SCIMMY.Types.Filter('id eq "owned-identifier"').match(
+      [input],
+      SCIMMY.Schemas.User.definition,
+    ).length,
+    0,
+  );
+  assert.equal(
+    new SCIMMY.Types.Filter('schemas eq "' + userSchema + '"').match(
+      [input],
+      SCIMMY.Schemas.User.definition,
+    ).length,
+    1,
+  );
+  assert.equal(new SCIMMY.Types.Filter('userName eq "mixedcase"').match([input]).length, 0);
+  const changed = await apply(
+    'Users',
+    JSON.parse(JSON.stringify(input)) as ScimRecord,
+    operation('replace', 'emails[type eq "WORK"].value', 'Changed@Fixture.invalid'),
+  );
+  assert.equal(changed.userName, 'MixedCase');
+  assert.deepEqual(
+    (changed.emails as { value: string; type: string }[]).map((item) => ({
+      value: item.value,
+      type: item.type,
+    })),
+    [{ value: 'Changed@Fixture.invalid', type: 'work' }],
+  );
+});
+
 test('Plain-data boundary rejects accessors, proxies, cycles, pollution and excessive nesting without execution', () => {
   let invoked = 0;
   const accessor = { ...user };

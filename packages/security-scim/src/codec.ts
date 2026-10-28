@@ -33,9 +33,43 @@ export function record(
   if (direction === 'out') text(result.id, 256);
   return freezeData(result);
 }
-export function filter(input: unknown, maximumDepth = 8): string {
+export function attribute(kind: ResourceKind, input: unknown): string {
+  const name = text(input, 256);
+  const selected = native(() => schema(kind).definition.attribute(name));
+  if (selected.config.returned === false || selected.config.direction === 'in') throw failure();
+  return name;
+}
+export function filter(input: unknown, maximumDepth = 8, kind?: ResourceKind): string {
   const selected = expression(input, maximumDepth);
-  native(() => data(JSON.parse(JSON.stringify(new SCIMMY.Types.Filter(selected))) as unknown));
+  const parsed = native(() =>
+    data(JSON.parse(JSON.stringify(new SCIMMY.Types.Filter(selected))) as unknown),
+  );
+  const inspect = (value: unknown, prefix = ''): void => {
+    if (Array.isArray(value)) {
+      if (typeof value[0] === 'string') {
+        const offset = value[0] === 'not' ? 1 : 0,
+          operator = value[offset];
+        if (
+          typeof operator !== 'string' ||
+          !['eq', 'ne', 'co', 'sw', 'ew', 'gt', 'lt', 'ge', 'le', 'pr', 'np'].includes(operator) ||
+          value.length !== offset + (['pr', 'np'].includes(operator) ? 1 : 2)
+        )
+          throw failure();
+      } else {
+        if (!value.length) throw failure();
+        for (const item of value) inspect(item, prefix);
+      }
+    } else {
+      const entries = Object.entries(object(value));
+      if (!entries.length) throw failure();
+      for (const [name, expression] of entries) {
+        const path = prefix ? prefix + '.' + name : name;
+        if (kind) attribute(kind, path);
+        inspect(expression, path);
+      }
+    }
+  };
+  inspect(parsed);
   return selected;
 }
 function path(input: unknown, maximumDepth: number): string {

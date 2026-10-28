@@ -12,6 +12,8 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@arkenivajs/security-scim": "workspace:*",
+    "scimmy": "1.3.5",
     "@arkenivajs/realtime": "workspace:*",
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/database-postgres": "workspace:*",
