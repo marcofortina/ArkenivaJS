@@ -69,6 +69,7 @@ export function installLoaders(
           });
           try {
             observed();
+            scope.observation?.loader(requests.length);
             const results = await scope.run(() =>
               definition.load(Object.freeze(requests), scope.context),
             );

@@ -1,5 +1,7 @@
 # Changelog
 
+- Add fixed GraphQL dimensions and explicit operation, duration, complexity, item and rejection units.
+
 - Add explicit inbound trace-scope isolation and fixed socket event labels with native payload and duration units.
 
 ## 0.1.0

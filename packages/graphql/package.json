@@ -38,6 +38,7 @@
     "graphql-ws": "6.4.1"
   },
   "devDependencies": {
+    "@arkenivajs/telemetry": "workspace:*",
     "playwright-core": "1.64.0",
     "graphql-config": "6.0.0",
     "@types/react": "19.3.0",

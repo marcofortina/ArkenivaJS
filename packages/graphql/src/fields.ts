@@ -57,6 +57,7 @@ export async function authorizedField(
   output: GraphQLOutputType,
   execute: () => unknown | Promise<unknown>,
 ) {
+  const began = scope?.observation?.startField();
   try {
     if (!scope) throw failure('EK_GQL_FORBIDDEN');
     scope.check();
@@ -93,6 +94,11 @@ export async function authorizedField(
         ? failure(error.code)
         : failure('EK_GQL_EXECUTION');
     throw new GraphQLError(safe.message, { extensions: { code: safe.code } });
+  } finally {
+    scope?.observation?.field(
+      began,
+      info.parentType.name.startsWith('__') || info.fieldName.startsWith('__'),
+    );
   }
 }
 
