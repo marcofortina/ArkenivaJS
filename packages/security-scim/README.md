@@ -1,0 +1,11 @@
+# @arkenivajs/security-scim
+
+Typed SCIM 2.0 provider and HTTP contracts with bounded native schema, filter and PATCH support from `scimmy@1.3.5`. This package currently exports its data contracts. A public service factory and HTTP plugin are not yet exposed; it must not be deployed as a provisioning server.
+
+`ScimProvider` binds each list, read, create, replace, patch and delete to a verified tenant. Implementations must enforce ownership, immutable external identity mappings, uniqueness, idempotent retries and version predicates at an actual shared transactional boundary. An object satisfying the TypeScript tenant shape alone is not authentication. Changes to privileged membership require explicit application policy.
+
+The native data layer validates core User/Group schemas, checks filter grammar, validates patch shapes and paths, and strips write-only attributes from outbound resources. Before invoking the native library it rejects proxies, accessors, cycles, prototype keys and non-JSON values. Defaults bound JSON input to 256 KiB, depth 16 and 8192 nodes. Filter input is limited to 4096 bytes, depth eight, eight disjunctions and 32 logical joins; PATCH accepts at most 100 operations. Provider pages are checked as already paginated results and cannot be silently truncated or paged twice.
+
+The package includes a reviewed compatibility diff for the pinned native ESM implementation. Pathless PATCH replacement replaces each supplied attribute through the SDK's existing explicit-path replacement logic, including clearing collections. It does not append old group members. Native list responses starting beyond the result set are empty. The correction does not replace the SDK's schema, filter or PATCH engine, and does not change the provider's transaction responsibilities. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+Run `pnpm --filter @arkenivajs/security-scim build` and `pnpm --filter @arkenivajs/security-scim test:unit`. Tests execute the actual native schemas and patch engine, including removal of stale group membership, empty replacement arrays, filtered updates, out-of-range paging and hostile JSON inputs. Data-layer tests alone do not establish HTTP conformance, tenant authorization or multi-pod persistence guarantees.
