@@ -77,3 +77,6 @@ including controlled rollback and competing consumers.
 The [magic-link confirmation guide](magiclinks.md) verifies signed authorization,
 single-use redemption across separate Node processes, scanner-safe HTTPS GETs
 and explicit same-origin POST confirmation.
+
+The [persistent SSE guide](realtime.md) adds ordered tenant event partitions,
+explicit retention and replay after restarting the actual listener.

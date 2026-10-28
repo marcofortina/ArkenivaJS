@@ -159,3 +159,21 @@ scope. Health runs after owner initialization, before inbound listeners activate
 public provider facades still require application READY. Scoped hook integration
 tests use the actual authenticated disposable server and reject stale callbacks
 and pre-aborted operations. Health never closes the native owner's client.
+
+The optional `REDIS_PUBSUB_CAPABILITY` exposes `RedisPubsubProvider` without
+changing `app.redis` or placing ordinary commands in subscriber mode. Resolve it
+after READY, check its configured `connectionName`, and call
+`subscribe(channel, async (message, options) => {...}, {onFailure,signal?,timeoutMs?})`.
+Both capability types are also available from `@arkenivajs/database-redis/pubsub`
+without importing the native client factory. The owner applies the same reviewed
+channel prefix, TLS and ACL credentials to each dedicated native subscriber.
+
+Subscriptions cap at 32 connections, 1 MiB per message, 4 MiB queued text and
+1,024 queued messages. Handlers run serially with a live signal. Acquisition and
+handler timeout defaults to 15 seconds, range 1–15,000 ms. The caller's signal
+controls subscription lifetime; `close()` destroys only that subscription and
+waits for actual callback cleanup. Transport failure, overflow or a failed
+handler terminates the subscription and invokes the required safe `onFailure`
+callback once. No payload or native credential error is passed to that callback.
+Redis Pub/Sub has no replay; applications reconnect explicitly after failure.
+The parent adapter closes all owned subscribers before releasing its client.

@@ -11,6 +11,7 @@ overrides:
   # Keep the native Parse API while removing the legacy decoder's unlicensed buffers dependency.
   exceljs@4.4.0>unzipper: 0.12.5
 patchedDependencies:
+  '@fastify/sse@0.6.1': packages/realtime/compat/fastify-sse-bounded-output.diff
   soap@1.14.0: packages/soap/compat/soap-native-scalar-text.diff
   dev-null@0.1.1: packages/soap/compat/dev-null-license-metadata.diff
   fast-deep-equal@3.1.3: packages/data-json/compat/fast-deep-equal-json-members.diff

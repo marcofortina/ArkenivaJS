@@ -1,0 +1,50 @@
+{
+  "name": "@arkenivajs/realtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "compat",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node ../../scripts/test.mjs all",
+    "test:unit": "node ../../scripts/test.mjs unit",
+    "test:integration:nats": "node --test dist-test/integration/nats.integration.test.js",
+    "test:integration:redis": "node --test dist-test/integration/redis.integration.test.js",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/database-redis": "workspace:*",
+    "@fastify/websocket": "11.3.4",
+    "@fastify/sse": "0.6.1",
+    "fastify": "5.12.7"
+  },
+  "devDependencies": {
+    "@arkenivajs/messaging": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*",
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0",
+    "jose": "6.2.13"
+  },
+  "license": "AGPL-3.0-or-later"
+}

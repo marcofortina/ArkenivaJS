@@ -8,6 +8,10 @@ import type { ComposablePlugin, SupportPluginFactory } from '@arkenivajs/core/su
 import { redisConfiguration } from './config.js';
 import { RedisConnection } from './connection.js';
 import type { RedisObservationPorts } from './connection.js';
+import { REDIS_PUBSUB_CAPABILITY } from './pubsub.js';
+import type { RedisPubsubProvider } from './pubsub.js';
+export { REDIS_PUBSUB_CAPABILITY } from './pubsub.js';
+export type { RedisPubsubProvider, RedisSubscriptionOptions } from './pubsub.js';
 
 const OBSERVATION = Symbol('arkenivajs.redis.observation');
 const SUPPORT_ID = 'database-redis-observation';
@@ -44,6 +48,7 @@ const observationPlugin: SupportPluginFactory = (root) => {
 };
 
 interface Owner {
+  state(): string;
   connection?: RedisConnection;
   active: boolean;
   closed: boolean;
@@ -55,11 +60,11 @@ export function redisPlugin(): Plugin {
   const plugin: ComposablePlugin = {
     id: 'database-redis',
     version: '0.1.0',
-    capabilities: new Set(['redis', 'database.redis']),
+    capabilities: new Set(['redis', 'database.redis', 'redis.pubsub']),
     dependencies: [SUPPORT_ID],
     [SUPPORT_PLUGINS]: [observationPlugin],
     [PREPARE_PLUGIN](context) {
-      const owner: Owner = { active: false, closed: false };
+      const owner: Owner = { active: false, closed: false, state: context.state };
       applications.set(context.options, owner);
       const available = (): RedisConnection => {
         if (owner.closed || ['CLOSED', 'FAILED'].includes(context.state()))
@@ -101,6 +106,25 @@ export function redisPlugin(): Plugin {
           context.require<RedisObservationPorts>(OBSERVATION),
         );
         await owner.connection.start({ signal: context.require<AbortSignal>(APPLICATION_SIGNAL) });
+        context.provide<RedisPubsubProvider>(
+          REDIS_PUBSUB_CAPABILITY,
+          Object.freeze<RedisPubsubProvider>({
+            connectionName: name,
+            subscribe(channel, handler, operation) {
+              if (owner.closed)
+                throw new KitError({
+                  code: 'EK_RESOURCE_CLOSED',
+                  message: 'Redis provider is closed',
+                });
+              if (!owner.active || !['READY', 'DRAINING'].includes(owner.state()))
+                throw new KitError({
+                  code: 'EK_LIFECYCLE_STATE',
+                  message: 'Redis provider is not active',
+                });
+              return owner.connection!.subscribe(channel, handler, operation);
+            },
+          }),
+        );
       } catch (cause) {
         owner.closed = true;
         try {

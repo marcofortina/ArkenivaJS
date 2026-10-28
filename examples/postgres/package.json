@@ -12,6 +12,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@arkenivajs/realtime": "workspace:*",
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/database-postgres": "workspace:*",
     "@arkenivajs/security": "workspace:*",

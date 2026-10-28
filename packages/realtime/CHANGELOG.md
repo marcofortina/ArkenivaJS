@@ -1,0 +1,14 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it> -->
+
+# Changelog
+
+## 0.1.0
+
+- Add authenticated startup WebSocket/SSE routes with runtime identity provenance,
+  reauthorization, bounded queues, cancellation and explicit durable cursor errors.
+- Integrate tenant-isolated shared NATS and scoped Redis broadcast, including
+  independent-process transport tests and aggregate private diagnostics.
+- Preserve native SSE framing with a reviewed compatibility diff for heartbeat
+  pressure, close acknowledgment and HTTP/2 response headers.
+- Include a public HTTPS/WSS consumer and an ordered PostgreSQL replay source.

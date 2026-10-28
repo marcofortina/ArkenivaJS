@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'realtime.protocol',
+  'realtime.reason',
   'proxy.outcome',
   'magiclink.operation',
   'magiclink.intent',
@@ -157,6 +159,16 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'realtime.protocol': ['websocket', 'sse'],
+  'realtime.reason': [
+    'closed',
+    'shutdown',
+    'backpressure',
+    'authorization',
+    'idle',
+    'provider',
+    'invalid_message',
+  ],
   'proxy.outcome': ['ok', 'error'],
   'magiclink.operation': ['startup', 'issue', 'consume', 'revoke'],
   'magiclink.intent': ['none', 'login', 'email-verify', 'account-recover'],
@@ -263,6 +275,7 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
     'del',
     'increment',
     'publish',
+    'subscribe',
     'put',
     'delete',
     'watch',
@@ -284,6 +297,11 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'realtime.connections.active': '{connection}',
+  'realtime.queue.bytes': 'By',
+  'realtime.sent.bytes': 'By',
+  'realtime.received.bytes': 'By',
+  'realtime.disconnects': '{connection}',
   'magiclink.operations': '{operation}',
   'magiclink.issued': '{credential}',
   'magiclink.consumed': '{credential}',

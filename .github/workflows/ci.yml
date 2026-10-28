@@ -70,6 +70,7 @@ jobs:
             'mail',
             'messaging-amqp',
             'proxy',
+            'realtime',
             'security-apikey',
             'security-crypto',
             'security-http',
@@ -498,6 +499,8 @@ jobs:
       - name: Start Redis and the independently healthy wrong-SAN endpoint
         run: docker compose -f packages/database-redis/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:redis
+      - name: Verify realtime shared Redis delivery across independent processes
+        run: pnpm --filter @arkenivajs/realtime test:integration:redis
       - run: pnpm --filter @arkenivajs/example-redis test:integration
       - run: pnpm test:packed:examples --integration redis
       - run: pnpm coverage:cache
@@ -606,6 +609,8 @@ jobs:
       - name: Start NATS and the independently healthy wrong-SAN endpoint
         run: docker compose -f packages/messaging/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:messaging
+      - name: Verify realtime shared NATS delivery across independent processes
+        run: pnpm --filter @arkenivajs/realtime test:integration:nats
       - run: pnpm --filter @arkenivajs/example-messaging test:integration
       - run: pnpm test:packed:examples --integration messaging
       - run: pnpm test:package:messaging

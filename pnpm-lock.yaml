@@ -167,6 +167,7 @@ overrides:
   exceljs@4.4.0>unzipper: 0.12.5
 
 patchedDependencies:
+  '@fastify/sse@0.6.1': 2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df
   amqplib@2.2.0: 5d45a5b8ea0b717b9774ec3dbc6ff9f8b9a512997f4dde9fab3d4b912c284a36
   buildcheck@0.0.7: cee0504e84446de8efbf065c18b69cda151e12d481591dbed994338e0d5b7004
   cpu-features@0.0.10: ab769a758f015172649ebddb21db04c8d49fc5359c5035ef3d16b1ec9b2b77b0
@@ -629,6 +630,9 @@ importers:
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@arkenivajs/realtime':
+        specifier: workspace:*
+        version: link:../../packages/realtime
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../../packages/security
@@ -690,6 +694,34 @@ importers:
       '@arkenivajs/proxy':
         specifier: workspace:*
         version: link:../../packages/proxy
+
+  examples/realtime:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/realtime':
+        specifier: workspace:*
+        version: link:../../packages/realtime
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
 
   examples/redis:
     dependencies:
@@ -1450,6 +1482,49 @@ importers:
         specifier: 6.2.13
         version: 6.2.13
 
+  packages/realtime:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/database-redis':
+        specifier: workspace:*
+        version: link:../database-redis
+      '@fastify/sse':
+        specifier: 0.6.1
+        version: 0.6.1(patch_hash=2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df)(fastify@5.12.7)
+      '@fastify/websocket':
+        specifier: 11.3.4
+        version: 11.3.4
+      fastify:
+        specifier: 5.12.7
+        version: 5.12.7
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/messaging':
+        specifier: workspace:*
+        version: link:../messaging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+
   packages/security:
     dependencies:
       '@arkenivajs/core':
@@ -1990,6 +2065,12 @@ packages:
 
   '@fastify/reply-from@12.8.0':
     resolution: {integrity: sha512-gxlp+UxL57S6js52TQYFv841zwpI/VzaAFTMhuXl6xAlXHcxYN4NYGbn+SodrJvBS9DuIuLyJbwLkeVABG82jw==}
+
+  '@fastify/sse@0.6.1':
+    resolution: {integrity: sha512-Q1n2JBE1yQTDg9u3/mI2WraMs5vqmDLsI7cfkHJv3OYjRm1ST/zaMtbGK9OcBdHLlkTVMW0XCQMDmxG/nyb0OA==}
+    engines: {node: '>=20.20.2'}
+    peerDependencies:
+      fastify: ^5.x
 
   '@fastify/swagger@9.9.2':
     resolution: {integrity: sha512-ayxItVgf/1axBvw33lqsA5ns02YMpT1r59G/HCJraRNWWBzvLgN+oiCBPhuzTiN67TvctlCYkG0+40WLKYuusQ==}
@@ -2645,6 +2726,9 @@ packages:
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
+  '@types/ws@8.18.2':
+    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
 
   '@types/yauzl@3.4.0':
     resolution: {integrity: sha512-NRPn5w6h8dhcnmx3YIRQcqMywY/+nND/uOkJessedcrowO3C0AssHp3tMJpxKAwOhFOo0OV1y9VtsC5hbKKBAw==}
@@ -4482,6 +4566,12 @@ snapshots:
       toad-cache: 3.7.4
       undici: 7.30.1
 
+  '@fastify/sse@0.6.1(patch_hash=2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df)(fastify@5.12.7)':
+    dependencies:
+      '@fastify/error': 4.2.1
+      fastify: 5.12.7
+      fastify-plugin: 6.0.1
+
   '@fastify/swagger@9.9.2':
     dependencies:
       fastify-plugin: 6.0.1
@@ -5125,6 +5215,10 @@ snapshots:
       '@types/webidl-conversions': 7.0.3
 
   '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 22.20.5
+
+  '@types/ws@8.18.2':
     dependencies:
       '@types/node': 22.20.5
 

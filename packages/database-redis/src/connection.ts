@@ -14,12 +14,16 @@ import type {
   Telemetry,
   UsageMeter,
   MeterSession,
+  Subscription,
 } from '@arkenivajs/core';
 import { instrumentOperation, within } from '@arkenivajs/core/support';
 import type { RedisConfiguration } from './config.js';
 import { redisError, redisVendor } from './errors.js';
 import { SAFE_INCREMENT, BOUNDED_GET } from './increment.js';
 import { REDIS_LIMITS } from './limits.js';
+import { RedisSubscriber, subscriptionOptions } from './pubsub.js';
+import type { RedisSubscriptionOptions } from './pubsub.js';
+import { types } from 'node:util';
 
 /** Optional ports are resolved only through explicit application plugin dependencies. */
 export interface RedisObservationPorts {
@@ -27,7 +31,7 @@ export interface RedisObservationPorts {
   readonly telemetry?: Telemetry;
   readonly meter?: UsageMeter;
 }
-type Operation = 'get' | 'set' | 'del' | 'increment' | 'publish' | 'ping';
+type Operation = 'get' | 'set' | 'del' | 'increment' | 'publish' | 'subscribe' | 'ping';
 
 function options(input: OperationOptions = {}): { timeoutMs: number; signal?: AbortSignal } {
   if (
@@ -82,6 +86,7 @@ export class RedisConnection implements RedisProvider {
   private readonly client: RedisClientType;
   private readonly stop = new AbortController();
   private readonly pending = new Set<Promise<unknown>>();
+  private readonly subscribers = new Set<RedisSubscriber>();
   private closed = false;
   private closing: Promise<void> | undefined;
   private starting: Promise<void> | undefined;
@@ -442,6 +447,45 @@ export class RedisConnection implements RedisProvider {
       safeCount(await client.publish(name, message)),
     );
   }
+  async subscribe(
+    channel: string,
+    handler: (message: string, options: OperationOptions) => Promise<void>,
+    input: RedisSubscriptionOptions,
+  ): Promise<Subscription> {
+    this.open();
+    const name = this.key(channel),
+      captured = subscriptionOptions(input);
+    if (typeof handler !== 'function' || types.isProxy(handler))
+      throw new KitError({
+        code: 'EK_CONFIG_INVALID',
+        message: 'Redis subscription requires a trusted handler',
+      });
+    if (this.subscribers.size >= 32)
+      throw new KitError({
+        code: 'EK_BACKEND_UNAVAILABLE',
+        message: 'Redis subscription capacity is exhausted',
+      });
+    return this.run('subscribe', false, captured, async () => {
+      if (this.subscribers.size >= 32)
+        throw new KitError({
+          code: 'EK_BACKEND_UNAVAILABLE',
+          message: 'Redis subscription capacity is exhausted',
+        });
+      const subscriber = new RedisSubscriber(this.client.duplicate(), handler, captured);
+      this.subscribers.add(subscriber);
+      const close = async () => {
+        await subscriber.close();
+        this.subscribers.delete(subscriber);
+      };
+      try {
+        await subscriber.start(name);
+      } catch (error) {
+        await close();
+        throw error;
+      }
+      return Object.freeze({ close });
+    });
+  }
   native(): RedisClientType {
     this.open();
     this.missing(this.current(), 'not_instrumented');
@@ -455,6 +499,7 @@ export class RedisConnection implements RedisProvider {
       operations: this.operations,
       reconnects: this.reconnects,
       observerFailures: this.observerFailures,
+      subscriptions: this.subscribers.size,
     });
   }
   close(): Promise<void> {
@@ -470,7 +515,10 @@ export class RedisConnection implements RedisProvider {
       }
       try {
         await within(
-          () => Promise.allSettled([...this.pending, ...(this.starting ? [this.starting] : [])]),
+          () =>
+            Promise.all([...this.subscribers].map((subscriber) => subscriber.close())).then(() =>
+              Promise.allSettled([...this.pending, ...(this.starting ? [this.starting] : [])]),
+            ),
           { timeoutMs: 5000 },
         );
       } catch (cause) {
