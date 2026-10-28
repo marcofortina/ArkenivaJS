@@ -4,6 +4,7 @@
 export type * from './contracts.js';
 export { tenantRegistryFileProvider } from './file-provider.js';
 export { tenantRegistrySqlProvider } from './sql-provider.js';
+export { tenantRoutingPlugin } from './plugin.js';
 
 export const TENANT_ROUTING_REGISTRY_SCHEMA_VERSION = '1.1.0' as const;
 export const TENANT_ROUTING_EVENT_SCHEMA_VERSION = '1.0.0' as const;

@@ -99,10 +99,23 @@ function createRouter(options: ApplicationOptions, state: () => LifecycleState):
     closed = false,
     observation: SqlObservationPorts = Object.freeze({});
   const available = (name: string): SqlConnectionAdapter => {
-    if (!active || closed) fail('EK_LIFECYCLE_STATE', 'SQL provider is not active');
-    if (typeof name !== 'string' || !Object.hasOwn(definitions, name) || !adapters.has(name))
+    const initializing = state() === 'INITIALIZING';
+    if (closed || (!active && !initializing))
+      fail('EK_LIFECYCLE_STATE', 'SQL provider is not active');
+    if (
+      typeof name !== 'string' ||
+      !Object.hasOwn(definitions, name) ||
+      !relational.has(definitions[name]!.driver)
+    )
       fail('EK_CONFIG_INVALID', 'Unknown relational connection name');
-    return adapters.get(name)!;
+    const adapter = adapters.get(name);
+    // Startup consumers may use a driver only after its health-checked registration completes.
+    if (!adapter)
+      fail(
+        initializing ? 'EK_LIFECYCLE_STATE' : 'EK_CONFIG_INVALID',
+        'The named SQL adapter is not ready',
+      );
+    return adapter;
   };
   const outsideTransaction = (): void => {
     if (transactions.getStore() !== undefined)

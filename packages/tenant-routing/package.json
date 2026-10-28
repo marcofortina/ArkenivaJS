@@ -30,12 +30,18 @@
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/database": "workspace:*",
+    "fastify": "5.12.7",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "canonicalize": "5.1.0",
     "jsonc-parser": "3.3.1"
   },
   "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "jose": "6.2.13",
     "@arkenivajs/database-postgres": "workspace:*"
   },
   "license": "AGPL-3.0-or-later"

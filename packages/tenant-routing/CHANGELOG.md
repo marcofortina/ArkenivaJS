@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Compile local tenant dispatch and authorized capability discovery with physical concurrency ownership, strict JSON boundaries and startup SQL dependency ordering.
 - Add consistent startup SQL registry reads through injected named pools and an explicit identifier allowlist.
 - Add a bounded private file registry provider with production ownership checks, offline validation and optional durable activation admission.
 - Validate bounded registry syntax, offline schemas and RFC 8785 content checksums before publishing immutable snapshots.
