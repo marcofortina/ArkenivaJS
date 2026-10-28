@@ -57,6 +57,12 @@ function contract(
   };
   const historicalName: TenantRegistrySnapshotV1 = snapshot;
   const settings: TenantRoutingPluginSettings = {
+    eventExporter: {
+      async export(events, options) {
+        void events[0]?.registryActivationGeneration;
+        void options.signal;
+      },
+    },
     registry: { loadSnapshot: async () => historicalName },
     handlers: { 'orders.list': (ctx) => ctx.body },
     requestTransformers: { request: (payload, ctx) => ({ payload, request: ctx.requestId }) },

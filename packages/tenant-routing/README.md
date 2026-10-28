@@ -175,8 +175,7 @@ contains verified tenant, logical operation, implementation, revision and
 activation generation; protect collector access and retention accordingly.
 Bodies, concrete request paths, credentials, upstream URLs and baggage are not
 exported. Exporter errors cannot replace an outcome, repeat a handler or relax
-authorization. Supplementary routing-event export remains a separate integration
-stage.
+authorization.
 
 When root metering is enabled, install the existing metering plugin. Each verified
 request reaching a logical operation records an `http.request` parent and, after
@@ -197,3 +196,44 @@ its child session until physical settlement and reports an unknown execution
 outcome. Private exporter queues, drop counters and permanent loss reporting are
 owned by the existing meter. No revision, implementation, URL, payload or monetary
 field is appended to technical metering event v1.
+
+## Supplementary routing events
+
+`eventExporter` opts into independent event 1.0.0 batches. Its borrowed
+`export(events, { signal, timeoutMs })` transport acknowledges the entire
+immutable batch by resolving. The application owns that transport's client and
+lifecycle; the dispatcher owns only event admission, queueing and cancellation.
+Without this option no supplementary events or export queue are created.
+The immutable production schema is published separately as
+`@arkenivajs/tenant-routing/event-schema` (`TENANT_ROUTING_EVENT_SCHEMA_V1`).
+Native Ajv validates every event before queue admission.
+
+Events contain a native random UUID, server request ID, verified tenant, logical
+operation ID, selected implementation kind/ID, registry revision/generation,
+monotonic duration, status and quality. A valid current trace ID supplies optional
+correlation. Join technical usage through request/trace IDs; event `operationId`
+is the logical registry identity. Payloads, URLs, credentials and monetary fields
+are forbidden. Protect exporter access and retention for private identity data.
+
+One event is completed for each selected operation, including denied/failed
+attempts. Completion waits for physical operation settlement; a public timeout
+or disconnect keeps an unknown outcome and explicit incomplete quality even if
+the handler later returns. Unmatched or unauthenticated requests do not invent a
+tenant or implementation event. Capability discovery does not execute an
+operation and produces no selected-operation event.
+
+The queue bounds retained events, including the active batch, to 1024 entries
+and 4 MiB of encoded data/reserved metadata. Individual events have an 8064-byte
+admission bound with reserved loss-metadata space; batches contain at most 100
+events. One physical export runs at a time, with a five-second deadline and no
+automatic retry. A timed-out uncooperative exporter retains admission until it
+settles; late success never acknowledges previously failed delivery. Exporters
+must observe the signal and implement any independent durable deduplication
+using the event ID.
+
+`service.events.stats()` reports queued/in-flight/exported/dropped counts and
+failed exports. The same losses have bounded telemetry counters. Later batches
+declare prior stream loss in quality rather than claiming complete history.
+`service.events.flush(options?)` is bounded and reports accumulated loss; graceful
+drain also flushes and preserves a typed cleanup failure after event loss.
+Forced cleanup aborts exports and explicitly drops undelivered queued events.

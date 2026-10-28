@@ -157,6 +157,8 @@ export interface TenantRoutingPluginSettings {
   /** @deprecated Response catalog migration alias; cannot accompany responseTransformers. */
   readonly transformers?: Readonly<Record<string, TenantResponseTransformer>>;
   readonly credentialProvider?: TenantUpstreamCredentialProvider;
+  /** Opt-in borrowed transport; the application owns its client and lifecycle. */
+  readonly eventExporter?: TenantRoutingEventExporter;
   readonly approvedUpstreams?: readonly ApprovedUpstream[];
   readonly capabilitiesPath?: string;
   /** Per authorized response: default 1000, positive integer no greater than 5000. */
@@ -198,6 +200,16 @@ export interface TenantCapabilitiesService {
 export interface TenantRoutingService {
   readonly api: TenantApiService;
   readonly capabilities: TenantCapabilitiesService;
+  readonly events?: Readonly<{
+    stats(): Readonly<{
+      queued: number;
+      inFlight: number;
+      exported: number;
+      dropped: number;
+      failedExports: number;
+    }>;
+    flush(options?: OperationOptions): Promise<void>;
+  }>;
   stats(): Readonly<{
     operations: number;
     bindings: number;
@@ -221,4 +233,9 @@ export interface TenantRoutingEventV1 {
   readonly durationMs: number;
   readonly status: 'ok' | 'error' | 'aborted' | 'unknown';
   readonly quality: Readonly<{ complete: boolean; missing: readonly string[] }>;
+}
+
+/** Acknowledges a complete immutable batch; errors never acknowledge delivery. */
+export interface TenantRoutingEventExporter {
+  export(events: readonly TenantRoutingEventV1[], options: OperationOptions): Promise<void>;
 }

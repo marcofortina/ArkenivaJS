@@ -38,6 +38,7 @@ import type { HttpUpstreams } from './http.js';
 import { OBSERVERS, observations, Observation, elapsed, traceRequest } from './observation.js';
 import type { Observers } from './observation.js';
 import { RequestUsage } from './usage.js';
+import type { RoutingEvents } from './events.js';
 
 const AUTH = Symbol('tenant-routing.authority');
 const STORAGE = Symbol('tenant-routing.storage-readiness');
@@ -196,6 +197,7 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
       const observers = context.require<Observers>(OBSERVERS),
         registryBegan = performance.now();
       let upstreams: HttpUpstreams | undefined,
+        events: RoutingEvents | undefined,
         installed = false;
       try {
         const [{ RoutingTable }, { parseRegistryJson, validateRegistry }] = await Promise.all([
@@ -213,6 +215,10 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
           );
         }
         const table = new RoutingTable(validated, settings, upstreams);
+        if (settings.eventExporter) {
+          const { RoutingEvents } = await import('./events.js');
+          events = new RoutingEvents(settings.eventExporter, observers);
+        }
         elapsed(observers.telemetry, 'arkenivajs.routing.registry.duration', registryBegan);
         if (table.definitions.some((operation) => operation.policy.assurance !== undefined)) {
           let allowed = false;
@@ -284,6 +290,20 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
           });
         };
         const service: TenantRoutingService = Object.freeze({
+          ...(events
+            ? {
+                events: Object.freeze({
+                  stats() {
+                    open();
+                    return events!.stats();
+                  },
+                  async flush(options?: OperationOptions) {
+                    open();
+                    await events!.flush(options);
+                  },
+                }),
+              }
+            : {}),
           api: Object.freeze({
             resolve(operationId: string, tenant: VerifiedTenantContext) {
               open();
@@ -341,8 +361,9 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
         instances.set(context, {
           async drain() {
             draining = true;
-            if (!active.size || owner.aborted) return;
-            await within(wait, { signal: owner, timeoutMs: 30000 });
+            if (owner.aborted) return;
+            if (active.size) await within(wait, { signal: owner, timeoutMs: 30000 });
+            await events?.flush({ signal: owner, timeoutMs: 5000 });
           },
           async close() {
             closed = true;
@@ -355,7 +376,11 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
               if (!active.size || owner.aborted) return;
               await within(wait, { signal: owner, timeoutMs: 30000 });
             } finally {
-              await upstreams?.close();
+              try {
+                await upstreams?.close();
+              } finally {
+                await events?.close();
+              }
             }
           },
         });
@@ -390,6 +415,7 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
         server.register(async (child: FastifyInstance) => {
           const observed = new WeakMap<FastifyRequest, Observation>();
           const metered = new WeakMap<FastifyRequest, RequestUsage>();
+          const routedEvents = new WeakMap<FastifyRequest, ReturnType<RoutingEvents['track']>>();
           const requestBytes = new WeakMap<FastifyRequest, number>();
           child.addHook('onRequest', async (request, reply) => {
             const observation = new Observation(
@@ -401,6 +427,7 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
               if (!reply.raw.writableEnded) {
                 observation.finish(499);
                 metered.get(request)?.finish(499);
+                routedEvents.get(request)?.finish(499);
               }
             });
           });
@@ -441,6 +468,8 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             observed.delete(request);
             const entry = scopes.get(request);
             entry?.operation.end();
+            routedEvents.get(request)?.finish(reply.statusCode);
+            routedEvents.delete(request);
             metered.get(request)?.finish(reply.statusCode);
             metered.delete(request);
             entry?.clean();
@@ -530,6 +559,36 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
                       const selected = table.select(definition.id, tenant.tenantId);
                       observation.lookup(selected, lookupBegan);
                       if (!selected) throw routingFailure('EK_TROUTE_UNMAPPED');
+                      if (events) {
+                        let traceId: string | undefined;
+                        try {
+                          const candidate = (
+                            observers.telemetry as
+                              { currentTraceId?: () => string | undefined } | undefined
+                          )?.currentTraceId?.();
+                          if (typeof candidate === 'string' && /^[0-9a-f]{32}$/.test(candidate))
+                            traceId = candidate;
+                        } catch {
+                          /* Trace correlation never supplies identity. */
+                        }
+                        routedEvents.set(
+                          request,
+                          events.track(
+                            {
+                              requestId: request.id,
+                              ...(traceId ? { traceId } : {}),
+                              tenantId: tenant.tenantId,
+                              operationId: definition.id,
+                              registryRevision: table.snapshot.revision,
+                              registryActivationGeneration: table.snapshot.activationGeneration,
+                              implementationId: selected.implementation.id,
+                              implementationKind: selected.implementation.kind,
+                            },
+                            operation.completion,
+                            () => observation.durationMs(),
+                          ),
+                        );
+                      }
                       if (
                         !(await observation.authorize(() =>
                           authorized(auth, settings, tenant, definition, operation),
@@ -616,7 +675,11 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
         installed = true;
       } finally {
         if (!installed) {
-          await upstreams?.close();
+          try {
+            await upstreams?.close();
+          } finally {
+            await events?.close();
+          }
           instances.delete(context);
         }
       }

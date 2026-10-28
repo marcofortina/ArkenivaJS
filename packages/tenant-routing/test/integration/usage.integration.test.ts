@@ -19,6 +19,7 @@ import {
 import { meteringPlugin, parseMeteringEvent } from '@arkenivajs/metering';
 import { fixture, send, settings, registry } from '../http-fixture.js';
 import { registryContentChecksum } from '../../dist/registry.js';
+import type { TenantRoutingEventV1 } from '../../dist/index.js';
 
 async function events(directory: string): Promise<MeteringEvent[]> {
   return (await readFile(join(directory, 'usage.jsonl'), 'utf8'))
@@ -58,6 +59,7 @@ test('Real JSONL records verified tenant HTTP parents and logical operation chil
   );
   current = () => f.app.meter.current();
   try {
+    assert.equal(f.service.events, undefined);
     const body = { id: 'private-business-data', tenant_id: 'spoofed-tenant' },
       results = await Promise.all(
         ['north', 'south'].map(async (tenant) =>
@@ -109,6 +111,7 @@ test('Real JSONL records verified tenant HTTP parents and logical operation chil
 });
 
 test('A timed-out handler retains its real accounting session and reports unknown execution after late completion', async (t) => {
+  const routingEvents: TenantRoutingEventV1[] = [];
   const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-routing-late-usage-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   let release: () => void = () => {},
@@ -128,6 +131,11 @@ test('A timed-out handler retains its real accounting session and reports unknow
     f = await fixture(
       {
         ...base,
+        eventExporter: {
+          async export(batch) {
+            routingEvents.push(...batch);
+          },
+        },
         handlers: {
           ...base.handlers,
           north: async () => {
@@ -156,6 +164,7 @@ test('A timed-out handler retains its real accounting session and reports unknow
     assert.equal(early.length, 1);
     assert.equal(early[0]!.status, 'aborted');
     assert.equal(early[0]!.quality.complete, false);
+    assert.equal(routingEvents.length, 0);
     release();
     for (let attempt = 0; f.app.meter.snapshot().activeSessions && attempt < 30; attempt++)
       await nextTurn();
@@ -167,6 +176,12 @@ test('A timed-out handler retains its real accounting session and reports unknow
     assert.ok(child);
     assert.equal(child.status, 'unknown');
     assert.equal(child.parentOperationId, early[0]!.operationId);
+    await f.service.events!.flush();
+    assert.equal(routingEvents.length, 1);
+    assert.equal(routingEvents[0]!.status, 'unknown');
+    assert.equal(routingEvents[0]!.quality.complete, false);
+    assert.deepEqual(routingEvents[0]!.quality.missing, ['execution_outcome_unknown']);
+    assert.equal(routingEvents[0]!.requestId, child.requestId);
   } finally {
     release();
     await f.close();
