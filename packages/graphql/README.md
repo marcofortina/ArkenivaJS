@@ -1,8 +1,10 @@
 # @arkenivajs/graphql
 
-Optional GraphQL query and mutation integration on the existing Fastify HTTP or HTTPS listener. Register `graphqlPlugin({ schema, resolvers, security })` at application construction, alongside the API adapter. `GRAPHQL_CAPABILITY` resolves an administrative service exposing only `stats()`, `health()` and `schemaSdl()`.
+Optional GraphQL query and mutation integration on the existing Fastify HTTP, HTTPS or secure HTTP/2 listener. Register `graphqlPlugin({ schema, resolvers, security })` at application construction, alongside the API adapter. `GRAPHQL_CAPABILITY` resolves an administrative service exposing only `stats()`, `health()` and `schemaSdl()`.
 
 The implementation uses Mercurius 16.12.1 and GraphQL 16.14.2 over Fastify 5.12.7. Core and REST-only applications do not import this package. The plugin requires explicit application HTTP configuration and, by default, an authentication provider. SDL, field mappings and startup declarations are validated before listener activation. It never creates another listener.
+
+Application HTTP configuration owns TLS certificates and the `http2` switch. Secure HTTP/2 negotiates `h2` and preserves HTTP/1.1 fallback on the same endpoint. Multiplexed streams retain independent verified tenant contexts; resetting one stream cancels its resolver signal without closing other streams. Graceful application shutdown waits for accepted work before closing the listener.
 
 Anonymous policy requires an explicit list of public `Query.<field>` roots and a reason. Every resolved field needs an application authorization decision; a tenant argument is never authentication evidence. Batch results retain order, length and null entries. Subscription delivery requires verified tenant provenance and a shared production backend, with bounded transport and periodic revalidation.
 
@@ -26,4 +28,4 @@ IDE assets and language workers are bundled locally from pinned dependencies. Th
 
 The declaration-only Monaco compatibility correction uses its public `KeyCode`, `KeyMod`, `Uri` and `Range` types while preserving the upstream SSR-safe JavaScript imports. The selected stable React compiler runtime has a byte-identical JavaScript artifact to the replaced prerelease helper. Core and REST imports never initialize React or the IDE.
 
-This package remains under development. Subscriptions, GraphQL-specific telemetry, HTTP/2 acceptance and complete release evidence are pending. Subscription configuration is rejected at startup until implemented and verified. Do not treat this intermediate query/mutation transport as a completed GraphQL release.
+This package remains under development. Subscriptions, GraphQL-specific telemetry and complete release evidence are pending. Subscription configuration is rejected at startup until implemented and verified. Do not treat this intermediate query/mutation transport as a completed GraphQL release.
