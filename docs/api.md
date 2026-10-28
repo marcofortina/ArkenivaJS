@@ -1,5 +1,10 @@
 # Foundation API reference
 
+The optional [GraphQL reference](graphql.md) covers authenticated query/mutation
+composition, guarded default resolvers, request-only loaders and technical
+observations. The [HTTPS example](../examples/graphql/README.md) exercises the
+public package exports alongside REST.
+
 ArkenivaJS packages are ESM-only. Import their documented package entry points after building the workspace. Application instances do not share a mutable singleton. The following runtime APIs are available in the current packages.
 
 ## Errors and core composition

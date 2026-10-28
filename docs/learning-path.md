@@ -1,5 +1,9 @@
 # Build and verify an application
 
+The [GraphQL HTTPS project](../examples/graphql/README.md) adds authenticated
+queries and scoped mutations beside REST, with field denials and verified tenant
+row filters. Its tests also run through independently installed package archives.
+
 Use a supported Node release from `package.json`, the exact pinned pnpm version,
 and a frozen dependency installation. Build the workspace before executing
 examples. Package installation is explicit: importing core never enables an

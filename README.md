@@ -153,6 +153,13 @@ server-streaming and native bidirectional workflows with verified signed tenant
 assertions. Its [standalone consumer](examples/grpc/README.md) uses real local PKI,
 JWT signatures and native protobuf codecs.
 
+The optional [GraphQL adapter](packages/graphql/README.md) composes authenticated
+queries and scoped mutations on the existing API listener, with per-field
+authorization, finite budgets, request-only native loaders and technical
+observations. Its [HTTPS example](examples/graphql/README.md) checks tenant rows,
+denials and REST coexistence through public exports. See the
+[GraphQL guide](docs/graphql.md) for current transport and release boundaries.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later

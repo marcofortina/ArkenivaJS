@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "compat",
     "README.md",
     "CHANGELOG.md"
   ],
