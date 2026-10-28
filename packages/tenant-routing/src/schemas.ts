@@ -2,9 +2,10 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { Ajv2020 } from 'ajv/dist/2020.js';
+import type { ValidateFunction } from 'ajv';
 import addFormats from 'ajv-formats';
 import canonicalize from 'canonicalize';
-import type { TenantOperationDefinition } from './contracts.js';
+import type { TenantOperationDefinition, TenantOperationSchemas } from './contracts.js';
 
 const single = [
   'additionalProperties',
@@ -48,40 +49,64 @@ function offline(input: unknown): void {
 }
 
 /** A startup-scoped native compiler rejects invalid schemas without fetching external resources. */
-export function validateOperationSchemas(operations: readonly TenantOperationDefinition[]): void {
-  const compiler = new Ajv2020({
-    strictSchema: true,
-    strictNumbers: true,
-    strictTypes: false,
-    strictRequired: false,
-    strictTuples: false,
-    ownProperties: true,
-    coerceTypes: false,
-    useDefaults: false,
-    removeAdditional: false,
-    allErrors: false,
-    messages: false,
-    logger: false,
-    inlineRefs: false,
-    loopEnum: 128,
-    loopRequired: 128,
-  });
-  addFormats.default(compiler);
-  const checked = new Set<string>();
-  for (const operation of operations) {
-    for (const source of Object.values(operation.schemas)) {
-      const key = canonicalize(source);
-      if (typeof key !== 'string') throw new Error('Invalid operation schema');
-      if (checked.has(key)) continue;
-      offline(source);
-      // Native equality handles ordinary JSON objects; the registry itself remains deeply frozen.
-      const schema = JSON.parse(JSON.stringify(source)) as Record<string, unknown>;
-      const validate = compiler.compile(schema);
-      if ('$async' in validate && validate.$async)
-        throw new Error('Invalid asynchronous validator');
-      checked.add(key);
-      // Schemas are independent and cannot share remote IDs or retain unbounded global caches.
-      compiler.removeSchema(schema);
+export class OperationSchemas {
+  private readonly operations = new Map<
+    string,
+    Readonly<Partial<Record<keyof TenantOperationSchemas, ValidateFunction>>>
+  >();
+  constructor(operations: readonly TenantOperationDefinition[]) {
+    const compiler = new Ajv2020({
+      strictSchema: true,
+      strictNumbers: true,
+      strictTypes: false,
+      strictRequired: false,
+      strictTuples: false,
+      ownProperties: true,
+      coerceTypes: false,
+      useDefaults: false,
+      removeAdditional: false,
+      allErrors: false,
+      messages: false,
+      logger: false,
+      inlineRefs: false,
+      loopEnum: 128,
+      loopRequired: 128,
+    });
+    addFormats.default(compiler);
+    const checked = new Map<string, ValidateFunction>();
+    for (const operation of operations) {
+      const validators: Partial<Record<keyof TenantOperationSchemas, ValidateFunction>> = {};
+      for (const [slot, source] of Object.entries(operation.schemas)) {
+        const key = canonicalize(source);
+        if (typeof key !== 'string') throw new Error('Invalid operation schema');
+        const existing = checked.get(key);
+        if (existing) {
+          validators[slot as keyof TenantOperationSchemas] = existing;
+          continue;
+        }
+        offline(source);
+        // Native equality handles ordinary JSON objects; the registry itself remains deeply frozen.
+        const schema = JSON.parse(JSON.stringify(source)) as Record<string, unknown>;
+        const validate = compiler.compile(schema);
+        if ('$async' in validate && validate.$async)
+          throw new Error('Invalid asynchronous validator');
+        checked.set(key, validate);
+        validators[slot as keyof TenantOperationSchemas] = validate;
+        // Schemas are independent and cannot share remote IDs or retain unbounded global caches.
+        compiler.removeSchema(schema);
+      }
+      this.operations.set(operation.id, Object.freeze(validators));
     }
   }
+  accepts(operationId: string, slot: keyof TenantOperationSchemas, value: unknown): boolean {
+    const operation = this.operations.get(operationId);
+    if (!operation) return false;
+    const validate = operation[slot];
+    return validate === undefined || validate(value) === true;
+  }
+}
+
+/** Registry validation also compiles every schema even when no dispatcher is requested. */
+export function validateOperationSchemas(operations: readonly TenantOperationDefinition[]): void {
+  new OperationSchemas(operations);
 }

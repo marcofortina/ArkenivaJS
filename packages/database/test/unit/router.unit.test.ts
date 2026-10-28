@@ -11,6 +11,7 @@ import type {
   SqlResult,
   SqlStatement,
   SqlTransaction,
+  SqlProvider,
 } from '@arkenivajs/core';
 import { SUPPORT_PLUGINS } from '@arkenivajs/core/support';
 import type { ComposablePlugin } from '@arkenivajs/core/support';
@@ -115,6 +116,57 @@ function driver(
     },
   };
 }
+
+test('R12 startup consumers query only registered named drivers before listener activation', async () => {
+  const calls: Call[] = [];
+  let read = false;
+  let lifecycle: () => string = () => '';
+  const native = driver('postgresql', calls);
+  const early: ComposablePlugin = {
+    id: 'early-sql-consumer',
+    version: '1.0.0',
+    capabilities: new Set(),
+    dependencies: [SQL_SUPPORT_ID],
+    async init(context) {
+      const sql = context.require<SqlProvider>(COMPONENTS.sql);
+      await assert.rejects(sql.query('control', statement), code('EK_LIFECYCLE_STATE'));
+      await assert.rejects(sql.query('unknown', statement), code('EK_CONFIG_INVALID'));
+      assert.equal(calls.length, 0);
+    },
+    close() {},
+  };
+  const consumer: ComposablePlugin = {
+    id: 'ready-sql-consumer',
+    version: '1.0.0',
+    capabilities: new Set(),
+    dependencies: [SQL_SUPPORT_ID, native.id],
+    async init(context) {
+      assert.equal(lifecycle(), 'INITIALIZING');
+      const sql = context.require<SqlProvider>(COMPONENTS.sql);
+      assert.deepEqual((await sql.transaction('control', (tx) => tx.query(statement))).rows, [
+        { connection: 'control' },
+      ]);
+      read = true;
+    },
+    close() {},
+  };
+  const app = await createApplication({
+    service,
+    plugins: [early, native, consumer],
+    databases: { control: { driver: 'postgresql' } },
+  });
+  const retained = app.sql;
+  lifecycle = () => app.state;
+  await assert.rejects(app.sql.query('control', statement), code('EK_LIFECYCLE_STATE'));
+  try {
+    await app.start();
+    assert.equal(read, true);
+    assert.equal(app.state, 'READY');
+  } finally {
+    await app.stop();
+  }
+  await assert.rejects(retained.query('control', statement), code('EK_LIFECYCLE_STATE'));
+});
 
 test('EK-CORE-002 one isolated SQL facade routes multiple names and drivers without an extra application plugin', async () => {
   const calls: Call[] = [];

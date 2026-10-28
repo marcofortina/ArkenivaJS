@@ -8,6 +8,7 @@ import { createApplication, type Application } from '@arkenivajs/core';
 import { postgresPlugin } from '@arkenivajs/database-postgres';
 import { tenantRegistrySqlProvider } from '../../dist/index.js';
 import { registryContentChecksum } from '../../dist/registry.js';
+import { fixture as httpFixture, settings as routingSettings, send } from '../http-fixture.js';
 
 if (process.env.ARKENIVA_POSTGRES_DISPOSABLE !== '1' || !process.env.ARKENIVA_POSTGRES_URL)
   throw new Error(
@@ -63,6 +64,7 @@ test(
       storagePrefixes: { control: prefix },
     };
     let release: () => void = () => {};
+    let routed: Awaited<ReturnType<typeof httpFixture>> | undefined;
     try {
       const nativePool = first.sql.native('control'),
         mainOperations = first.sql.stats('main').operations;
@@ -95,6 +97,44 @@ test(
       const original = await provider.loadSnapshot();
       assert.equal(original.revision, 'blue');
       assert.equal(original.activationGeneration, 1);
+      let applicationOwner: Application | undefined,
+        loads = 0;
+      routed = await httpFixture(
+        {
+          ...routingSettings(),
+          registry: {
+            async loadSnapshot(options) {
+              loads++;
+              assert.ok(applicationOwner);
+              return tenantRegistrySqlProvider({
+                ...settings,
+                sql: applicationOwner.sql,
+              }).loadSnapshot(options);
+            },
+          },
+        },
+        {
+          plugins: [postgresPlugin()],
+          databases: {
+            control: {
+              driver: 'postgresql',
+              connectionStringEnv: 'ARKENIVA_POSTGRES_URL',
+              poolMax: 2,
+            },
+          },
+          onCreated: (app) => {
+            applicationOwner = app;
+          },
+        },
+      );
+      assert.equal(
+        (
+          await send(routed.origin, '/api/tenant/capabilities', {
+            headers: { authorization: await routed.token() },
+          })
+        ).json().revision,
+        'blue',
+      );
 
       let staged!: () => void;
       const ready = new Promise<void>((resolve) => {
@@ -129,6 +169,12 @@ test(
       const active = await provider.loadSnapshot();
       assert.equal(active.revision, 'green');
       assert.equal(active.activationGeneration, 2);
+      const stillOriginal = await send(routed.origin, '/api/tenant/capabilities', {
+        headers: { authorization: await routed.token() },
+      });
+      assert.equal(stillOriginal.json().revision, 'blue');
+      assert.equal(stillOriginal.json().activationGeneration, 1);
+      assert.equal(loads, 1);
       assert.equal((await other.loadSnapshot()).revision, 'green');
       assert.equal(original.revision, 'blue');
       assert.equal(original.implementations.length, 0);
@@ -200,6 +246,7 @@ test(
       await assert.rejects(other.loadSnapshot(), { code: 'EK_TROUTE_REGISTRY' });
     } finally {
       release();
+      await routed?.close();
       try {
         await first.sql.execute('control', { text: `DROP SCHEMA IF EXISTS ${schema} CASCADE` });
       } finally {

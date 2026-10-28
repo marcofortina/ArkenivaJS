@@ -76,8 +76,12 @@ root database definition matches their relational driver identity.
 The coordinator verifies all relational names at activation, rejects duplicate or
 late registration and captures adapter methods once. Each driver retains pool
 ownership and closes its resources before the coordinator clears its registry.
-Prepared facades reject calls before activation; retained facades reject after
-shutdown. Applications remain independent even when the same native plugin
+Prepared facades reject calls in CREATED and retained facades reject after
+shutdown. During initialization, a consumer with explicit dependencies on the
+coordinator and the selected driver may use that driver's already registered
+named connections, including startup registry reads. An unregistered connection
+remains unavailable. Listeners still wait for complete application activation.
+Applications remain independent even when the same native plugin
 definition is reused. Diagnostic ports are optional abstract dependencies captured
 from the application's explicit logger, telemetry and meter providers.
 

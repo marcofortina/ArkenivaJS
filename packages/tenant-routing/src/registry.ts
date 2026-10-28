@@ -2,12 +2,13 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { createHash } from 'node:crypto';
-import { toUSVString, types } from 'node:util';
+import { toUSVString } from 'node:util';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import canonicalize from 'canonicalize';
 import { createScanner, SyntaxKind, ScanError, visit } from 'jsonc-parser';
-import { copyData, freezeData } from '@arkenivajs/core/support';
+import { freezeData } from '@arkenivajs/core/support';
+import { jsonSnapshot } from './json.js';
 import type { TenantRegistrySnapshotV1_1 } from './contracts.js';
 import { registrySchema } from './registry-schema.js';
 import { validateOperationSchemas } from './schemas.js';
@@ -84,54 +85,6 @@ export function parseRegistry(text: string, maxBytes = 8388608): TenantRegistryS
   return validateRegistry(parseRegistryJson(text, maxBytes), maxBytes);
 }
 
-/** Reject values that JSON/JCS would omit or coerce; the shared copier rejects executable objects. */
-function jsonValues(input: unknown, maxBytes: number) {
-  let nodes = 0,
-    lowerBytes = 0;
-  const ancestors = new Set<object>();
-  const walk = (value: unknown, depth = 0) => {
-    if (++nodes > 4000000) throw registryFailure();
-    if (value === null || typeof value === 'boolean') {
-      lowerBytes += value === false ? 5 : 4;
-    } else if (typeof value === 'string') {
-      if (toUSVString(value) !== value) throw registryFailure();
-      lowerBytes += Buffer.byteLength(value) + 2;
-    } else if (typeof value === 'number') {
-      if (!Number.isFinite(value)) throw registryFailure();
-      lowerBytes += 1;
-    } else if (value && typeof value === 'object') {
-      if (types.isProxy(value) || depth >= 64 || ancestors.has(value)) throw registryFailure();
-      const array = Array.isArray(value);
-      if (!array && ![Object.prototype, null].includes(Object.getPrototypeOf(value)))
-        throw registryFailure();
-      const names = Reflect.ownKeys(value);
-      if (array && names.length !== value.length + 1) throw registryFailure();
-      ancestors.add(value);
-      const keys = names.filter((name) => !array || name !== 'length');
-      lowerBytes += 2 + Math.max(0, keys.length - 1);
-      for (const key of keys) {
-        if (typeof key !== 'string' || toUSVString(key) !== key) throw registryFailure();
-        const field = Object.getOwnPropertyDescriptor(value, key);
-        if (!field || !('value' in field) || !field.enumerable) throw registryFailure();
-        if (array) {
-          const index = Number(key);
-          if (
-            !Number.isSafeInteger(index) ||
-            index < 0 ||
-            index >= value.length ||
-            String(index) !== key
-          )
-            throw registryFailure();
-        } else lowerBytes += Buffer.byteLength(key) + 3;
-        walk(field.value, depth + 1);
-      }
-      ancestors.delete(value);
-    } else throw registryFailure();
-    if (lowerBytes > maxBytes) throw registryFailure();
-  };
-  walk(input);
-}
-
 /** RFC8785 is implemented by the pinned upstream library; arrays retain their supplied order. */
 export function registryContentChecksum(
   snapshot: Pick<
@@ -157,14 +110,8 @@ export function registryContentChecksum(
 export function validateRegistry(input: unknown, maxBytes = 8388608): TenantRegistrySnapshotV1_1 {
   try {
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw registryFailure();
-    jsonValues(input, maxBytes);
-    const value = copyData(input);
-    if (
-      !schema(value) ||
-      !value.activatedAt.endsWith('Z') ||
-      Buffer.byteLength(JSON.stringify(value)) > maxBytes
-    )
-      throw registryFailure();
+    const value = jsonSnapshot(input, maxBytes);
+    if (!schema(value) || !value.activatedAt.endsWith('Z')) throw registryFailure();
     const operations = new Set<string>(),
       implementations = new Set<string>(),
       bindings = new Set<string>(),
