@@ -18,7 +18,7 @@ test('A missing or incompatible actual native build marker fails before secret a
     binding,
     'arkenivajsNativeCompatibilityVersion',
   )!;
-  assert.equal(original.value, 1);
+  assert.equal(original.value, 2);
   let connections = 0,
     secrets = 0;
   const server = createServer((socket) => {
@@ -30,7 +30,7 @@ test('A missing or incompatible actual native build marker fails before secret a
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   try {
-    for (const version of [undefined, 0, 2, '1']) {
+    for (const version of [undefined, 0, 1, 3, '2']) {
       Object.defineProperty(binding, 'arkenivajsNativeCompatibilityVersion', {
         ...original,
         value: version,

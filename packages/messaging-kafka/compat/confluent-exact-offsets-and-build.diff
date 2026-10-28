@@ -446,7 +446,7 @@ diff --git a/src/binding.cc b/src/binding.cc
    AdminClient::Init(exports);
    Topic::Init(exports);
    ConstantsInit(exports);
-+  Nan::Set(exports, Nan::New("arkenivajsNativeCompatibilityVersion").ToLocalChecked(), Nan::New(1));
++  Nan::Set(exports, Nan::New("arkenivajsNativeCompatibilityVersion").ToLocalChecked(), Nan::New(2));
  
    Nan::Set(exports, Nan::New("librdkafkaVersion").ToLocalChecked(),
        Nan::New(RdKafka::version_str().c_str()).ToLocalChecked());
@@ -529,7 +529,34 @@ diff --git a/src/common.cc b/src/common.cc
  
      int32_t leader_epoch = message->leader_epoch();
      if (leader_epoch >= 0) {
-@@ -1347,6 +1362,8 @@
+@@ -1163,17 +1178,15 @@
+   Nan::Set(returnObject, Nan::New("protocolType").ToLocalChecked(),
+            Nan::New<v8::String>(protocolType).ToLocalChecked());
+ 
+-  // protocol
+-  Nan::Set(returnObject, Nan::New("protocol").ToLocalChecked(),
+-           Nan::New<v8::String>(
+-               rd_kafka_ConsumerGroupDescription_partition_assignor(desc))
+-               .ToLocalChecked());
+-
+-  // partitionAssignor
+-  Nan::Set(returnObject, Nan::New("partitionAssignor").ToLocalChecked(),
+-           Nan::New<v8::String>(
+-               rd_kafka_ConsumerGroupDescription_partition_assignor(desc))
+-               .ToLocalChecked());
++  // Missing and transitioning groups may not have an assignor.
++  const char* partition_assignor =
++      rd_kafka_ConsumerGroupDescription_partition_assignor(desc);
++  v8::Local<v8::Value> assignor = Nan::Null();
++  if (partition_assignor) {
++    assignor = Nan::New<v8::String>(partition_assignor).ToLocalChecked();
++  }
++  Nan::Set(returnObject, Nan::New("protocol").ToLocalChecked(), assignor);
++  Nan::Set(returnObject, Nan::New("partitionAssignor").ToLocalChecked(), assignor);
+ 
+   // state
+   Nan::Set(returnObject, Nan::New("state").ToLocalChecked(),
+@@ -1347,6 +1360,8 @@
                 Nan::New<v8::Number>(partition->partition));
        Nan::Set(partition_object, Nan::New("offset").ToLocalChecked(),
                 Nan::New<v8::Number>(partition->offset));
@@ -538,7 +565,7 @@ diff --git a/src/common.cc b/src/common.cc
  
        // Set metadata (if available)
        if (partition->metadata != nullptr) {
-@@ -1593,6 +1610,8 @@
+@@ -1593,6 +1608,8 @@
               Nan::New<v8::Number>(partition->partition));
      Nan::Set(partition_object, Nan::New("offset").ToLocalChecked(),
               Nan::New<v8::Number>(partition->offset));
@@ -679,3 +706,19 @@ diff --git a/types/kafkajs.d.ts b/types/kafkajs.d.ts
    /**
     * Maximum batch size passed in eachBatch calls.
     * A value of -1 means no limit.
+diff --git a/types/rdkafka.d.ts b/types/rdkafka.d.ts
+--- a/types/rdkafka.d.ts
++++ b/types/rdkafka.d.ts
+@@ -425,10 +425,10 @@
+     groupId: string
+     error?: LibrdKafkaError
+     members: MemberDescription[]
+-    protocol: string
++    protocol: string | null
+     isSimpleConsumerGroup: boolean;
+     protocolType: string
+-    partitionAssignor: string
++    partitionAssignor: string | null
+     state: ConsumerGroupStates
+     type: ConsumerGroupTypes
+     coordinator: Node

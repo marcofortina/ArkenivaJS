@@ -18,7 +18,7 @@ test('Actual native offset conversions preserve signed 64-bit integers before pr
   assert.equal(
     (local('./librdkafka.js') as { arkenivajsNativeCompatibilityVersion?: number })
       .arkenivajsNativeCompatibilityVersion,
-    1,
+    2,
   );
   const directory = await mkdtemp(join(tmpdir(), 'owned-kafka-offset-'));
   try {
