@@ -3,6 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import { createApplication } from '@arkenivajs/core';
 import { Runtime } from '../../dist/runtime.js';
 import { samlPlugin, SAML_CAPABILITY } from '../../dist/index.js';
@@ -36,18 +37,33 @@ test('Cancellation after dispatching an atomic mutation reports an unknown outco
   await runtime.close();
 });
 
-test('Timed-out provider work retains physical capacity until it actually settles', async () => {
+test('Timed-out provider work retains physical capacity until it actually settles', async (context) => {
+  let now = performance.now();
+  context.mock.method(performance, 'now', () => now);
+  context.mock.timers.enable({ apis: ['setTimeout'] });
   const active: number[] = [],
     runtime = new Runtime(undefined, undefined, (count) => active.push(count));
   const releases: (() => void)[] = [];
+  let entered!: () => void;
+  const dispatched = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
   const pending = Array.from({ length: 8 }, () =>
-    runtime.run({ timeoutMs: 20 }, (call) =>
+    runtime.run({ timeoutMs: 2000 }, (call) =>
       call.step(
         'EK_BACKEND_UNAVAILABLE',
-        () => new Promise<void>((resolve) => releases.push(resolve)),
+        () =>
+          new Promise<void>((resolve) => {
+            releases.push(resolve);
+            if (releases.length === 8) entered();
+          }),
       ),
     ),
   );
+  // Establish physical provider ownership before expiring the public waiters.
+  await dispatched;
+  now += 2001;
+  context.mock.timers.tick(2001);
   const results = await Promise.allSettled(pending);
   assert.equal(releases.length, 8);
   for (const result of results) {
