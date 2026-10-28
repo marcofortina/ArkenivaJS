@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { COMPONENTS } from '@arkenivajs/core';
 import type { Plugin, Telemetry } from '@arkenivajs/core';
 import { telemetryPlugin } from '@arkenivajs/telemetry';
@@ -24,6 +25,17 @@ interface Metric {
 }
 interface Envelope {
   resourceMetrics?: { scopeMetrics: { metrics: Metric[] }[] }[];
+  resourceSpans?: {
+    scopeSpans: {
+      spans: {
+        name: string;
+        traceId: string;
+        spanId: string;
+        parentSpanId?: string;
+        kind?: number;
+      }[];
+    }[];
+  }[];
 }
 
 test(
@@ -84,6 +96,8 @@ test(
     );
     try {
       const authorization = await f.token();
+      const traceId = randomUUID().replaceAll('-', ''),
+        remoteParent = randomBytes(8).toString('hex');
       const accepted = await send(
         f.origin,
         {
@@ -91,7 +105,7 @@ test(
             'query UserChosenName($secret: String!) { __typename ping(secret: $secret) items { value } }',
           variables: { secret: 'never-export-input' },
         },
-        { headers: { authorization } },
+        { headers: { authorization, traceparent: `00-${traceId}-${remoteParent}-01` } },
       );
       assert.equal(accepted.status, 200, accepted.body);
       assert.deepEqual(accepted.json(), {
@@ -120,6 +134,29 @@ test(
       assert.match(denied.body, /EK_GQL_FORBIDDEN/);
       assert.equal(deniedEffects, 0);
       await f.app.telemetry.flush();
+      const spans = envelopes.flatMap(
+        (envelope) =>
+          envelope.resourceSpans?.flatMap((resource) =>
+            resource.scopeSpans.flatMap((scope) => scope.spans),
+          ) ?? [],
+      );
+      const parents = spans.filter((span) => span.name === 'http.server.request');
+      assert.equal(parents.length, 5);
+      const children = spans.filter((span) => span.name === 'graphql.query');
+      assert.equal(children.length, 3);
+      for (const span of children)
+        assert.ok(
+          parents.some(
+            (parent) =>
+              parent.spanId === span.parentSpanId &&
+              parent.traceId === span.traceId &&
+              parent.kind === 2,
+          ),
+        );
+      const remote = parents.filter((span) => span.traceId === traceId);
+      assert.equal(remote.length, 1);
+      assert.equal(remote[0]?.parentSpanId, remoteParent);
+      assert.equal(new Set(parents.map((span) => span.traceId)).size, 5);
       const metrics = envelopes.flatMap(
         (envelope) =>
           envelope.resourceMetrics?.flatMap((resource) =>
@@ -229,5 +266,58 @@ test('Throwing diagnostic providers cannot repeat a mutation or bypass field pol
     assert.doesNotMatch(accepted.body + denied.body + f.logs(), /Private diagnostic failure/);
   } finally {
     await f.close();
+  }
+});
+
+test('Remote trace providers cannot repeat admitted mutations by throwing or invoking their continuation twice', async () => {
+  for (const mode of ['before', 'after', 'twice'] as const) {
+    const telemetry: Telemetry & {
+      withRemoteContext<R>(headers: Readonly<Record<string, string | undefined>>, work: () => R): R;
+    } = {
+      measure: async (_name, work) => work(),
+      withSpan: async (_name, work) => work(),
+      addCounter() {},
+      recordHistogram() {},
+      setGauge() {},
+      flush: async () => {},
+      withRemoteContext(_headers, work) {
+        if (mode === 'before') throw new Error('Private trace failure');
+        const result = work();
+        if (mode === 'after') throw new Error('Private trace failure');
+        work();
+        return result;
+      },
+    };
+    const provider: Plugin = {
+      id: 'telemetry',
+      version: '1.0.0',
+      capabilities: new Set(['telemetry']),
+      init(context) {
+        context.provide(COMPONENTS.telemetry, telemetry);
+      },
+      close() {},
+    };
+    let effects = 0;
+    const f = await fixture(
+      {
+        schema: 'type Query { ping: String! } type Mutation { update: Int! }',
+        resolvers: { Query: { ping: () => 'pong' }, Mutation: { update: () => ++effects } },
+        security: { authorizeField: () => true },
+      },
+      { plugins: [provider], telemetry: { mode: 'standard' } },
+    );
+    try {
+      const result = await send(
+        f.origin,
+        { query: 'mutation { update }' },
+        { headers: { authorization: await f.token() } },
+      );
+      assert.equal(result.status, 200, result.body);
+      assert.deepEqual(result.json(), { data: { update: 1 } });
+      assert.equal(effects, 1);
+      assert.doesNotMatch(result.body + f.logs(), /Private trace failure/);
+    } finally {
+      await f.close();
+    }
   }
 });

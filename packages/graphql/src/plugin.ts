@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { TextDecoder, toUSVString } from 'node:util';
-import { parse } from 'graphql';
+import { getOperationAST, parse } from 'graphql';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { APPLICATION_SIGNAL, COMPONENTS, KitError } from '@arkenivajs/core';
 import type { AuthService, Plugin, PluginContext } from '@arkenivajs/core';
@@ -20,7 +20,13 @@ import { capture, failure, record } from './policy.js';
 import { compileSchema } from './schema.js';
 import { encodeResult } from './encoding.js';
 import { registerIde } from './ide.js';
-import { OBSERVERS, Observation, observations } from './observation.js';
+import {
+  OBSERVERS,
+  Observation,
+  observations,
+  traceRequest,
+  traceOperation,
+} from './observation.js';
 import type { Observers } from './observation.js';
 
 const AUTHORITY = Symbol('graphql.authority');
@@ -150,6 +156,12 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         throw failure();
       server.register(async (child) => {
         const observed = new WeakMap<FastifyRequest, Observation>();
+        const traced = new WeakSet<FastifyRequest>();
+        function inbound<T>(request: FastifyRequest, work: () => T | Promise<T>): T | Promise<T> {
+          if (request.routeOptions.url !== settings.path || traced.has(request)) return work();
+          traced.add(request);
+          return traceRequest(observers, request.method, settings.path, request.headers, work);
+        }
         child.addHook('onRequest', async (request, reply) => {
           if (request.routeOptions.url !== settings.path) return;
           const observation = new Observation(observers);
@@ -240,12 +252,14 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
                 ? failure('EK_GQL_INPUT_LIMIT')
                 : error,
             );
-          return rejected(
-            reply,
-            (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
-              ? failure('EK_GQL_INPUT_LIMIT')
-              : error,
-            settings.security.limits.maxResultBytes,
+          return inbound(request, () =>
+            rejected(
+              reply,
+              (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
+                ? failure('EK_GQL_INPUT_LIMIT')
+                : error,
+              settings.security.limits.maxResultBytes,
+            ),
           );
         });
         const methods = new WeakMap<Operation, string>();
@@ -418,11 +432,16 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
                 throw failure('EK_GQL_VALIDATION');
               }
               const result = await current.run(() =>
-                reply.graphql(
-                  document,
-                  engineContext,
-                  variables as Record<string, unknown> | undefined,
-                  body.operationName as string | undefined,
+                traceOperation(
+                  observers,
+                  getOperationAST(document, body.operationName as string | undefined)?.operation,
+                  () =>
+                    reply.graphql(
+                      document,
+                      engineContext,
+                      variables as Record<string, unknown> | undefined,
+                      body.operationName as string | undefined,
+                    ),
                 ),
               );
               current.check();
@@ -466,7 +485,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
                 settings.security.limits.maxVariablesBytes * 6 +
                 4096,
             ),
-            handler,
+            handler: (request, reply) => inbound(request, () => handler(request, reply)),
           });
         loaded = true;
       });

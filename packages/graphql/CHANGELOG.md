@@ -13,3 +13,4 @@
 - Verify shared secure HTTP/2 queries and mutations, HTTP/1.1 fallback, tenant isolation, stream cancellation and graceful listener drain.
 - Verify physical admission at 128 concurrent operations and preserve actual mutation ownership through forced shutdown.
 - Export normalized operation, complexity, loader and denial metrics through the existing telemetry provider, with detailed field timing and no duplicated HTTP byte measurements.
+- Preserve W3C HTTP trace parents and attach normalized GraphQL child spans without replaying business work when diagnostic context fails.
