@@ -96,6 +96,9 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'magiclink.operation',
+  'magiclink.intent',
+  'magiclink.outcome',
   'grpc.operation',
   'grpc.side',
   'grpc.outcome',
@@ -153,6 +156,9 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'magiclink.operation': ['startup', 'issue', 'consume', 'revoke'],
+  'magiclink.intent': ['none', 'login', 'email-verify', 'account-recover'],
+  'magiclink.outcome': ['ok', 'error', 'expired', 'replay', 'rejected'],
   'grpc.operation': ['unary', 'serverStream', 'native'],
   'grpc.side': ['client', 'server'],
   'grpc.outcome': ['ok', 'error', 'cancelled', 'deadline', 'rejected'],
@@ -276,6 +282,14 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'magiclink.operations': '{operation}',
+  'magiclink.issued': '{credential}',
+  'magiclink.consumed': '{credential}',
+  'magiclink.expired': '{credential}',
+  'magiclink.replays': '{credential}',
+  'magiclink.operation.duration.ms': 'ms',
+  'magiclink.operations.active': '{operation}',
+  'magiclink.process.rss.bytes': 'By',
   'grpc.operations': '{operation}',
   'grpc.operation.duration.ms': 'ms',
   'grpc.payload.request.bytes': 'By',

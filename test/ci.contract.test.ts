@@ -199,6 +199,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-crypto',
       'security-http',
       'security-ldap',
+      'security-magiclink',
       'security-oauth-client',
       'security-mtls',
       'security-password',

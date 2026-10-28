@@ -641,6 +641,9 @@ importers:
       '@arkenivajs/security-http':
         specifier: workspace:*
         version: link:../../packages/security-http
+      '@arkenivajs/security-magiclink':
+        specifier: workspace:*
+        version: link:../../packages/security-magiclink
       '@arkenivajs/security-oauth-client':
         specifier: workspace:*
         version: link:../../packages/security-oauth-client
@@ -666,6 +669,9 @@ importers:
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
+      fastify:
+        specifier: 5.12.7
+        version: 5.12.7
       otplib:
         specifier: 13.5.0
         version: 13.5.0
@@ -1479,6 +1485,22 @@ importers:
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../logging
+
+  packages/security-magiclink:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/security-apikey':
+        specifier: workspace:*
+        version: link:../security-apikey
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
 
   packages/security-mtls:
     dependencies:
