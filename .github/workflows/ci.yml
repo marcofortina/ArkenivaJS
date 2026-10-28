@@ -81,6 +81,7 @@ jobs:
             'socket',
             'sftp',
             'soap',
+            'grpc',
             'upload',
             'webhooks',
           ]

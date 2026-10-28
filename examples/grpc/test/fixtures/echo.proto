@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
+syntax = "proto3";
+package fixture;
+service Echo {
+  rpc Bounce (Message) returns (Message);
+  rpc Watch (Message) returns (stream Message);
+  rpc Exchange (stream Message) returns (stream Message);
+}
+message Message {
+  string value = 1;
+  int64 sequence = 2;
+  bytes payload = 3;
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@arkenivajs/example-grpc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/*.test.js",
+    "start": "node dist/main.js --fixture"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/grpc": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/security-mtls": "workspace:*",
+    "@grpc/grpc-js": "1.14.6",
+    "@grpc/proto-loader": "0.8.1",
+    "jose": "6.2.13"
+  },
+  "license": "AGPL-3.0-or-later"
+}

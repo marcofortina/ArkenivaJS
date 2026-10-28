@@ -375,6 +375,30 @@ importers:
         specifier: workspace:*
         version: link:../../packages/database-etcd
 
+  examples/grpc:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/grpc':
+        specifier: workspace:*
+        version: link:../../packages/grpc
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@arkenivajs/security-mtls':
+        specifier: workspace:*
+        version: link:../../packages/security-mtls
+      '@grpc/grpc-js':
+        specifier: 1.14.6
+        version: 1.14.6
+      '@grpc/proto-loader':
+        specifier: 0.8.1
+        version: 0.8.1
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+
   examples/health:
     dependencies:
       '@arkenivajs/api':
@@ -1211,6 +1235,40 @@ importers:
       pdfkit:
         specifier: 0.20.2
         version: 0.20.2
+
+  packages/grpc:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/security-mtls':
+        specifier: workspace:*
+        version: link:../security-mtls
+      '@grpc/grpc-js':
+        specifier: 1.14.6
+        version: 1.14.6
+      '@grpc/proto-loader':
+        specifier: 0.8.1
+        version: 0.8.1
+      protobufjs:
+        specifier: 7.6.6
+        version: 7.6.6
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../security
+      '@arkenivajs/security-apikey':
+        specifier: workspace:*
+        version: link:../security-apikey
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
 
   packages/health:
     dependencies:

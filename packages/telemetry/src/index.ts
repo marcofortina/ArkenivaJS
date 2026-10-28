@@ -96,6 +96,9 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'grpc.operation',
+  'grpc.side',
+  'grpc.outcome',
   'soap.operation',
   'soap.outcome',
   'json.operation',
@@ -150,6 +153,9 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'grpc.operation': ['unary', 'serverStream', 'native'],
+  'grpc.side': ['client', 'server'],
+  'grpc.outcome': ['ok', 'error', 'cancelled', 'deadline', 'rejected'],
   'soap.operation': ['startup', 'createClient', 'call', 'nativeCall'],
   'soap.outcome': ['ok', 'error', 'fault'],
   'json.operation': ['parse', 'stringify', 'validate', 'transform'],
@@ -270,6 +276,12 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'grpc.operations': '{operation}',
+  'grpc.operation.duration.ms': 'ms',
+  'grpc.payload.request.bytes': 'By',
+  'grpc.payload.response.bytes': 'By',
+  'grpc.operations.active': '{operation}',
+  'grpc.process.rss.bytes': 'By',
   'soap.operations': '{operation}',
   'soap.faults': '{fault}',
   'soap.operation.duration.ms': 'ms',
