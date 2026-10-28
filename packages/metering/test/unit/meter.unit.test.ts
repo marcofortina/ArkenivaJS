@@ -626,7 +626,9 @@ test('EK-METER-001 byte bounds reject oversized records and saturated queues wit
   const f = fixture();
   const tenant = f.mint('tenant-A');
   const dimensions = Object.fromEntries(
-    Array.from({ length: 112 }, (_, index) => [
+    // Seventeen standard quantities leave 111 custom entries in the 128-entry
+    // catalog. The event must still exceed its independent encoded byte bound.
+    Array.from({ length: 111 }, (_, index) => [
       'u.' + 'a'.repeat(70) + String(index).padStart(3, '0'),
       'milliseconds' as const,
     ]),

@@ -175,5 +175,25 @@ contains verified tenant, logical operation, implementation, revision and
 activation generation; protect collector access and retention accordingly.
 Bodies, concrete request paths, credentials, upstream URLs and baggage are not
 exported. Exporter errors cannot replace an outcome, repeat a handler or relax
-authorization. Technical metering and supplementary routing-event export remain
-separate integration stages.
+authorization. Supplementary routing-event export remains a separate integration
+stage.
+
+When root metering is enabled, install the existing metering plugin. Each verified
+request reaching a logical operation records an `http.request` parent and, after
+authorization/admission, a child named by the logical operation ID. The existing
+meter independently verifies tenant provenance. Capacity/export failures do not
+repeat a handler or bypass operation policy; a rejected tenant fails closed.
+
+The parent counts `http.requests` and observed entity bytes. The logical child
+counts `tenant.routing.operations`; database or other installed adapters inherit
+that child scope. HTTP implementations additionally record native client request
+count, elapsed milliseconds and observed upstream response bytes under the
+existing `http.client.*` quantities. These client bytes are distinct from the
+parent's server response bytes. Incomplete upstream bodies mark byte quality as
+missing rather than claiming a complete measurement.
+
+The HTTP parent closes at response completion. Unfinished timed-out work retains
+its child session until physical settlement and reports an unknown execution
+outcome. Private exporter queues, drop counters and permanent loss reporting are
+owned by the existing meter. No revision, implementation, URL, payload or monetary
+field is appended to technical metering event v1.

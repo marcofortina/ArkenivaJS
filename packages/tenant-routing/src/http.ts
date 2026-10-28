@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { TextDecoder } from 'node:util';
-import type { Environment, RouteContext, Telemetry } from '@arkenivajs/core';
+import type { Environment, RouteContext, MeterSession } from '@arkenivajs/core';
 import { instrumentOperation } from '@arkenivajs/core/support';
 import { createFixedUpstreamPool } from '@arkenivajs/proxy/support';
 import type {
@@ -15,7 +15,8 @@ import { data } from './provider-support.js';
 import { jsonSnapshot } from './json.js';
 import { parseRegistryJson } from './registry.js';
 import { routingFailure } from './errors.js';
-import { elapsed, injectTrace } from './observation.js';
+import { elapsed, injectTrace, observe } from './observation.js';
+import type { Observers } from './observation.js';
 type Pool = Awaited<ReturnType<typeof createFixedUpstreamPool>>;
 
 const forbiddenProduction = [
@@ -93,15 +94,15 @@ export class HttpUpstreams {
   private closed = false;
   private constructor(
     private readonly configuration: Settings,
-    private readonly telemetry?: Telemetry,
+    private readonly observers: Observers,
   ) {}
   static async create(
     configuration: Settings,
     environment: Environment,
     signal: AbortSignal,
-    telemetry?: Telemetry,
+    observers: Observers = {},
   ): Promise<HttpUpstreams> {
-    const service = new HttpUpstreams(configuration, telemetry);
+    const service = new HttpUpstreams(configuration, observers);
     try {
       for (const raw of configuration.approvedUpstreams) {
         signal.throwIfAborted();
@@ -269,19 +270,49 @@ export class HttpUpstreams {
       timer = setTimeout(() => expiry.abort(), Math.max(1, Math.floor(expires - Date.now())));
     }
     const networkBegan = performance.now();
+    let session: MeterSession | undefined,
+      observedBytes = 0,
+      bodyComplete = false;
+    observe(() => {
+      session = this.observers.meter?.current();
+    });
+    const record = (work: () => void) => {
+      if (!session) return;
+      try {
+        work();
+      } catch {
+        observe(() => this.observers.meter?.markMissing(session!, 'span_not_instrumented'));
+      }
+    };
     let networkEnded = false;
     const networkDone = () => {
       if (networkEnded) return;
       networkEnded = true;
-      elapsed(this.telemetry, 'arkenivajs.routing.upstream.duration', networkBegan);
+      elapsed(this.observers.telemetry, 'arkenivajs.routing.upstream.duration', networkBegan);
+      if (session)
+        record(() => {
+          session!.recordUsage('http.client.elapsed', {
+            unit: 'milliseconds',
+            source: 'observed',
+            value: Math.max(0, performance.now() - networkBegan),
+          });
+          session!.recordUsage('http.client.response.bytes', {
+            unit: 'bytes',
+            source: 'observed',
+            value: observedBytes,
+          });
+          if (!bodyComplete)
+            this.observers.meter?.markMissing(session!, 'driver_bytes_unavailable');
+        });
     };
     try {
       return await instrumentOperation(
-        this.telemetry,
+        this.observers.telemetry,
         'http.client.request',
         { 'routing.kind': 'http' },
         async () => {
-          injectTrace(this.telemetry, headers);
+          injectTrace(this.observers.telemetry, headers);
+          record(() => session!.recordOperation('http.client.requests'));
           const response = await target.pool.request({
             method: implementation.method,
             path,
@@ -319,10 +350,12 @@ export class HttpUpstreams {
               context.signal.throwIfAborted();
               const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
               bytes += value.length;
+              observedBytes += value.length;
               if (bytes > operation.maxResponseBytes)
                 throw routingFailure('EK_TROUTE_CONTRACT', true);
               parts.push(value);
             }
+            bodyComplete = true;
             networkDone();
             let result: unknown;
             try {

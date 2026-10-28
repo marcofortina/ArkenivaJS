@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Register the tenant routing operation count as a standard technical quantity without changing the event envelope.
 - Register HTTP request bytes and GraphQL operation, field, loader and subscription technical usage dimensions with fixed units.
 
 - Isolate background consumers from publisher request scopes with `withoutScope`.

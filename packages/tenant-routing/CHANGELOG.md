@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Correlate verified tenant HTTP and logical usage sessions, retain physical accounting after timeout, and observe distinct upstream quantities without changing metering event v1.
 - Add bounded routing metrics and private selected-operation traces through the existing telemetry provider, with single-invocation isolation from diagnostic failures.
 - Dispatch approved fixed HTTP implementations through the shared proxy transport with separate transforms, bounded JSON, destination checks and audience/scope/expiry-bound service credentials.
 - Compile local tenant dispatch and authorized capability discovery with physical concurrency ownership, strict JSON boundaries and startup SQL dependency ordering.
