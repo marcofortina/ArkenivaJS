@@ -45,7 +45,15 @@ test('Kafka header snapshots retain duplicate order, null, binary bytes and untr
   assert.equal(result.tenant_id, 'untrusted');
   assert.ok(!Object.hasOwn(result, 'verifiedTenant'));
   assert.ok(Object.isFrozen(duplicate) && Object.isFrozen(result));
+  const reserved = headers(
+    JSON.parse('{"__proto__":"wire-bytes","constructor":null,"prototype":"retained"}'),
+  );
+  assert.equal(Object.getPrototypeOf(reserved), null);
+  assert.equal(reserved.__proto__, 'wire-bytes');
+  assert.equal(reserved.constructor, null);
+  assert.equal(reserved.prototype, 'retained');
   for (const value of [
+    null,
     { a: [] },
     { a: 1 },
     { a: undefined },

@@ -11,6 +11,7 @@ import { array, failure, fields, integer, text, topic } from './validation.js';
 export interface Settings {
   readonly clusters: readonly KafkaClusterConfig[];
   readonly resolveSecret?: SecretRefResolver;
+  readonly resolverUsage?: 'production' | 'test-only';
 }
 function name(value: unknown): string {
   const result = text(value, 128);
@@ -46,6 +47,27 @@ export function settings(input: unknown): Settings {
     (typeof source.resolveSecret !== 'function' || types.isProxy(source.resolveSecret))
   )
     throw failure();
+  let resolverUsage: unknown;
+  if (source.resolveSecret !== undefined) {
+    let current: object | null = source.resolveSecret as object;
+    for (let depth = 0; current && depth < 32; depth++) {
+      if (types.isProxy(current)) throw failure();
+      const descriptor = Object.getOwnPropertyDescriptor(current, 'usage');
+      if (descriptor) {
+        if (!('value' in descriptor)) throw failure();
+        resolverUsage = descriptor.value;
+        break;
+      }
+      current = Object.getPrototypeOf(current) as object | null;
+      if (depth === 31 && current) throw failure();
+    }
+    if (
+      resolverUsage !== undefined &&
+      resolverUsage !== 'production' &&
+      resolverUsage !== 'test-only'
+    )
+      throw failure();
+  }
   const names = new Set<string>();
   const clusters = array(source.clusters, 16).map((value): KafkaClusterConfig => {
     const item = fields(value, [
@@ -99,6 +121,9 @@ export function settings(input: unknown): Settings {
   if (!clusters.length) throw failure();
   return Object.freeze({
     clusters: Object.freeze(clusters),
+    ...(resolverUsage === undefined
+      ? {}
+      : { resolverUsage: resolverUsage as 'production' | 'test-only' }),
     ...(source.resolveSecret === undefined
       ? {}
       : { resolveSecret: source.resolveSecret as SecretRefResolver }),

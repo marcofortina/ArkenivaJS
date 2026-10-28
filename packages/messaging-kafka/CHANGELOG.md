@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Add internal bounded native producer ownership, verified connection setup and confirmed publication receipts.
+- Retain physical admission across logical cancellation and sanitize provider errors and technical observations.
+
 - Wait for broker acknowledgement in the native offset commit worker.
 - Preserve administrative offset precision, partition-only queries and epoch-zero timestamps.
 - Expose a compiled compatibility marker and add independent Java timestamp interoperability checks.

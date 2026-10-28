@@ -36,6 +36,8 @@ export interface KafkaPublicationReceipt {
   readonly partition: number;
   readonly offset: string;
   readonly status: 'acknowledged';
+  /** Caller correlation echoed only after a broker acknowledgement; it is not an identity assertion. */
+  readonly messageId?: string;
 }
 export interface KafkaConsumeSettings {
   readonly cluster: string;

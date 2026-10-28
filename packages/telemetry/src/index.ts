@@ -96,6 +96,10 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'kafka.cluster',
+  'kafka.topic',
+  'kafka.partition',
+  'kafka.outcome',
   'scim.operation',
   'scim.resource',
   'scim.direction',
@@ -165,6 +169,18 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'kafka.outcome': [
+    'connected',
+    'connect-error',
+    'authentication-error',
+    'assigned',
+    'revoked',
+    'offset-committed',
+    'offset-error',
+    'consumer-error',
+    'lag-unavailable',
+    'native-uninstrumented',
+  ],
   'realtime.protocol': ['websocket', 'sse'],
   'realtime.reason': [
     'closed',
@@ -334,6 +350,20 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'kafka.records.confirmed': '{message}',
+  'kafka.publish.value.bytes': 'By',
+  'kafka.publish.key.bytes': 'By',
+  'kafka.publish.headers.bytes': 'By',
+  'kafka.consume.value.bytes': 'By',
+  'kafka.consume.key.bytes': 'By',
+  'kafka.consume.headers.bytes': 'By',
+  'kafka.delivery.duration.ms': 'ms',
+  'kafka.handler.duration.ms': 'ms',
+  'kafka.publish.inflight': '{message}',
+  'kafka.consume.inflight': '{message}',
+  'kafka.consumer.lag.records': '{message}',
+  'kafka.events': '{event}',
+  'kafka.diagnostics.failures': '{error}',
   'realtime.connections.active': '{connection}',
   'realtime.queue.bytes': 'By',
   'realtime.sent.bytes': 'By',
@@ -543,10 +573,13 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
   )
     throw invalid('Invalid telemetry policy');
   const options = freezeData(copyData(input));
-  const scalar = (value: unknown): value is TelemetryAttributeValue =>
+  const scalar = (value: unknown, key: string): value is TelemetryAttributeValue =>
     typeof value === 'boolean' ||
     (typeof value === 'number' && Number.isFinite(value)) ||
-    (typeof value === 'string' && value.length > 0 && value.length <= 128 && !/[\r\n]/.test(value));
+    (typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= (key === 'kafka.topic' ? 249 : 128) &&
+      !/[\r\n]/.test(value));
   const allowed = new Map<string, ReadonlySet<TelemetryAttributeValue>>();
   for (const [key, values] of Object.entries(options.labelValues ?? {})) {
     if (
@@ -554,7 +587,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       !Array.isArray(values) ||
       !values.length ||
       values.length > 128 ||
-      values.some((v) => !scalar(v))
+      values.some((v) => !scalar(v, key))
     )
       throw invalid('Invalid telemetry label policy');
     allowed.set(key, new Set(values));
@@ -746,16 +779,18 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     for (const [key, value] of Object.entries(result)) {
       const valid =
         labels.has(key) &&
-        scalar(value) &&
+        scalar(value, key) &&
         (allowed.get(key)?.has(value) ??
           fixed[key]?.includes(value) ??
-          (key === 'status_code'
-            ? typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599
-            : key === 'operation'
-              ? operations.has(String(value))
-              : key === 'service'
-                ? value === options.service.name
-                : false));
+          (key === 'kafka.partition'
+            ? typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 1023
+            : key === 'status_code'
+              ? typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599
+              : key === 'operation'
+                ? operations.has(String(value))
+                : key === 'service'
+                  ? value === options.service.name
+                  : false));
       if (!valid) throw invalid('Telemetry label is not permitted');
     }
     return result;

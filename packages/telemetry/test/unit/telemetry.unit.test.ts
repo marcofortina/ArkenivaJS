@@ -14,6 +14,46 @@ import type { TelemetryOptions, ManagedTelemetry } from '@arkenivajs/telemetry';
 const service = { name: 'telemetry-test', version: '1.0.0', environment: 'test' as const };
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
+
+test('Kafka dimensions require approved catalogs, bounded partitions and fixed outcomes', async () => {
+  const target = await receiver();
+  const telemetry = createTelemetry({
+    ...options(target.endpoint),
+    labelValues: { 'kafka.cluster': ['owned'], 'kafka.topic': ['orders.created', 't'.repeat(249)] },
+  });
+  try {
+    telemetry.addCounter('kafka.events', 1, {
+      'kafka.cluster': 'owned',
+      'kafka.outcome': 'offset-error',
+    });
+    telemetry.addCounter('kafka.records.confirmed', 1, {
+      'kafka.cluster': 'owned',
+      'kafka.topic': 't'.repeat(249),
+    });
+    telemetry.setGauge('kafka.consumer.lag.records', 2, {
+      'kafka.cluster': 'owned',
+      'kafka.topic': 'orders.created',
+      'kafka.partition': 1023,
+    });
+    for (const attributes of [
+      { 'kafka.cluster': 'unapproved' },
+      { 'kafka.topic': 'unapproved' },
+      { 'kafka.outcome': 'unapproved' },
+      { 'kafka.partition': -1 },
+      { 'kafka.partition': 1024 },
+      { 'kafka.partition': 0.5 },
+      { 'kafka.group': 'untrusted-group' },
+      { tenant_id: 'untrusted-tenant' },
+    ])
+      assert.throws(
+        () => telemetry.addCounter('kafka.events', 1, attributes),
+        code('EK_CONFIG_INVALID'),
+      );
+  } finally {
+    await telemetry.close();
+    await target.close();
+  }
+});
 interface Envelope {
   resourceSpans?: {
     resource: { attributes: unknown[] };

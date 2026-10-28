@@ -12,7 +12,11 @@ export function failure(code: ErrorCode = 'EK_KAFKA_CONFIG', unknown = false): K
     ...(unknown ? { details: { outcome: 'unknown' } } : {}),
   });
 }
-export function fields(value: unknown, allowed?: readonly string[]): Record<string, unknown> {
+export function fields(
+  value: unknown,
+  allowed?: readonly string[],
+  inertNames = false,
+): Record<string, unknown> {
   if (
     !value ||
     typeof value !== 'object' ||
@@ -27,7 +31,7 @@ export function fields(value: unknown, allowed?: readonly string[]): Record<stri
     const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
     if (
       typeof key !== 'string' ||
-      /^(?:__proto__|constructor|prototype)$/i.test(key) ||
+      (!inertNames && /^(?:__proto__|constructor|prototype)$/i.test(key)) ||
       (allowed && !allowed.includes(key)) ||
       !('value' in descriptor)
     )
