@@ -23,7 +23,7 @@ addFormats.default(ajv);
 const schema = ajv.compile<TenantRegistrySnapshotV1_1>(registrySchema);
 
 /** Upstream lexical and parser APIs enforce finite nesting and unique decoded object keys. */
-export function parseRegistry(text: string, maxBytes = 8388608): TenantRegistrySnapshotV1_1 {
+export function parseRegistryJson(text: string, maxBytes = 8388608): unknown {
   try {
     if (
       typeof text !== 'string' ||
@@ -73,10 +73,15 @@ export function parseRegistry(text: string, maxBytes = 8388608): TenantRegistryS
       },
       { disallowComments: true, allowTrailingComma: false, allowEmptyContent: false },
     );
-    return validateRegistry(JSON.parse(text), maxBytes);
+    return JSON.parse(text) as unknown;
   } catch {
     throw registryFailure();
   }
+}
+
+/** Complete file snapshots and SQL content bodies share the same strict duplicate-aware parser. */
+export function parseRegistry(text: string, maxBytes = 8388608): TenantRegistrySnapshotV1_1 {
+  return validateRegistry(parseRegistryJson(text, maxBytes), maxBytes);
 }
 
 /** Reject values that JSON/JCS would omit or coerce; the shared copier rejects executable objects. */

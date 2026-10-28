@@ -101,6 +101,8 @@ export interface TenantRegistrySqlOptions {
   readonly connectionName: string;
   readonly sql: SqlProvider;
   readonly storageKey: string;
+  /** Server-owned allowlist of logical keys to validated schema/table prefixes. */
+  readonly storagePrefixes?: Readonly<Record<string, string>>;
   readonly activationCheckpoint?: TenantRegistryActivationCheckpoint;
 }
 export type TenantOperationHandler = (context: RouteContext) => Promise<unknown> | unknown;

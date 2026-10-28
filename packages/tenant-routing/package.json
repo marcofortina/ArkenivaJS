@@ -35,5 +35,8 @@
     "canonicalize": "5.1.0",
     "jsonc-parser": "3.3.1"
   },
+  "devDependencies": {
+    "@arkenivajs/database-postgres": "workspace:*"
+  },
   "license": "AGPL-3.0-or-later"
 }

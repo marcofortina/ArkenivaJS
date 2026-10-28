@@ -76,6 +76,7 @@ function contract(
   const database: TenantRegistrySqlOptions = {
     connectionName: 'control',
     storageKey: 'owned_registry',
+    storagePrefixes: { owned_registry: 'control.tenant_registry' },
     sql,
     activationCheckpoint: {
       accept: async (input, options) => {

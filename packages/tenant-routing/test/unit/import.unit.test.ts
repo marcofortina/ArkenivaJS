@@ -18,5 +18,6 @@ test('Tenant routing adds no HTTP, SQL or registry validation engine to the init
     'TENANT_ROUTING_EVENT_SCHEMA_VERSION',
     'TENANT_ROUTING_REGISTRY_SCHEMA_VERSION',
     'tenantRegistryFileProvider',
+    'tenantRegistrySqlProvider',
   ]);
 });

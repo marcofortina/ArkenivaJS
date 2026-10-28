@@ -2091,6 +2091,10 @@ importers:
       jsonc-parser:
         specifier: 3.3.1
         version: 3.3.1(patch_hash=f96f96fc4dc3f676a4ddee52ce201e38bf4b2cf14d941d0da4c478b548a0a64e)
+    devDependencies:
+      '@arkenivajs/database-postgres':
+        specifier: workspace:*
+        version: link:../database-postgres
 
   packages/upload:
     dependencies:
