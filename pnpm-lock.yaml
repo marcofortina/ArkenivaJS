@@ -1494,6 +1494,13 @@ importers:
       '@confluentinc/kafka-javascript':
         specifier: 1.11.0
         version: 1.11.0(patch_hash=4c0085b70dfc5a6feb0807b2a2337c30e096a7c46596a338d0903f2a418a0bb3)
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
 
   packages/metering:
     dependencies:

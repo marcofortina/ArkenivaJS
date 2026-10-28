@@ -25,11 +25,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node ../../scripts/test.mjs unit",
+    "test:integration": "node ../../scripts/test.mjs integration --sequential",
     "lint": "eslint src test"
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
     "@confluentinc/kafka-javascript": "1.11.0"
+  },
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*"
   },
   "license": "AGPL-3.0-or-later"
 }

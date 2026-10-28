@@ -42,6 +42,7 @@ const flags = coverage
       '--test-coverage-branches=85',
     ]
   : [];
+if (process.argv.includes('--sequential')) flags.push('--test-concurrency=1');
 const label = ((packagePrefix ?? 'workspace-') + kind + (coverage ? '-coverage' : '')).replaceAll(
   '/',
   '-',

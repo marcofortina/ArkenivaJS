@@ -7,6 +7,8 @@ import type {
   KafkaConsumeSettings,
   KafkaRecord,
 } from '../../dist/index.js';
+import { kafkaPlugin, KAFKA_CAPABILITY } from '../../dist/index.js';
+import type { KafkaService } from '../../dist/index.js';
 
 const cluster: KafkaClusterConfig = {
   name: 'owned',
@@ -61,3 +63,14 @@ void unreliable;
 void unsafe;
 void numeric;
 void uncatalogued;
+const plugin = kafkaPlugin({ clusters: [cluster] });
+const capability: symbol = KAFKA_CAPABILITY;
+declare const service: KafkaService;
+void plugin;
+void capability;
+void service.publish(tombstone).then((receipt) => {
+  const exact: string = receipt.offset;
+  const correlation: string | undefined = receipt.messageId;
+  void exact;
+  void correlation;
+});
