@@ -64,6 +64,8 @@ export function protectFields(
         try {
           if (!scope) throw failure('EK_GQL_FORBIDDEN');
           scope.check();
+          if (info.operation.operation === 'mutation' && info.path.prev === undefined)
+            scope.mutationEpoch++;
           if (++scope.fields > scope.limits.maxFieldExecutions) throw failure('EK_GQL_COMPLEXITY');
           const metadata = fieldInfo(info);
           let authorized = false;

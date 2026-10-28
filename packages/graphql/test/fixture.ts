@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { COMPONENTS, createApplication } from '@arkenivajs/core';
-import type { Plugin, ServerTlsFiles } from '@arkenivajs/core';
+import type { ApplicationOptions, Plugin, ServerTlsFiles } from '@arkenivajs/core';
 import { apiPlugin } from '@arkenivajs/api';
 import type { ManagedApiServer } from '@arkenivajs/api';
 import { securityPlugin } from '@arkenivajs/security';
@@ -64,6 +64,7 @@ export async function fixture(
     authenticated?: boolean;
     tls?: ServerTlsFiles;
     plugins?: readonly Plugin[];
+    databases?: ApplicationOptions['databases'];
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -114,6 +115,7 @@ export async function fixture(
         ...(options.tls ? { protocol: 'https' as const, tls: options.tls } : {}),
       },
       logging: { level: 'debug' },
+      ...(options.databases ? { databases: options.databases } : {}),
       ...(authenticated
         ? { security: { issuer, audience: 'api://graphql', algorithms: ['ES256'] } }
         : {}),

@@ -1370,15 +1370,24 @@ importers:
         specifier: 16.12.1
         version: 16.12.1(graphql@16.14.2)
     devDependencies:
+      '@arkenivajs/database-postgres':
+        specifier: workspace:*
+        version: link:../database-postgres
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../logging
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../security
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       jose:
         specifier: 6.2.13
         version: 6.2.13
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/grpc:
     dependencies:
