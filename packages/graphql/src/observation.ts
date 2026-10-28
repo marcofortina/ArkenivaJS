@@ -3,7 +3,7 @@
 
 import { performance } from 'node:perf_hooks';
 import { COMPONENTS, KitError } from '@arkenivajs/core';
-import type { Telemetry } from '@arkenivajs/core';
+import type { Telemetry, UsageMeter, MeterSession } from '@arkenivajs/core';
 import type { SupportPluginFactory } from '@arkenivajs/core/support';
 import { instrumentOperation } from '@arkenivajs/core/support';
 import type { GraphqlOperationKind } from './contracts.js';
@@ -11,19 +11,38 @@ import type { GraphqlOperationKind } from './contracts.js';
 export const OBSERVERS = Symbol('graphql.observers');
 export interface Observers {
   readonly telemetry?: Telemetry;
+  readonly meter?: UsageMeter & {
+    run<T>(session: MeterSession, work: () => T): T;
+    markMissing(
+      session: MeterSession,
+      reason: 'driver_bytes_unavailable' | 'span_not_instrumented',
+    ): void;
+  };
   readonly detailed: boolean;
 }
 export const observations: SupportPluginFactory = (options) => {
   const provider = options.plugins?.find((plugin) => plugin.capabilities.has('telemetry'));
+  const accounting = options.metering?.enabled
+    ? options.plugins?.find((plugin) => plugin.capabilities.has('meter'))
+    : undefined;
   return {
     id: 'graphql-observation',
     version: '0.1.0',
     capabilities: new Set(),
-    dependencies: provider ? [provider.id] : [],
+    dependencies: [provider?.id, accounting?.id].filter((id): id is string => id !== undefined),
     init(context) {
+      const meter = accounting
+        ? context.require<NonNullable<Observers['meter']>>(COMPONENTS.meter)
+        : undefined;
+      if (meter && (typeof meter.run !== 'function' || typeof meter.markMissing !== 'function'))
+        throw new KitError({
+          code: 'EK_GQL_CONFIG',
+          message: 'GraphQL metering requires owned scope controls',
+        });
       context.provide<Observers>(OBSERVERS, {
         ...(provider ? { telemetry: context.require<Telemetry>(COMPONENTS.telemetry) } : {}),
         detailed: options.telemetry?.mode === 'detailed',
+        ...(meter ? { meter } : {}),
       });
     },
     close() {},

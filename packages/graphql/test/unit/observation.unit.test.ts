@@ -88,7 +88,7 @@ test(
             endpoint: `http://127.0.0.1:${address.port}`,
             allowInsecureLoopback: true,
             exportTimeoutMs: 500,
-            exportIntervalMs: 1000,
+            exportIntervalMs: 60000,
             labelValues: { route: ['/graphql'] },
           }),
         ],

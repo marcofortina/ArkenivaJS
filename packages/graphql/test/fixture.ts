@@ -69,6 +69,7 @@ export async function fixture(
     environment?: ApplicationOptions['service']['environment'];
     port?: number;
     telemetry?: ApplicationOptions['telemetry'];
+    metering?: ApplicationOptions['metering'];
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -135,6 +136,7 @@ export async function fixture(
       },
       logging: { level: 'debug' },
       ...(options.telemetry ? { telemetry: options.telemetry } : {}),
+      ...(options.metering ? { metering: options.metering } : {}),
       ...(options.databases ? { databases: options.databases } : {}),
       ...(authenticated
         ? { security: { issuer, audience: 'api://graphql', algorithms: ['ES256'] } }
@@ -146,6 +148,7 @@ export async function fixture(
           dependencies: [
             ...(authenticated ? ['security'] : []),
             ...(options.telemetry ? ['telemetry'] : []),
+            ...(options.metering?.enabled ? ['metering'] : []),
           ],
         }),
         ...(options.plugins ?? []),

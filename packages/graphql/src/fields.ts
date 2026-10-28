@@ -84,9 +84,11 @@ export async function authorizedField(
     if (!authorized) throw failure('EK_GQL_FORBIDDEN');
     const value = await scope.run(execute);
     scope.check();
-    return await scope.run(() =>
+    const result = await scope.run(() =>
       collection(value, output, scope.limits.maxCollectionItems, () => scope.check()),
     );
+    scope.resolvedFields++;
+    return result;
   } catch (error) {
     const safe =
       error instanceof KitError &&

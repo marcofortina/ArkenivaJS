@@ -116,7 +116,13 @@ const token = (value: unknown, limit: number): value is string =>
   [...value].every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127);
 const defaultDimensions = Object.freeze({
   'http.requests': 'operations',
+  'http.request.bytes': 'bytes',
   'http.response.bytes': 'bytes',
+  'graphql.operations': 'operations',
+  'graphql.resolved_fields': 'operations',
+  'graphql.loader_batches': 'operations',
+  'graphql.loader_items': 'items',
+  'graphql.subscription_events': 'operations',
   'db.query': 'operations',
   'db.client.elapsed': 'milliseconds',
   'http.client.requests': 'operations',

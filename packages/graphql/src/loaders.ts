@@ -68,11 +68,13 @@ export function installLoaders(
             return entry.request;
           });
           try {
-            observed();
-            scope.observation?.loader(requests.length);
-            const results = await scope.run(() =>
-              definition.load(Object.freeze(requests), scope.context),
-            );
+            const results = await scope.run(() => {
+              observed();
+              scope.observation?.loader(requests.length);
+              scope.loaderBatches++;
+              scope.loaderItems += requests.length;
+              return definition.load(Object.freeze(requests), scope.context);
+            });
             if (!Array.isArray(results) || results.length !== queries.length)
               throw failure('EK_GQL_EXECUTION');
             return results;
