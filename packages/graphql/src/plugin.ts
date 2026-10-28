@@ -18,6 +18,7 @@ import { installMetadata, assertMetadata, ownMetadata, authorizeMetadata } from 
 import { Operation } from './operation.js';
 import { capture, failure, record } from './policy.js';
 import { compileSchema } from './schema.js';
+import { encodeResult } from './encoding.js';
 
 const AUTHORITY = Symbol('graphql.authority');
 const authority: SupportPluginFactory = (options) => {
@@ -366,9 +367,8 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
                 ),
               );
               current.check();
-              const encoded = JSON.stringify(result);
-              if (Buffer.byteLength(encoded) > settings.security.limits.maxResultBytes)
-                throw failure('EK_GQL_RESPONSE_LIMIT');
+              const encoded = encodeResult(result, settings.security.limits.maxResultBytes);
+              current.check();
               if (result.errors?.length) counters.rejected++;
               return reply.type('application/json').send(encoded);
             } finally {

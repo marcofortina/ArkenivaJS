@@ -33,6 +33,7 @@
     "graphql": "16.14.2"
   },
   "devDependencies": {
+    "fast-check": "4.10.2",
     "@arkenivajs/database-postgres": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/security": "workspace:*",
