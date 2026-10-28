@@ -10,6 +10,7 @@ import type {
   TenantResponseTransformer,
   ApprovedUpstream,
   TenantUpstreamCredentialProvider,
+  TenantRoutingEventExporter,
 } from './contracts.js';
 import { data, captureMethod } from './provider-support.js';
 import { routingFailure } from './errors.js';
@@ -42,6 +43,7 @@ export function captureSettings(input: TenantRoutingPluginSettings) {
       'responseTransformers',
       'transformers',
       'credentialProvider',
+      'eventExporter',
       'approvedUpstreams',
       'capabilitiesPath',
       'maxCapabilities',
@@ -103,6 +105,15 @@ export function captureSettings(input: TenantRoutingPluginSettings) {
               ),
             }),
       approvedUpstreams: upstreams as readonly ApprovedUpstream[],
+      eventExporter:
+        fields.eventExporter === undefined
+          ? undefined
+          : Object.freeze({
+              export: captureMethod<TenantRoutingEventExporter['export']>(
+                fields.eventExporter,
+                'export',
+              ),
+            }),
       capabilitiesPath,
       maxCapabilities: maxCapabilities as number,
       authorize: callback<TenantRoutingPluginSettings['authorize']>(fields.authorize),

@@ -9,6 +9,7 @@ import { COMPONENTS, type Plugin, type Telemetry } from '@arkenivajs/core';
 import { telemetryPlugin } from '@arkenivajs/telemetry';
 import { fixture, send, settings } from '../http-fixture.js';
 import { registryContentChecksum } from '../../dist/registry.js';
+import type { TenantRoutingEventV1 } from '../../dist/index.js';
 
 interface Attribute {
   key: string;
@@ -92,9 +93,15 @@ test(
           },
         ],
       };
+    const routingEvents: TenantRoutingEventV1[] = [];
     const f = await fixture(
       {
         ...base,
+        eventExporter: {
+          async export(batch) {
+            routingEvents.push(...batch);
+          },
+        },
         registry: {
           loadSnapshot: async () => ({
             ...content,
@@ -155,6 +162,26 @@ test(
         403,
       );
       assert.equal((await send(f.origin, '/api/orders/private-object-id')).status, 401);
+      await f.service.events!.flush();
+      assert.equal(routingEvents.length, 3);
+      assert.equal(new Set(routingEvents.map((event) => event.eventId)).size, 3);
+      const acceptedEvents = routingEvents.filter((event) => event.status === 'ok');
+      assert.equal(acceptedEvents.length, 2);
+      assert.deepEqual(acceptedEvents.map((event) => event.tenantId).sort(), ['north', 'south']);
+      assert.ok(
+        acceptedEvents.every(
+          (event) =>
+            event.traceId === traceId &&
+            event.operationId === 'orders.read' &&
+            event.registryRevision === 'stable-blue' &&
+            event.registryActivationGeneration === 1,
+        ),
+      );
+      assert.equal(routingEvents.filter((event) => event.status === 'error').length, 1);
+      assert.doesNotMatch(
+        JSON.stringify(routingEvents),
+        /private-object-id|Bearer|127\.0\.0\.1|baggage/,
+      );
       await f.app.telemetry.flush();
       const metrics = data.flatMap(
         (envelope) =>
@@ -315,5 +342,38 @@ test('Throwing or repeated observer continuations never replay a handler or bypa
     } finally {
       await f.close();
     }
+  }
+});
+
+test('A routing exporter outage never changes application authorization or hides final event loss', async () => {
+  let effects = 0;
+  const base = settings(),
+    f = await fixture({
+      ...base,
+      eventExporter: {
+        async export() {
+          throw new Error('private-routing-exporter-failure');
+        },
+      },
+      handlers: {
+        ...base.handlers,
+        north: () => ({ id: String(++effects), tenant: 'north', implementation: 'north' }),
+      },
+    });
+  try {
+    const accepted = await send(f.origin, '/api/orders/id', {
+      headers: { authorization: await f.token('north') },
+    });
+    assert.equal(accepted.status, 200, accepted.body);
+    await assert.rejects(f.service.events!.flush(), { code: 'EK_BACKEND_UNAVAILABLE' });
+    assert.ok(f.service.events!.stats().dropped > 0 && f.service.events!.stats().failedExports > 0);
+    const denied = await send(f.origin, '/api/orders/id', {
+      headers: { authorization: await f.token('north', 'unrelated') },
+    });
+    assert.equal(denied.status, 403, denied.body);
+    assert.equal(effects, 1);
+    assert.doesNotMatch(accepted.body + denied.body + f.logs(), /private-routing-exporter-failure/);
+  } finally {
+    await assert.rejects(f.close(), { code: 'EK_PLUGIN_FAILED' });
   }
 });

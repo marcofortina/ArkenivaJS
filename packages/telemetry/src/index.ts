@@ -364,6 +364,9 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'arkenivajs.routing.events.dropped': '{event}',
+  'arkenivajs.routing.events.exported': '{event}',
+  'arkenivajs.routing.events.failed_exports': '{batch}',
   'arkenivajs.routing.requests': '{request}',
   'arkenivajs.routing.matches': '{operation}',
   'arkenivajs.routing.rejected': '{rejection}',

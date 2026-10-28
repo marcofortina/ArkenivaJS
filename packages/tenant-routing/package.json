@@ -8,6 +8,10 @@
     "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
   },
   "exports": {
+    "./event-schema": {
+      "types": "./dist/event-schema.d.ts",
+      "import": "./dist/event-schema.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

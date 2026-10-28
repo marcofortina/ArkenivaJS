@@ -118,6 +118,9 @@ export function traceRequest<T>(
 export class Observation {
   private readonly began = performance.now();
   private ended = false;
+  durationMs(): number {
+    return Math.max(0, performance.now() - this.began);
+  }
   private kind: 'handler' | 'http' | 'discovery' | 'unselected';
   constructor(
     private readonly observers: Observers,
