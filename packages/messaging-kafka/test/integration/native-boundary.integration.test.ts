@@ -15,6 +15,11 @@ test('Actual native offset conversions preserve signed 64-bit integers before pr
   const sdk = dirname(manifest),
     local = createRequire(manifest);
   require('@confluentinc/kafka-javascript');
+  assert.equal(
+    (local('./librdkafka.js') as { arkenivajsNativeCompatibilityVersion?: number })
+      .arkenivajsNativeCompatibilityVersion,
+    1,
+  );
   const directory = await mkdtemp(join(tmpdir(), 'owned-kafka-offset-'));
   try {
     const binary = join(sdk, 'build/Release/confluent-kafka-javascript.node');
@@ -47,12 +52,27 @@ test('Actual native offset conversions preserve signed 64-bit integers before pr
     };
     const common = local('./lib/kafkajs/_common.js') as {
       exactOffset(value: unknown): bigint;
+      topicPartitionOffsetToRdKafka(value: { topic: string; partition: number; offset?: string }): {
+        offset?: bigint;
+      };
       topicPartitionOffsetMetadataToRdKafka(value: {
         topic: string;
         partition: number;
         offset: string;
       }): { offset: bigint };
     };
+    assert.equal(
+      common.topicPartitionOffsetToRdKafka({ topic: 'owned-native-boundary', partition: 0 }).offset,
+      undefined,
+    );
+    assert.equal(
+      common.topicPartitionOffsetToRdKafka({
+        topic: 'owned-native-boundary',
+        partition: 0,
+        offset: '0',
+      }).offset,
+      0n,
+    );
     for (const value of [
       0n,
       9007199254740991n,

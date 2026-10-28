@@ -167,7 +167,7 @@ overrides:
   exceljs@4.4.0>unzipper: 0.12.5
 
 patchedDependencies:
-  '@confluentinc/kafka-javascript@1.11.0': 80cdb862c40d21d5c9f9a76600f4eb40588e6a84b5b67f000e333f87d01c62fe
+  '@confluentinc/kafka-javascript@1.11.0': 4c0085b70dfc5a6feb0807b2a2337c30e096a7c46596a338d0903f2a418a0bb3
   '@fastify/sse@0.6.1': 2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df
   amqplib@2.2.0: 5d45a5b8ea0b717b9774ec3dbc6ff9f8b9a512997f4dde9fab3d4b912c284a36
   buildcheck@0.0.7: cee0504e84446de8efbf065c18b69cda151e12d481591dbed994338e0d5b7004
@@ -1493,7 +1493,7 @@ importers:
         version: link:../core
       '@confluentinc/kafka-javascript':
         specifier: 1.11.0
-        version: 1.11.0(patch_hash=80cdb862c40d21d5c9f9a76600f4eb40588e6a84b5b67f000e333f87d01c62fe)
+        version: 1.11.0(patch_hash=4c0085b70dfc5a6feb0807b2a2337c30e096a7c46596a338d0903f2a418a0bb3)
 
   packages/metering:
     dependencies:
@@ -4686,7 +4686,7 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@confluentinc/kafka-javascript@1.11.0(patch_hash=80cdb862c40d21d5c9f9a76600f4eb40588e6a84b5b67f000e333f87d01c62fe)':
+  '@confluentinc/kafka-javascript@1.11.0(patch_hash=4c0085b70dfc5a6feb0807b2a2337c30e096a7c46596a338d0903f2a418a0bb3)':
     dependencies:
       '@mapbox/node-pre-gyp': 2.0.3
       bindings: 1.5.0
