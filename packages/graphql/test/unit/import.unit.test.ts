@@ -11,6 +11,6 @@ test('GraphQL contract imports expose no listener or implicit engine initializat
   assert.equal(require.cache[engine], undefined);
   const contracts = await import('../../dist/index.js');
   assert.equal(typeof contracts.GRAPHQL_CAPABILITY, 'symbol');
-  assert.deepEqual(Object.keys(contracts), ['GRAPHQL_CAPABILITY']);
+  assert.deepEqual(Object.keys(contracts), ['GRAPHQL_CAPABILITY', 'graphqlPlugin']);
   assert.equal(require.cache[engine], undefined);
 });

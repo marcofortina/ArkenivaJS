@@ -32,5 +32,10 @@
     "mercurius": "16.12.1",
     "graphql": "16.14.2"
   },
+  "devDependencies": {
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "jose": "6.2.13"
+  },
   "license": "AGPL-3.0-or-later"
 }
