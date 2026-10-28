@@ -16,6 +16,7 @@ overrides:
   # Keep the native Parse API while removing the legacy decoder's unlicensed buffers dependency.
   exceljs@4.4.0>unzipper: 0.12.5
 patchedDependencies:
+  jsonc-parser@3.3.1: packages/tenant-routing/compat/jsonc-parser-runtime-enums.diff
   '@graphiql/react@0.39.1': packages/graphql/compat/graphiql-monaco-public-types.diff
   '@confluentinc/kafka-javascript@1.11.0': packages/messaging-kafka/compat/confluent-exact-offsets-and-build.diff
   scimmy@1.3.5: packages/security-scim/compat/scimmy-replacement-and-empty-page.diff
