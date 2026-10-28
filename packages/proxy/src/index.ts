@@ -3,8 +3,6 @@
 
 export type * from './contracts.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { open, constants } from 'node:fs/promises';
-import { createSecureContext } from 'node:tls';
 import { Pool } from 'undici';
 import type { Dispatcher } from 'undici';
 import nativeProxy from '@fastify/http-proxy';
@@ -22,7 +20,7 @@ import type { ComposablePlugin, SupportPluginFactory } from '@arkenivajs/core/su
 import type { ManagedApiServer } from '@arkenivajs/api';
 import type { ProxyPluginSettings, ProxyService } from './contracts.js';
 import { capture, failure, text } from './policy.js';
-import { guardedLookup } from './network.js';
+import { createFixedUpstreamPool } from './support.js';
 import { Scope, translated, status } from './runtime.js';
 import { contentHeaders, validateTarget } from './headers.js';
 import { remoteTrace, injectTrace } from './trace.js';
@@ -70,18 +68,6 @@ const safe = (work: () => unknown) => {
     /* Observation cannot alter proxy authorization or replay a request. */
   }
 };
-async function trustFile(path: string): Promise<Buffer> {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.size < 1 || stat.size > 1048576) throw failure();
-    const ca = await handle.readFile();
-    createSecureContext({ ca, minVersion: 'TLSv1.2' });
-    return ca;
-  } finally {
-    await handle.close();
-  }
-}
 /** Register bounded routes before listener activation; monitoring is the only public runtime capability. */
 export function proxyPlugin(input: ProxyPluginSettings): Plugin {
   const settings = capture(input),
@@ -160,35 +146,28 @@ export function proxyPlugin(input: ProxyPluginSettings): Plugin {
             )
           )
             throw failure();
-          let ca: Buffer | undefined;
-          try {
-            if (route.upstreamCaFile) ca = await trustFile(route.upstreamCaFile);
-          } catch {
-            throw failure();
-          }
           if (
             route.identityDelegation === 'validated-service-credential' &&
             !route.upstreamOrigin.startsWith('https:')
           )
             throw failure();
           if (route.upstreamTlsProfile && !observed.mtls) throw failure();
-          const pool = new Pool(route.upstreamOrigin, {
-            allowH2: false,
-            connections: 16,
-            pipelining: 1,
-            headersTimeout: route.timeoutMs,
-            bodyTimeout: route.timeoutMs,
-            maxHeaderSize: 16384,
-            connect: route.upstreamTlsProfile
-              ? mtlsConnector(route, observed.mtls!)
-              : {
-                  lookup: guardedLookup(route),
-                  rejectUnauthorized: true,
-                  minVersion: 'TLSv1.2',
-                  timeout: route.timeoutMs,
-                  ...(ca ? { ca } : {}),
-                },
-          });
+          const pool = route.upstreamTlsProfile
+            ? new Pool(route.upstreamOrigin, {
+                allowH2: false,
+                connections: 16,
+                pipelining: 1,
+                headersTimeout: route.timeoutMs,
+                bodyTimeout: route.timeoutMs,
+                maxHeaderSize: 16384,
+                connect: mtlsConnector(route, observed.mtls!),
+              })
+            : await createFixedUpstreamPool({
+                upstreamOrigin: route.upstreamOrigin,
+                destinationPolicy: route.destinationPolicy,
+                connectionTimeoutMs: route.timeoutMs,
+                ...(route.upstreamCaFile ? { upstreamCaFile: route.upstreamCaFile } : {}),
+              });
           pools.push(pool);
           const dispatcher = {
             destroy() {

@@ -8,8 +8,9 @@ import { allowedAddress, hostname, failure } from './policy.js';
 
 /** Native connect-time resolution checks every returned address before the transport selects one. */
 export function guardedLookup(
-  route: ProxyRouteConfig,
+  route: Pick<ProxyRouteConfig, 'upstreamOrigin' | 'destinationPolicy' | 'timeoutMs'>,
   resolve: typeof lookup = lookup,
+  permitted?: (address: string) => boolean,
 ): LookupFunction {
   const expected = hostname(new URL(route.upstreamOrigin).hostname);
   return (host, options, callback) => {
@@ -32,7 +33,11 @@ export function guardedLookup(
         error ||
         !addresses.length ||
         addresses.length > 64 ||
-        addresses.some((value) => !allowedAddress(value.address, route.destinationPolicy))
+        addresses.some(
+          (value) =>
+            !allowedAddress(value.address, route.destinationPolicy) ||
+            (permitted !== undefined && permitted(value.address) !== true),
+        )
       ) {
         callback(failure(error ? 'EK_PROXY_UPSTREAM' : 'EK_PROXY_POLICY'), '', 0);
         return;

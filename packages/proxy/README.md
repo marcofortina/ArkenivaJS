@@ -136,3 +136,12 @@ termination, cancellation, restart, drain, parallel streams and actual SDK priva
 Comparative native performance, remote CI and release acceptance remain separate
 requirements. CONNECT, WebSocket upgrades, open/dynamic forwarding and HTTP
 caching are outside this adapter's scope.
+
+`@arkenivajs/proxy/support` exposes `createFixedUpstreamPool` for framework
+adapter authors. It reuses the same canonical origin, hostname/CIDR and
+connect-time DNS policy without registering routes. CA material is read with a
+fixed allocation and parsed as bounded PEM certificates. The returned native
+Undici pool keeps strict TLS verification and a positive connection deadline.
+Its owner must validate fixed request paths and headers, enforce request/response
+byte budgets and cancellation, instrument operations and close/destroy the pool.
+This entry is a transport SPI, not an authorization or public forwarding endpoint.

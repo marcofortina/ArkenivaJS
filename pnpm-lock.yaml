@@ -2085,6 +2085,9 @@ importers:
       '@arkenivajs/database':
         specifier: workspace:*
         version: link:../database
+      '@arkenivajs/proxy':
+        specifier: workspace:*
+        version: link:../proxy
       ajv:
         specifier: 8.20.0
         version: 8.20.0

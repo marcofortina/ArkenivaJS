@@ -89,6 +89,22 @@ test('Actual native pool connections recheck DNS and reject a rebinding before c
     await assert.rejects(second.request({ path: '/', method: 'GET' }), { code: 'EK_PROXY_POLICY' });
     assert.equal(received, 1);
     assert.equal(resolved, 2);
+    // Additional transport restrictions apply even to an otherwise allowlisted
+    // address and are evaluated again for the actual native connection.
+    selected = '127.0.0.1';
+    const restricted = new Pool(route.upstreamOrigin, {
+      connect: { lookup: guardedLookup(route, resolver, () => false) },
+      connections: 1,
+    });
+    try {
+      await assert.rejects(restricted.request({ path: '/', method: 'GET' }), {
+        code: 'EK_PROXY_POLICY',
+      });
+      assert.equal(received, 1);
+      assert.equal(resolved, 3);
+    } finally {
+      await restricted.destroy();
+    }
   } finally {
     await first.destroy();
     await second?.destroy();
