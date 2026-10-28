@@ -676,6 +676,21 @@ importers:
         specifier: 13.5.0
         version: 13.5.0
 
+  examples/proxy:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/proxy':
+        specifier: workspace:*
+        version: link:../../packages/proxy
+
   examples/redis:
     dependencies:
       '@arkenivajs/core':
@@ -1398,6 +1413,43 @@ importers:
         specifier: workspace:*
         version: link:../api
 
+  packages/proxy:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/security-mtls':
+        specifier: workspace:*
+        version: link:../security-mtls
+      '@fastify/http-proxy':
+        specifier: 11.6.5
+        version: 11.6.5
+      fastify:
+        specifier: 5.12.7
+        version: 5.12.7
+      ipaddr.js:
+        specifier: 2.5.0
+        version: 2.5.0
+      undici:
+        specifier: 8.12.3
+        version: 8.12.3
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+
   packages/security:
     dependencies:
       '@arkenivajs/core':
@@ -1924,6 +1976,9 @@ packages:
   '@fastify/helmet@13.2.0':
     resolution: {integrity: sha512-2u41U5hR9o1u3HUHLT3Njp7vWuWw+XXw8qCBwVY17pRQAN179YYKiU9f7/qEn1ITabgNTkq/Yk6gmrYPSraagA==}
 
+  '@fastify/http-proxy@11.6.5':
+    resolution: {integrity: sha512-jbIRrLDNGaHfRRMwL4g4SI6P0SYh0T8Kecc53qKiPynq38iC+fqSjaERKDfqSsW1DG7DPn92KJeu0nqpxf/KsQ==}
+
   '@fastify/merge-json-schemas@0.2.2':
     resolution: {integrity: sha512-d/gx9sRbUCVgGRGzma46wLcwiY8noTqO2Nmjg/vbTARxHRE5bdh5PIL8s97Lt1X7ScRWRW52eVYxwIoPwIdVUA==}
 
@@ -1932,6 +1987,9 @@ packages:
 
   '@fastify/proxy-addr@5.1.2':
     resolution: {integrity: sha512-uqB4QsgVoro0XDC+DIftIMGXHdBPn+lK6Ek3xXAIxPMCJfqxnbtyEoMCm2KPUVOuIosd7Cyw9HawEqMFM/UA+g==}
+
+  '@fastify/reply-from@12.8.0':
+    resolution: {integrity: sha512-gxlp+UxL57S6js52TQYFv841zwpI/VzaAFTMhuXl6xAlXHcxYN4NYGbn+SodrJvBS9DuIuLyJbwLkeVABG82jw==}
 
   '@fastify/swagger@9.9.2':
     resolution: {integrity: sha512-ayxItVgf/1axBvw33lqsA5ns02YMpT1r59G/HCJraRNWWBzvLgN+oiCBPhuzTiN67TvctlCYkG0+40WLKYuusQ==}
@@ -3106,6 +3164,9 @@ packages:
     resolution: {integrity: sha512-iK2f+YrcmoeGqk6fA0ea2bptcu/itMIm4NfEozq6N25+aG6h7s5HZbB/k1aV7b5w5sFLMCbbtRUsTVR+BgC3xw==}
     engines: {node: '>=12.17.0'}
 
+  fast-content-type-parse@4.0.1:
+    resolution: {integrity: sha512-AAu9Ey/t6KDFqqeCfbwdlASlv7rQBG57gXYf2YU+MXJx1OIJn2q3BEJKmtnZaeGm1y5AYxLzRMmq9VWWXrfRcA==}
+
   fast-csv@4.3.6:
     resolution: {integrity: sha512-2RNSpuwwsJGP0frGsOmTb9oUF+VkFSM4SyLTDgwf2ciHWTarN0lQTC+F2f/t5J9QjW+c65VFIAAu85GsvMIusw==}
     engines: {node: '>=10.0.0'}
@@ -4129,6 +4190,10 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  undici@7.30.1:
+    resolution: {integrity: sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==}
+    engines: {node: '>=20.18.1'}
+
   undici@8.12.3:
     resolution: {integrity: sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==}
     engines: {node: '>=22.19.0'}
@@ -4380,6 +4445,16 @@ snapshots:
       fastify-plugin: 6.0.1
       helmet: 8.3.0
 
+  '@fastify/http-proxy@11.6.5':
+    dependencies:
+      '@fastify/reply-from': 12.8.0
+      fast-querystring: 1.1.2
+      fastify-plugin: 6.0.1
+      ws: 8.22.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@fastify/merge-json-schemas@0.2.2':
     dependencies:
       dequal: 2.0.3
@@ -4396,6 +4471,16 @@ snapshots:
     dependencies:
       '@fastify/forwarded': 3.1.2
       ipaddr.js: 2.5.0
+
+  '@fastify/reply-from@12.8.0':
+    dependencies:
+      '@fastify/error': 4.2.1
+      end-of-stream: 1.4.5
+      fast-content-type-parse: 4.0.1
+      fast-querystring: 1.1.2
+      fastify-plugin: 6.0.1
+      toad-cache: 3.7.4
+      undici: 7.30.1
 
   '@fastify/swagger@9.9.2':
     dependencies:
@@ -5646,6 +5731,8 @@ snapshots:
     dependencies:
       pure-rand: 8.4.2
 
+  fast-content-type-parse@4.0.1: {}
+
   fast-csv@4.3.6:
     dependencies:
       '@fast-csv/format': 4.3.5
@@ -6689,6 +6776,8 @@ snapshots:
   undici-types@5.26.5: {}
 
   undici-types@6.21.0: {}
+
+  undici@7.30.1: {}
 
   undici@8.12.3: {}
 

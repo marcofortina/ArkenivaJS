@@ -88,6 +88,11 @@ short-lived single-use credentials with runtime account authorization. Its
 [PostgreSQL HTTPS guide](examples/postgres/magiclinks.md) verifies scanner-safe
 GETs, explicit POST confirmation and redemption across independent processes.
 
+The optional [HTTP reverse proxy](packages/proxy/README.md) adds fixed-upstream
+streaming with connect-time address policy, runtime authentication and header
+isolation. Its [HTTPS consumer](examples/proxy/README.md) verifies real TLS,
+rewrites, byte counts and rejection of spoofed identity headers.
+
 The [identifier utility](packages/data-identifiers/README.md) uses native UUIDv4
 and the approved UUID library for UUIDv7, with strict version/canonical policy.
 The [utilities example](examples/utilities/README.md) runs without external services.

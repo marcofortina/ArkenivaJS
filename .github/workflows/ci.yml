@@ -69,6 +69,7 @@ jobs:
             'dns',
             'mail',
             'messaging-amqp',
+            'proxy',
             'security-apikey',
             'security-crypto',
             'security-http',

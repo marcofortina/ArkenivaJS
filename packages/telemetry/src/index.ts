@@ -96,6 +96,7 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'proxy.outcome',
   'magiclink.operation',
   'magiclink.intent',
   'magiclink.outcome',
@@ -156,6 +157,7 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'proxy.outcome': ['ok', 'error'],
   'magiclink.operation': ['startup', 'issue', 'consume', 'revoke'],
   'magiclink.intent': ['none', 'login', 'email-verify', 'account-recover'],
   'magiclink.outcome': ['ok', 'error', 'expired', 'replay', 'rejected'],
@@ -288,6 +290,11 @@ const units: Record<string, string> = {
   'magiclink.expired': '{credential}',
   'magiclink.replays': '{credential}',
   'magiclink.operation.duration.ms': 'ms',
+  'proxy.requests': '{request}',
+  'proxy.request.duration.ms': 'ms',
+  'proxy.request.bytes': 'By',
+  'proxy.response.bytes': 'By',
+  'proxy.requests.active': '{request}',
   'magiclink.operations.active': '{operation}',
   'magiclink.process.rss.bytes': 'By',
   'grpc.operations': '{operation}',
