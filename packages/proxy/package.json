@@ -1,0 +1,44 @@
+{
+  "name": "@arkenivajs/proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node ../../scripts/test.mjs all",
+    "test:unit": "node ../../scripts/test.mjs unit",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/security-mtls": "workspace:*",
+    "@fastify/http-proxy": "11.6.5",
+    "fastify": "5.12.7",
+    "ipaddr.js": "2.5.0",
+    "undici": "8.12.3"
+  },
+  "devDependencies": {
+    "jose": "6.2.13",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*"
+  },
+  "license": "AGPL-3.0-or-later"
+}
