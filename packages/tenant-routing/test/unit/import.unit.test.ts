@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
-test('Tenant routing declaration imports do not initialize HTTP, SQL or validation libraries', async () => {
+test('Tenant routing adds no HTTP, SQL or registry validation engine to the initialized core', async () => {
+  await import('@arkenivajs/core');
   const require = createRequire(import.meta.url),
     before = Object.keys(require.cache);
   const api = await import('../../dist/index.js');
@@ -16,5 +17,6 @@ test('Tenant routing declaration imports do not initialize HTTP, SQL or validati
     'TENANT_ROUTING_CAPABILITY',
     'TENANT_ROUTING_EVENT_SCHEMA_VERSION',
     'TENANT_ROUTING_REGISTRY_SCHEMA_VERSION',
+    'tenantRegistryFileProvider',
   ]);
 });
