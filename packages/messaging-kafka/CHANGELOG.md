@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Preserve nullable native group descriptions without crashing or hiding broker authorization errors.
+
 - Add explicit native producer/consumer lifecycle, verified TLS/SASL and bounded admission.
 - Wait for actual broker offset acknowledgements and reject incompatible native builds at startup.
 - Preserve complete offset metadata and timestamp zero; retain uncertain work until it settles.

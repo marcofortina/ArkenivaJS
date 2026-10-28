@@ -76,7 +76,7 @@ export class Connection {
         !binding ||
         typeof binding !== 'object' ||
         Object.getOwnPropertyDescriptor(binding, 'arkenivajsNativeCompatibilityVersion')?.value !==
-          1
+          2
       )
         throw failure('EK_KAFKA_CONFIG');
     } catch {
