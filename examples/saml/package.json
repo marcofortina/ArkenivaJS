@@ -1,0 +1,20 @@
+{
+  "name": "@arkenivajs/example-saml",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/unit/*.test.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/security-saml": "workspace:*"
+  },
+  "devDependencies": {
+    "@node-saml/node-saml": "5.1.0",
+    "@xmldom/xmldom": "0.8.15"
+  },
+  "license": "AGPL-3.0-or-later"
+}

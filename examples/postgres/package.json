@@ -28,12 +28,14 @@
     "@arkenivajs/security-http": "workspace:*",
     "@arkenivajs/api": "workspace:*",
     "@arkenivajs/security-oauth-client": "workspace:*",
-    "@arkenivajs/security-crypto": "workspace:*"
+    "@arkenivajs/security-crypto": "workspace:*",
+    "@arkenivajs/security-saml": "workspace:*"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
     "fastify": "5.12.7",
     "@simplewebauthn/browser": "14.0.0",
-    "otplib": "13.5.0"
+    "otplib": "13.5.0",
+    "@node-saml/node-saml": "5.1.0"
   }
 }
