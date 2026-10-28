@@ -5,3 +5,4 @@
 - Add optional GraphQL contracts and administrative capability identity.
 - Pin the selected Mercurius and GraphQL engines without changing REST-only dependencies.
 - Validate immutable startup declarations, finite budgets and schema field mappings before transport registration.
+- Bind guarded queries and mutations to the existing listener, with verified identities, field authorization, finite execution limits and safe errors.
