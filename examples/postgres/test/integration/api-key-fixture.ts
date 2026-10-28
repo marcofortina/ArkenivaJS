@@ -90,10 +90,17 @@ export async function apiKeyFixture(maxKeys = 4, maxAttempts = 10000) {
             'arkenivajs.sessions.owner.v1',
             'arkenivajs.sessions.rate-owner.v1',
             'arkenivajs.sessions.logout-owner.v1',
+            'arkenivajs.magiclink.owner.v1',
           ].includes(domain)
         )
           return mac(domain, parts, blindIndexKey).toString('hex');
-        if (!['arkenivajs.apikey.verifier.v1', 'arkenivajs.sessions.verifier.v1'].includes(domain))
+        if (
+          ![
+            'arkenivajs.apikey.verifier.v1',
+            'arkenivajs.sessions.verifier.v1',
+            'arkenivajs.magiclink.verifier.v1',
+          ].includes(domain)
+        )
           throw new Error('Unapproved HMAC domain');
         return active + ':' + mac(domain, parts, hmacKeys.get(active)!).toString('hex');
       },
@@ -101,7 +108,11 @@ export async function apiKeyFixture(maxKeys = 4, maxAttempts = 10000) {
         if (
           !state.secretAvailable ||
           keyRef !== 'fixture/apikey-hmac' ||
-          !['arkenivajs.apikey.verifier.v1', 'arkenivajs.sessions.verifier.v1'].includes(domain)
+          ![
+            'arkenivajs.apikey.verifier.v1',
+            'arkenivajs.sessions.verifier.v1',
+            'arkenivajs.magiclink.verifier.v1',
+          ].includes(domain)
         )
           throw new Error('Fixture secret unavailable');
         const [version, encoded] = expected.split(':'),

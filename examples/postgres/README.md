@@ -73,3 +73,7 @@ through two independent session-service instances.
 The [password reset guide](passwords.md) verifies one native transaction for
 password replacement, reset consumption and actual session invalidation,
 including controlled rollback and competing consumers.
+
+The [magic-link confirmation guide](magiclinks.md) verifies signed authorization,
+single-use redemption across separate Node processes, scanner-safe HTTPS GETs
+and explicit same-origin POST confirmation.

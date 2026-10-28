@@ -1,0 +1,10 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it> -->
+
+# Changelog
+
+## 0.1.0
+
+- Add native random magic links, external versioned HMAC and shared atomic one-use state.
+- Enforce runtime authorization, tenant binding, expiry, quotas and fail-closed provider handling.
+- Add bounded lifecycle, private observation and PostgreSQL/HTTPS consumer verification.

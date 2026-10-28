@@ -73,6 +73,7 @@ jobs:
             'security-crypto',
             'security-http',
             'security-ldap',
+            'security-magiclink',
             'security-oauth-client',
             'security-mtls',
             'security-password',

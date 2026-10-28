@@ -83,6 +83,11 @@ native Argon2id, breach-policy hooks and one-use recovery credentials. Its
 [PostgreSQL guide](examples/postgres/passwords.md) verifies atomic password
 replacement and session invalidation through the application-owned transaction port.
 
+The optional [magic-link service](packages/security-magiclink/README.md) adds
+short-lived single-use credentials with runtime account authorization. Its
+[PostgreSQL HTTPS guide](examples/postgres/magiclinks.md) verifies scanner-safe
+GETs, explicit POST confirmation and redemption across independent processes.
+
 The [identifier utility](packages/data-identifiers/README.md) uses native UUIDv4
 and the approved UUID library for UUIDv7, with strict version/canonical policy.
 The [utilities example](examples/utilities/README.md) runs without external services.

@@ -19,6 +19,7 @@
     "@arkenivajs/security-webauthn": "workspace:*",
     "jose": "6.2.13",
     "@arkenivajs/security-apikey": "workspace:*",
+    "@arkenivajs/security-magiclink": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/security-sessions": "workspace:*",
     "@arkenivajs/security-password": "workspace:*",
@@ -30,6 +31,7 @@
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
+    "fastify": "5.12.7",
     "@simplewebauthn/browser": "14.0.0",
     "otplib": "13.5.0"
   }
