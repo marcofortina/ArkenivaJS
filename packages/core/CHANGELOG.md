@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Start expired-deadline drain and close hooks while their required capabilities remain available, ensuring forced shutdown can release owned listeners.
+
 - Accept the complete approved error catalogue while preserving fixed safe JSON
   messages and rejecting unknown runtime error identifiers.
 

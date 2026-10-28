@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createApplication, KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
 import type { ApplicationOptions, Plugin, PluginContext } from '@arkenivajs/core';
+import { DRAIN_PLUGIN } from '@arkenivajs/core/support';
+import type { ComposablePlugin } from '@arkenivajs/core/support';
 
 const service = { name: 'test-service', version: '1.0.0', environment: 'test' } as const;
 const code =
@@ -166,6 +168,52 @@ test('EK-CORE-001 stop cancels initializing hooks through kernel signal', async 
   await app.stop({ timeoutMs: 100 });
   await rejected;
   assert.equal(app.state, 'CLOSED');
+});
+
+test('Expired shutdown starts every drain and close hook before removing its required capabilities', async () => {
+  const dependency = Symbol('dependency'),
+    owned = Symbol('owned'),
+    order: string[] = [];
+  const a = plugin('a', {
+    init(context) {
+      context.provide(dependency, 42);
+    },
+    close(context) {
+      assert.equal(context.require(dependency), 42);
+      order.push('a-close');
+    },
+  });
+  const b: ComposablePlugin = {
+    ...plugin('b', {
+      dependencies: ['a'],
+      init(context) {
+        context.provide(owned, 43);
+      },
+      close(context) {
+        assert.equal(context.require(owned), 43);
+        assert.equal(context.require(dependency), 42);
+        order.push('b-close');
+      },
+    }),
+    [DRAIN_PLUGIN](context) {
+      assert.equal(context.require(owned), 43);
+      assert.equal(context.require(dependency), 42);
+      order.push('b-drain');
+    },
+  };
+  const c: ComposablePlugin = {
+    ...plugin('c', { dependencies: ['b'] }),
+    [DRAIN_PLUGIN]() {
+      order.push('c-drain');
+      return new Promise<void>(() => {});
+    },
+  };
+  const app = await createApplication({ service, plugins: [a, b, c] });
+  await app.start();
+  await assert.rejects(app.stop({ timeoutMs: 15 }), code('EK_TIMEOUT'));
+  assert.deepEqual(order, ['c-drain', 'b-drain', 'b-close', 'a-close']);
+  assert.equal(app.state, 'CLOSED');
+  await app.stop();
 });
 
 test('EK-CORE-001 stop before start closes without initializing; invalid deadlines reject', async () => {
