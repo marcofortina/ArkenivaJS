@@ -10,7 +10,7 @@ import type {
 } from './contracts.js';
 import { registryFailure } from './errors.js';
 
-export function data(input: unknown, allowed: readonly string[]): Record<string, unknown> {
+export function data(input: unknown, allowed?: readonly string[]): Record<string, unknown> {
   if (
     !input ||
     typeof input !== 'object' ||
@@ -20,7 +20,7 @@ export function data(input: unknown, allowed: readonly string[]): Record<string,
     throw registryFailure();
   const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const key of Reflect.ownKeys(input)) {
-    if (typeof key !== 'string' || !allowed.includes(key)) throw registryFailure();
+    if (typeof key !== 'string' || (allowed && !allowed.includes(key))) throw registryFailure();
     const field = Object.getOwnPropertyDescriptor(input, key);
     if (!field || !('value' in field) || !field.enumerable) throw registryFailure();
     output[key] = field.value;
@@ -104,7 +104,8 @@ export class ActivationHistory {
         (snapshot.activationGeneration < current.activationGeneration ||
           (snapshot.activationGeneration === current.activationGeneration &&
             (snapshot.revision !== current.revision ||
-              snapshot.contentChecksum !== current.contentChecksum)))) ||
+              snapshot.contentChecksum !== current.contentChecksum ||
+              snapshot.activatedAt !== current.activatedAt)))) ||
       (previous === undefined && this.revisions.size >= 10000)
     )
       throw registryFailure();
