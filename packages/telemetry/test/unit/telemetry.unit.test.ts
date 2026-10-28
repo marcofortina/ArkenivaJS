@@ -15,6 +15,77 @@ const service = { name: 'telemetry-test', version: '1.0.0', environment: 'test' 
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
 
+test('Private routing identities are restricted to routing spans and cannot become metric or configured dimensions', async () => {
+  const target = await receiver(),
+    telemetry = createTelemetry(options(target.endpoint));
+  try {
+    let effects = 0;
+    for (const attributes of [
+      { 'tenant.id': 'north' },
+      { 'routing.operation': 'orders.read' },
+      { 'routing.revision': 'revision-blue' },
+      { 'routing.implementation': 'partner' },
+      { 'routing.activation_generation': 1 },
+    ]) {
+      assert.throws(
+        () => telemetry.addCounter('routing.counter', 1, attributes),
+        code('EK_CONFIG_INVALID'),
+      );
+      assert.throws(
+        () => telemetry.recordHistogram('routing.histogram', 1, attributes),
+        code('EK_CONFIG_INVALID'),
+      );
+      assert.throws(
+        () => telemetry.setGauge('routing.gauge', 1, attributes),
+        code('EK_CONFIG_INVALID'),
+      );
+      await assert.rejects(
+        telemetry.withSpan('unrelated.operation', () => ++effects, { attributes }),
+        code('EK_CONFIG_INVALID'),
+      );
+      await assert.rejects(
+        telemetry.measure('tenant.routing.operation', () => ++effects, { attributes }),
+        code('EK_CONFIG_INVALID'),
+      );
+    }
+    for (const attributes of [
+      { 'tenant.id': 'x'.repeat(257) },
+      { 'tenant.id': 'north\nprivate' },
+      { 'routing.activation_generation': 1.5 },
+    ])
+      await assert.rejects(
+        telemetry.withSpan('tenant.routing.operation', () => ++effects, { attributes }),
+        code('EK_CONFIG_INVALID'),
+      );
+    for (const labelValues of [
+      { 'routing.kind': ['private'] },
+      { 'tenant.id': ['north'] },
+      { 'routing.revision': ['blue'] },
+    ])
+      assert.throws(
+        () => createTelemetry({ ...options(target.endpoint), labelValues }),
+        code('EK_CONFIG_INVALID'),
+      );
+    assert.equal(effects, 0);
+    assert.equal(
+      await telemetry.withSpan('tenant.routing.operation', () => ++effects, {
+        attributes: {
+          'routing.kind': 'handler',
+          'tenant.id': 'north',
+          'routing.operation': 'orders.read',
+          'routing.revision': 'blue',
+          'routing.implementation': 'native',
+          'routing.activation_generation': 1,
+        },
+      }),
+      1,
+    );
+  } finally {
+    await telemetry.close();
+    await target.close();
+  }
+});
+
 test('Kafka dimensions require approved catalogs, bounded partitions and fixed outcomes', async () => {
   const target = await receiver();
   const telemetry = createTelemetry({

@@ -40,6 +40,7 @@
     "jsonc-parser": "3.3.1"
   },
   "devDependencies": {
+    "@arkenivajs/telemetry": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/security": "workspace:*",
     "jose": "6.2.13",

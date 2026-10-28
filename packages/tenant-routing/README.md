@@ -157,3 +157,23 @@ transformed values or normalized schemas return safe 502 contract errors.
 Operation cancellation and deadlines cover credential lookup, transforms and
 native I/O. Unfinished work retains its concurrency permit until it settles;
 application shutdown destroys every owned transport pool.
+
+## Routing diagnostics
+
+When the application installs telemetry, the dispatcher records separate
+monotonic durations for startup registry validation, immutable lookup,
+authorization, implementation work, upstream network I/O and the public
+operation. These durations overlap and must not be added together. Request,
+match and rejection counters use fixed kind/outcome/match categories; tenant IDs,
+request IDs, operation IDs, revision IDs and partner addresses are never metric
+dimensions. Operation timing ends at the HTTP result, while implementation
+timing retains the physical lifetime of unfinished application work.
+
+Authorized requests create an HTTP server span and a selected-operation child.
+Only bounded W3C trace headers supply diagnostic parentage. The private child
+contains verified tenant, logical operation, implementation, revision and
+activation generation; protect collector access and retention accordingly.
+Bodies, concrete request paths, credentials, upstream URLs and baggage are not
+exported. Exporter errors cannot replace an outcome, repeat a handler or relax
+authorization. Technical metering and supplementary routing-event export remain
+separate integration stages.

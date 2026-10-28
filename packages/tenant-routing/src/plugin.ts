@@ -35,6 +35,8 @@ import { verifiedTenant, authorized } from './identity.js';
 import { jsonSnapshot } from './json.js';
 import { TENANT_ROUTING_CAPABILITY } from './index.js';
 import type { HttpUpstreams } from './http.js';
+import { OBSERVERS, observations, Observation, elapsed, traceRequest } from './observation.js';
+import type { Observers } from './observation.js';
 
 const AUTH = Symbol('tenant-routing.authority');
 const STORAGE = Symbol('tenant-routing.storage-readiness');
@@ -168,8 +170,13 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
     id: 'tenant-routing',
     version: '0.1.0',
     capabilities: new Set(['tenant-routing']),
-    dependencies: ['api', 'tenant-routing-authority', 'tenant-routing-storage'],
-    [SUPPORT_PLUGINS]: [authority, storage(settings)],
+    dependencies: [
+      'api',
+      'tenant-routing-authority',
+      'tenant-routing-storage',
+      'tenant-routing-observation',
+    ],
+    [SUPPORT_PLUGINS]: [authority, storage(settings), observations],
     [PREPARE_PLUGIN](context) {
       readiness.set(context.options, () => context.state() === 'READY');
       return new Map();
@@ -185,6 +192,8 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
         ready = readiness.get(context.options);
       if (!ready) throw routingFailure();
       if (owner.aborted) throw routingFailure('EK_TROUTE_REGISTRY');
+      const observers = context.require<Observers>(OBSERVERS),
+        registryBegan = performance.now();
       let upstreams: HttpUpstreams | undefined,
         installed = false;
       try {
@@ -199,9 +208,11 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             settings,
             context.options.service.environment,
             owner,
+            observers.telemetry,
           );
         }
         const table = new RoutingTable(validated, settings, upstreams);
+        elapsed(observers.telemetry, 'arkenivajs.routing.registry.duration', registryBegan);
         if (table.definitions.some((operation) => operation.policy.assurance !== undefined)) {
           let allowed = false;
           try {
@@ -376,6 +387,17 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             throw routingFailure('EK_TROUTE_COLLISION');
         });
         server.register(async (child: FastifyInstance) => {
+          const observed = new WeakMap<FastifyRequest, Observation>();
+          child.addHook('onRequest', async (request, reply) => {
+            const observation = new Observation(
+              observers,
+              request.routeOptions.url === settings.capabilitiesPath,
+            );
+            observed.set(request, observation);
+            reply.raw.once('close', () => {
+              if (!reply.raw.writableEnded) observation.finish(499);
+            });
+          });
           child.removeAllContentTypeParsers();
           child.addContentTypeParser(
             'application/json',
@@ -404,6 +426,8 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
           >();
           child.setErrorHandler((error, request, reply) => reject(reply, error, request.id));
           child.addHook('onResponse', async (request, reply) => {
+            observed.get(request)?.finish(reply.statusCode);
+            observed.delete(request);
             const entry = scopes.get(request);
             entry?.operation.end();
             entry?.clean();
@@ -471,43 +495,66 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
               async handler(request, reply) {
                 const entry = scopes.get(request);
                 if (!entry) throw routingFailure('EK_AUTH_REQUIRED');
-                const { operation, tenant } = entry;
-                operation.check();
-                const selected = table.select(definition.id, tenant.tenantId);
-                if (!selected) throw routingFailure('EK_TROUTE_UNMAPPED');
-                if (!(await authorized(auth, settings, tenant, definition, operation)))
-                  throw routingFailure('EK_TROUTE_FORBIDDEN');
-                const context: RouteContext = Object.freeze({
-                  requestId: request.id,
-                  auth: tenant,
-                  signal: operation.signal,
-                  headers: entry.headers,
-                  params: table.input(definition, 'params', bag(request.params)) as Record<
-                    string,
-                    string
-                  >,
-                  query: table.input(definition, 'query', bag(request.query)) as Record<
-                    string,
-                    unknown
-                  >,
-                  body: table.input(definition, 'body', request.body),
-                });
-                operation.own(table.acquire(definition.id));
-                let output: unknown;
-                try {
-                  output = await operation.run(() => selected.handler(context));
-                } catch (error) {
-                  if (
-                    error instanceof KitError &&
-                    (error.code === 'EK_TROUTE_TIMEOUT' ||
-                      (selected.implementation.kind === 'http' &&
-                        error.code === 'EK_TROUTE_CONTRACT'))
-                  )
-                    throw error;
-                  throw routingFailure('EK_TROUTE_UPSTREAM');
-                }
-                operation.check();
-                return reply.type('application/json').send(table.response(definition, output));
+                return traceRequest(
+                  observers,
+                  request.method,
+                  definition.path,
+                  entry.headers,
+                  async () => {
+                    const { operation, tenant } = entry;
+                    const observation = observed.get(request)!;
+                    operation.check();
+                    const lookupBegan = performance.now();
+                    const selected = table.select(definition.id, tenant.tenantId);
+                    observation.lookup(selected, lookupBegan);
+                    if (!selected) throw routingFailure('EK_TROUTE_UNMAPPED');
+                    if (
+                      !(await observation.authorize(() =>
+                        authorized(auth, settings, tenant, definition, operation),
+                      ))
+                    )
+                      throw routingFailure('EK_TROUTE_FORBIDDEN');
+                    const context: RouteContext = Object.freeze({
+                      requestId: request.id,
+                      auth: tenant,
+                      signal: operation.signal,
+                      headers: entry.headers,
+                      params: table.input(definition, 'params', bag(request.params)) as Record<
+                        string,
+                        string
+                      >,
+                      query: table.input(definition, 'query', bag(request.query)) as Record<
+                        string,
+                        unknown
+                      >,
+                      body: table.input(definition, 'body', request.body),
+                    });
+                    operation.own(table.acquire(definition.id));
+                    let output: unknown;
+                    try {
+                      output = await operation.run(() =>
+                        observation.execute(
+                          selected,
+                          tenant,
+                          table.snapshot.revision,
+                          table.snapshot.activationGeneration,
+                          async () => selected.handler(context),
+                        ),
+                      );
+                    } catch (error) {
+                      if (
+                        error instanceof KitError &&
+                        (error.code === 'EK_TROUTE_TIMEOUT' ||
+                          (selected.implementation.kind === 'http' &&
+                            error.code === 'EK_TROUTE_CONTRACT'))
+                      )
+                        throw error;
+                      throw routingFailure('EK_TROUTE_UPSTREAM');
+                    }
+                    operation.check();
+                    return reply.type('application/json').send(table.response(definition, output));
+                  },
+                );
               },
             });
           }

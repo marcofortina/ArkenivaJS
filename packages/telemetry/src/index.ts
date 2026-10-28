@@ -96,6 +96,9 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'routing.kind',
+  'routing.outcome',
+  'routing.match',
   'graphql.kind',
   'graphql.outcome',
   'graphql.category',
@@ -173,6 +176,9 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'routing.kind': ['handler', 'http', 'discovery', 'unselected'],
+  'routing.outcome': ['ok', 'rejected', 'error', 'timeout', 'aborted'],
+  'routing.match': ['matched', 'unmatched'],
   'graphql.kind': ['query', 'mutation', 'subscription', 'invalid'],
   'graphql.outcome': ['ok', 'rejected', 'error', 'timeout', 'aborted'],
   'graphql.category': ['authorization', 'complexity', 'size', 'policy'],
@@ -358,6 +364,15 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   reason: ['capacity', 'disabled', 'invalid', 'error'],
 };
 const units: Record<string, string> = {
+  'arkenivajs.routing.requests': '{request}',
+  'arkenivajs.routing.matches': '{operation}',
+  'arkenivajs.routing.rejected': '{rejection}',
+  'arkenivajs.routing.operation.duration': 's',
+  'arkenivajs.routing.lookup.duration': 's',
+  'arkenivajs.routing.authorization.duration': 's',
+  'arkenivajs.routing.implementation.duration': 's',
+  'arkenivajs.routing.upstream.duration': 's',
+  'arkenivajs.routing.registry.duration': 's',
   'arkenivajs.graphql.requests': '{operation}',
   'arkenivajs.graphql.operation.duration': 's',
   'arkenivajs.graphql.operation.complexity': '1',
@@ -598,6 +613,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
   for (const [key, values] of Object.entries(options.labelValues ?? {})) {
     if (
       !labels.has(key) ||
+      key.startsWith('routing.') ||
       !Array.isArray(values) ||
       !values.length ||
       values.length > 128 ||
@@ -784,13 +800,40 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
   const open = () => {
     if (closed) throw new KitError({ code: 'EK_RESOURCE_CLOSED', message: 'Telemetry is closed' });
   };
-  const attrs = (values: TelemetryAttributes = {}): Record<string, TelemetryAttributeValue> => {
+  const attrs = (
+    values: TelemetryAttributes = {},
+    privateRouting = false,
+  ): Record<string, TelemetryAttributeValue> => {
     if (!values || typeof values !== 'object' || Array.isArray(values))
       throw invalid('Telemetry labels must be a record');
     const result = copyData(values),
       keys = Object.keys(result);
     if (keys.length > 8) throw invalid('Too many telemetry labels');
     for (const [key, value] of Object.entries(result)) {
+      // Routing identities are private trace evidence, never metric dimensions or
+      // configurable label catalogs. The fixed allowlist excludes URLs and input.
+      if (
+        privateRouting &&
+        ['tenant.id', 'routing.operation', 'routing.implementation', 'routing.revision'].includes(
+          key,
+        )
+      ) {
+        if (
+          typeof value !== 'string' ||
+          !value.length ||
+          Buffer.byteLength(value) > 256 ||
+          [...value].some(
+            (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+          )
+        )
+          throw invalid('Invalid private routing trace attribute');
+        continue;
+      }
+      if (privateRouting && key === 'routing.activation_generation') {
+        if (!Number.isSafeInteger(value) || (value as number) < 1)
+          throw invalid('Invalid routing activation trace attribute');
+        continue;
+      }
       const valid =
         labels.has(key) &&
         scalar(value, key) &&
@@ -878,7 +921,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     if (!tracer) return work();
     if (typeof name !== 'string' || !namePattern.test(name))
       throw invalid('Invalid telemetry operation name');
-    const fields = attrs(parameters.attributes);
+    const fields = attrs(parameters.attributes, name === 'tenant.routing.operation');
     if (active.size >= maxActive) {
       counters.droppedSpans++;
       return work();
