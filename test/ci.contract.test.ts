@@ -207,6 +207,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'socket',
       'sftp',
       'soap',
+      'grpc',
       'upload',
       'webhooks',
     ],

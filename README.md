@@ -118,6 +118,11 @@ The optional [SFTP and SSH adapter](packages/sftp/README.md) pins named remote
 servers, streams bounded files and proves supported atomic renames. Its
 [consumer](examples/sftp/README.md) runs against owned OpenSSH infrastructure.
 
+The optional [gRPC adapter](packages/grpc/README.md) provides mTLS-protected unary,
+server-streaming and native bidirectional workflows with verified signed tenant
+assertions. Its [standalone consumer](examples/grpc/README.md) uses real local PKI,
+JWT signatures and native protobuf codecs.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
