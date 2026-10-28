@@ -13,6 +13,7 @@ import { validateRegistry } from './registry.js';
 import { OperationSchemas } from './schemas.js';
 import { jsonSnapshot } from './json.js';
 import { routingFailure } from './errors.js';
+import type { HttpUpstreams } from './http.js';
 
 export interface SelectedOperation {
   readonly operation: TenantOperationDefinition;
@@ -28,12 +29,16 @@ export class RoutingTable {
   private readonly operations = new Map<string, TenantOperationDefinition>();
   private readonly implementations = new Map<
     string,
-    { definition: TenantImplementation; handler: TenantOperationHandler }
+    { definition: TenantImplementation; handler?: TenantOperationHandler }
   >();
   private readonly bindings = new Map<string, ReadonlyMap<string, TenantOperationBinding>>();
   private readonly inFlight = new Map<string, number>();
   private readonly schemas: OperationSchemas;
-  constructor(source: unknown, settings: Settings) {
+  constructor(
+    source: unknown,
+    settings: Settings,
+    private readonly http?: HttpUpstreams,
+  ) {
     this.snapshot = validateRegistry(source, 134217728);
     this.definitions = this.snapshot.operations;
     this.schemas = new OperationSchemas(this.definitions);
@@ -42,11 +47,15 @@ export class RoutingTable {
       this.operations.set(operation.id, operation);
     }
     for (const implementation of this.snapshot.implementations) {
-      // HTTP bindings are admitted only by the separately implemented fixed-upstream adapter.
-      if (implementation.kind !== 'handler') throw routingFailure('EK_TROUTE_REGISTRY');
-      const handler = settings.handlers.get(implementation.handlerKey);
-      if (!handler) throw routingFailure('EK_TROUTE_REGISTRY');
-      this.implementations.set(implementation.id, { definition: implementation, handler });
+      if (implementation.kind === 'handler') {
+        const handler = settings.handlers.get(implementation.handlerKey);
+        if (!handler) throw routingFailure('EK_TROUTE_REGISTRY');
+        this.implementations.set(implementation.id, { definition: implementation, handler });
+      } else {
+        if (!http) throw routingFailure('EK_TROUTE_REGISTRY');
+        http.validate(implementation);
+        this.implementations.set(implementation.id, { definition: implementation });
+      }
     }
     const tenants = new Map<string, Map<string, TenantOperationBinding>>();
     for (const binding of this.snapshot.bindings) {
@@ -69,7 +78,13 @@ export class RoutingTable {
       operation,
       implementation: selected.definition,
       binding,
-      handler: selected.handler,
+      handler:
+        selected.handler ??
+        ((context) => {
+          if (selected.definition.kind !== 'http' || !this.http)
+            throw routingFailure('EK_TROUTE_UPSTREAM');
+          return this.http.execute(selected.definition, operation, context);
+        }),
     });
   }
   candidates(tenantId: string): readonly SelectedOperation[] {

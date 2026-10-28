@@ -1,11 +1,11 @@
 # @arkenivajs/tenant-routing
 
-Optional tenant operation routing contracts and startup file registry provider.
+Optional tenant operation routing with immutable startup registries.
 The package exposes readonly public types, version constants, resource defaults
 and an administrative capability identity. `tenantRoutingPlugin` registers local
-JSON operations and capability discovery on the existing listener. The fixed HTTP
-upstream adapter remains pending; HTTP implementation bindings currently fail
-startup rather than executing an incomplete transport policy.
+JSON operations and capability discovery on the existing listener. Fixed HTTP
+implementations reuse the proxy package's native Undici transport and destination
+policy without creating another listener or forwarding inbound credentials.
 
 The internal startup validator checks bounded strict JSON, duplicate decoded
 keys, referential integrity, route collisions and offline operation schemas.
@@ -123,3 +123,37 @@ Its `api.resolve` inspects exact bindings but does not grant execution permissio
 it and `capabilities.list` still reject forged, copied or foreign-authority tenant
 objects. Methods become unavailable during drain/after close. Registry and
 catalog edits take effect only in a newly initialized application instance.
+
+## Approved HTTP implementations
+
+Install an `approvedUpstreams` catalog with fixed canonical origins, explicit
+hostname and CIDR allowlists, positive connection timeouts and
+`allowRedirects: false`. Production requires HTTPS. Loopback, unspecified,
+link-local and known metadata destinations are rejected outside the explicit
+test environment, including addresses returned by connect-time DNS resolution.
+Every DNS answer must pass the destination policy. Optional `tlsCaFile` adds a
+bounded deployment CA bundle; native TLS still verifies certificate identity.
+
+An HTTP implementation references only an installed `upstreamKey`, literal
+`upstreamPath`, method and named transforms. Unknown destinations or transforms
+fail startup. `requestTransformerKey` receives the validated public payload and
+verified request context. GET results become bounded flat query parameters;
+other methods send bounded JSON and retain the validated public query.
+`responseTransformerKey` normalizes the upstream JSON before the public response
+schema is checked. Legacy `transformerKey` and `transformers` remain response-only
+aliases and cannot be supplied alongside their replacement fields.
+
+Outgoing requests contain fixed JSON media headers and, when configured, a
+separate service credential. They never copy the caller's authorization, cookies
+or diagnostic tenant headers. `serviceAuth` requires HTTPS and a server-installed
+`credentialProvider`; returned credentials must match the fixed audience and
+exact scope set, have a valid future UTC expiry and contain a valid Bearer/Basic
+header. The native request is cancelled if its credential expires in flight.
+The target service must independently authenticate that credential.
+
+Redirects and non-success status codes fail with safe 503 errors. Responses must
+be bounded UTF-8 JSON without duplicate or unsafe keys; invalid media, JSON,
+transformed values or normalized schemas return safe 502 contract errors.
+Operation cancellation and deadlines cover credential lookup, transforms and
+native I/O. Unfinished work retains its concurrency permit until it settles;
+application shutdown destroys every owned transport pool.

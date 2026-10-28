@@ -107,6 +107,52 @@ export function allowedAddress(
     return parsed.kind() === network.kind() && parsed.match(network, bits);
   });
 }
+
+/** CIDR syntax is shared by positive and restrictive transport address policies. */
+export function captureCidrs(input: unknown, minimum = 1): readonly string[] {
+  return Object.freeze(
+    list(input, 64, minimum).map((value) => {
+      const cidr = text(value, 64),
+        [ip, bits] = cidr.split('/');
+      if (!ip || !isIP(ip) || bits === undefined || !/^\d+$/.test(bits)) throw failure();
+      const parsed = ipaddr.parseCIDR(cidr);
+      if (parsed[0] instanceof ipaddr.IPv6 && parsed[0].isIPv4MappedAddress()) throw failure();
+      return cidr;
+    }),
+  );
+}
+/** Shared fixed-origin policy for inbound proxy and approved outbound adapters. */
+export function captureDestination(origin: unknown, policy: unknown) {
+  const upstreamOrigin = text(origin),
+    url = new URL(upstreamOrigin);
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    upstreamOrigin !== url.origin ||
+    url.username ||
+    url.password ||
+    url.hostname.endsWith('.')
+  )
+    throw failure();
+  const destination = fields(policy, ['kind', 'allowedHosts', 'allowedCidrs']);
+  let destinationPolicy: ProxyRouteConfig['destinationPolicy'];
+  if (destination.kind === 'public-only') {
+    if (destination.allowedHosts !== undefined || destination.allowedCidrs !== undefined)
+      throw failure();
+    destinationPolicy = Object.freeze({ kind: 'public-only' });
+  } else if (destination.kind === 'private-allowlisted') {
+    const allowedHosts = list(destination.allowedHosts, 64).map((v) => text(v, 253));
+    if (!allowedHosts.includes(hostname(url.hostname))) throw failure();
+    const allowedCidrs = captureCidrs(destination.allowedCidrs);
+    destinationPolicy = Object.freeze({
+      kind: 'private-allowlisted',
+      allowedHosts: Object.freeze(allowedHosts),
+      allowedCidrs: Object.freeze(allowedCidrs),
+    });
+  } else throw failure();
+  if (isIP(hostname(url.hostname)) && !allowedAddress(hostname(url.hostname), destinationPolicy))
+    throw failure('EK_PROXY_POLICY');
+  return Object.freeze({ upstreamOrigin, destinationPolicy });
+}
 function route(input: unknown): Readonly<ProxyRouteConfig> {
   const value = fields(input, [
     'routeId',
@@ -126,16 +172,11 @@ function route(input: unknown): Readonly<ProxyRouteConfig> {
   ]);
   const routeId = text(value.routeId, 64);
   if (!/^[a-z][a-z0-9-]*$/.test(routeId)) throw failure();
-  const upstreamOrigin = text(value.upstreamOrigin),
-    url = new URL(upstreamOrigin);
-  if (
-    !['http:', 'https:'].includes(url.protocol) ||
-    upstreamOrigin !== url.origin ||
-    url.username ||
-    url.password ||
-    url.hostname.endsWith('.')
-  )
-    throw failure();
+  const { upstreamOrigin, destinationPolicy } = captureDestination(
+    value.upstreamOrigin,
+    value.destinationPolicy,
+  );
+  const url = new URL(upstreamOrigin);
   const auth = fields(value.auth, ['required', 'scopes', 'reason']);
   if (
     typeof auth.required !== 'boolean' ||
@@ -150,31 +191,6 @@ function route(input: unknown): Readonly<ProxyRouteConfig> {
           : { scopes: Object.freeze(list(auth.scopes, 64, 0).map((v) => text(v, 128))) }),
       })
     : Object.freeze({ required: false as const, reason: text(auth.reason, 512) });
-  const destination = fields(value.destinationPolicy, ['kind', 'allowedHosts', 'allowedCidrs']);
-  let destinationPolicy: ProxyRouteConfig['destinationPolicy'];
-  if (destination.kind === 'public-only') {
-    if (destination.allowedHosts !== undefined || destination.allowedCidrs !== undefined)
-      throw failure();
-    destinationPolicy = Object.freeze({ kind: 'public-only' });
-  } else if (destination.kind === 'private-allowlisted') {
-    const allowedHosts = list(destination.allowedHosts, 64).map((v) => text(v, 253));
-    if (!allowedHosts.includes(hostname(url.hostname))) throw failure();
-    const allowedCidrs = list(destination.allowedCidrs, 64).map((v) => {
-      const cidr = text(v, 64),
-        [ip, bits] = cidr.split('/');
-      if (!ip || !isIP(ip) || bits === undefined || !/^\d+$/.test(bits)) throw failure();
-      const parsed = ipaddr.parseCIDR(cidr);
-      if (parsed[0] instanceof ipaddr.IPv6 && parsed[0].isIPv4MappedAddress()) throw failure();
-      return cidr;
-    });
-    destinationPolicy = Object.freeze({
-      kind: 'private-allowlisted',
-      allowedHosts: Object.freeze(allowedHosts),
-      allowedCidrs: Object.freeze(allowedCidrs),
-    });
-  } else throw failure();
-  if (isIP(hostname(url.hostname)) && !allowedAddress(hostname(url.hostname), destinationPolicy))
-    throw failure('EK_PROXY_POLICY');
   const delegation = value.identityDelegation ?? 'none';
   let upstreamTlsProfile: TlsProfile | undefined;
   if (value.upstreamTlsProfile !== undefined) {
