@@ -98,6 +98,11 @@ WebSocket/SSE streams, bounded queues and shared NATS/Redis delivery. Its
 [HTTPS/WSS consumer](examples/realtime/README.md) exercises native protocols and
 the [PostgreSQL source](examples/postgres/realtime.md) demonstrates persistent replay.
 
+The optional [SAML Service Provider](packages/security-saml/README.md) adds signed
+Redirect/POST login and controlled logout with shared replay protection. Its
+[HTTPS form example](examples/saml/README.md) and [SQL mapping example](examples/postgres/saml.md)
+keep browser correlation and local tenant authorization explicit.
+
 The [identifier utility](packages/data-identifiers/README.md) uses native UUIDv4
 and the approved UUID library for UUIDv7, with strict version/canonical policy.
 The [utilities example](examples/utilities/README.md) runs without external services.

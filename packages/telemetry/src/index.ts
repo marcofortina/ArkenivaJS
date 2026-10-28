@@ -96,6 +96,8 @@ const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', m
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
+  'saml.operation',
+  'saml.outcome',
   'realtime.protocol',
   'realtime.reason',
   'proxy.outcome',
@@ -170,6 +172,24 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
     'invalid_message',
   ],
   'proxy.outcome': ['ok', 'error'],
+  'saml.operation': [
+    'begin_login',
+    'consume_response',
+    'metadata',
+    'begin_logout',
+    'consume_logout_response',
+    'bootstrap',
+  ],
+  'saml.outcome': [
+    'ok',
+    'signature',
+    'assertion',
+    'replay',
+    'configuration',
+    'cancelled',
+    'timeout',
+    'unavailable',
+  ],
   'magiclink.operation': ['startup', 'issue', 'consume', 'revoke'],
   'magiclink.intent': ['none', 'login', 'email-verify', 'account-recover'],
   'magiclink.outcome': ['ok', 'error', 'expired', 'replay', 'rejected'],
@@ -303,6 +323,9 @@ const units: Record<string, string> = {
   'realtime.received.bytes': 'By',
   'realtime.disconnects': '{connection}',
   'magiclink.operations': '{operation}',
+  'saml.operations': '{operation}',
+  'saml.operation.duration.ms': 'ms',
+  'saml.operations.active': '{operation}',
   'magiclink.issued': '{credential}',
   'magiclink.consumed': '{credential}',
   'magiclink.expired': '{credential}',

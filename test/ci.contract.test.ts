@@ -205,6 +205,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'security-oauth-client',
       'security-mtls',
       'security-password',
+      'security-saml',
       'security-sessions',
       'security-x509',
       'socket',
