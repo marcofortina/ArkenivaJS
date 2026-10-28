@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Add an optional named Pub/Sub capability with dedicated scoped native
+  subscribers, bounded callback queues, explicit failure handling and owned cleanup.
+
 - Add an owned readonly readiness hook for optional health collectors without relaxing public facade lifecycle guards.
 
 - Add the optional native Redis provider with strict TLS/ACL configuration,

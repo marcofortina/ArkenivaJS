@@ -93,6 +93,11 @@ streaming with connect-time address policy, runtime authentication and header
 isolation. Its [HTTPS consumer](examples/proxy/README.md) verifies real TLS,
 rewrites, byte counts and rejection of spoofed identity headers.
 
+The optional [realtime adapter](packages/realtime/README.md) adds authenticated
+WebSocket/SSE streams, bounded queues and shared NATS/Redis delivery. Its
+[HTTPS/WSS consumer](examples/realtime/README.md) exercises native protocols and
+the [PostgreSQL source](examples/postgres/realtime.md) demonstrates persistent replay.
+
 The [identifier utility](packages/data-identifiers/README.md) uses native UUIDv4
 and the approved UUID library for UUIDv7, with strict version/canonical policy.
 The [utilities example](examples/utilities/README.md) runs without external services.

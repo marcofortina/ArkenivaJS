@@ -196,6 +196,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'mail',
       'messaging-amqp',
       'proxy',
+      'realtime',
       'security-apikey',
       'security-crypto',
       'security-http',

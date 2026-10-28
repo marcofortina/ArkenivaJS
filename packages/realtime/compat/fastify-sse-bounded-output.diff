@@ -1,0 +1,62 @@
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -329,0 +330 @@
++    this.maxBufferBytes = options.maxBufferBytes ?? Infinity
+@@ -435 +436,3 @@
+-      this.reply.raw.setHeader('Connection', 'keep-alive')
++      if (this.reply.request.raw.httpVersionMajor < 2) {
++        this.reply.raw.setHeader('Connection', 'keep-alive')
++      }
+@@ -551,0 +555,5 @@
++      if (this.reply.raw.writableLength + Buffer.byteLength(data) > this.maxBufferBytes) {
++        reject(new RangeError('SSE buffered output exceeds its configured limit'))
++        return
++      }
++
+@@ -559,0 +568 @@
++          this.reply.raw.off('close', onClose)
+@@ -564,0 +574 @@
++          this.reply.raw.off('close', onClose)
+@@ -571,0 +582,8 @@
++        const onClose = () => {
++          this.reply.raw.off('drain', onDrain)
++          this.reply.raw.off('error', onError)
++          this.#isConnected = false
++          this.cleanup()
++          resolve()
++        }
++
+@@ -573,0 +592,2 @@
++        this.reply.raw.once('close', onClose)
++        if (this.reply.raw.destroyed || this.reply.raw.writableEnded) onClose()
+@@ -583,0 +604 @@
++    let pending = false
+@@ -586,2 +607,8 @@
+-        this.sendHeaders()
+-        this.reply.raw.write(': heartbeat\n\n')
++        if (pending) return
++        pending = true
++        this.writeToStream(': heartbeat\n\n').then(() => {
++          pending = false
++        }, () => {
++          pending = false
++          this.close()
++        })
+@@ -656 +683,2 @@
+-    serializer = JSON.stringify
++    serializer = JSON.stringify,
++    maxBufferBytes = Infinity
+@@ -719 +747,2 @@
+-        serializer: sseOptions.serializer || serializer
++        serializer: sseOptions.serializer || serializer,
++        maxBufferBytes: sseOptions.maxBufferBytes ?? maxBufferBytes
+diff --git a/types/index.d.ts b/types/index.d.ts
+--- a/types/index.d.ts
++++ b/types/index.d.ts
+@@ -44,0 +45,2 @@
++  /** Bound pending output, including heartbeat comments. */
++  maxBufferBytes?: number
+@@ -48,0 +51,2 @@
++  /** Optional output budget; an omitted value preserves the upstream default. */
++  maxBufferBytes?: number
