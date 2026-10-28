@@ -7,14 +7,12 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import canonicalize from 'canonicalize';
 import { createScanner, SyntaxKind, ScanError, visit } from 'jsonc-parser';
-import { KitError } from '@arkenivajs/core';
 import { copyData, freezeData } from '@arkenivajs/core/support';
 import type { TenantRegistrySnapshotV1_1 } from './contracts.js';
 import { registrySchema } from './registry-schema.js';
 import { validateOperationSchemas } from './schemas.js';
+import { registryFailure } from './errors.js';
 
-export const registryFailure = () =>
-  new KitError({ code: 'EK_TROUTE_REGISTRY', message: 'Invalid tenant routing registry' });
 const ajv = new Ajv2020({
   strict: true,
   allErrors: false,

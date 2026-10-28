@@ -8,6 +8,7 @@ import type {
   TenantRegistrySnapshotV1_1,
   TenantRegistrySnapshotV1,
   TenantRegistrySqlOptions,
+  TenantRegistryFileOptions,
   TenantRoutingPluginSettings,
   TenantHttpImplementation,
   TenantRoutingService,
@@ -83,6 +84,14 @@ function contract(
       },
     },
   };
+  const file: TenantRegistryFileOptions = {
+    absolutePath: '/run/private/registry.json',
+    maxBytes: 8388608,
+    environment: 'production',
+    publicRoots: ['/srv/public'],
+  };
+  // @ts-expect-error The production filesystem policy cannot be replaced with an unknown environment.
+  const unsafeFile: TenantRegistryFileOptions = { ...file, environment: 'staging' };
   const http: TenantHttpImplementation = {
     id: 'partner',
     kind: 'http',
@@ -145,6 +154,8 @@ function contract(
   const old: TenantRegistrySnapshotV1 = { ...snapshot, schemaVersion: '1.0.0' };
   void [
     database,
+    file,
+    unsafeFile,
     http,
     legacy,
     capabilities,

@@ -7,6 +7,7 @@ import type {
   RouteContext,
   VerifiedTenantContext,
   SqlProvider,
+  Environment,
 } from '@arkenivajs/core';
 
 /** Deployment-owned logical identity, independent of handler names and upstream URLs. */
@@ -90,6 +91,10 @@ export interface TenantRegistryFileOptions {
   readonly absolutePath: string;
   readonly maxBytes: number;
   readonly activationCheckpoint?: TenantRegistryActivationCheckpoint;
+  /** Defaults to production, which requires root-owned deployment paths and private file modes. */
+  readonly environment?: Environment;
+  /** All deployment static roots; a registry may not reside inside any of them. */
+  readonly publicRoots?: readonly string[];
 }
 /** Existing application SQL ownership is mandatory; providers never create hidden pools. */
 export interface TenantRegistrySqlOptions {
