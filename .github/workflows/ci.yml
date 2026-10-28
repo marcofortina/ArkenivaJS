@@ -29,7 +29,7 @@ jobs:
         run: printf 'ARKENIVA_TEST_REPORT_DIRECTORY=%s/arkenivajs-test-reports\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm verify
       - name: Verify benchmark statistics and the synthetic identity fixture
         run: pnpm --filter @arkenivajs/benchmark-foundation test
@@ -69,6 +69,7 @@ jobs:
             'dns',
             'mail',
             'messaging-amqp',
+            'messaging-kafka',
             'proxy',
             'realtime',
             'security-apikey',
@@ -99,7 +100,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Compile the optional adapter and its declared workspace dependencies
         run: pnpm --filter "@arkenivajs/${{ matrix.package }}..." build
       - name: Enforce public types, negative fixtures and source policy
@@ -125,7 +126,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install only the reviewed native schema backend on the disposable runner
         run: |
           sudo apt-get update
@@ -154,7 +155,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Create the pinned owned RabbitMQ fixture with verified AMQPS and private ACLs
         run: python3 -B packages/messaging-amqp/test/fixtures/prepare.py --github-env "$GITHUB_ENV"
       - run: pnpm --filter '@arkenivajs/example-amqp...' build
@@ -184,7 +185,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build the pinned disposable OpenLDAP image
         run: docker build --tag arkenivajs-owned-ldap:r1 packages/security-ldap/test/fixtures
       - name: Create isolated directory credentials and TLS fixtures
@@ -215,7 +216,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build the pinned disposable OpenSSH image
         run: docker build --tag arkenivajs-owned-sftp:r1 packages/sftp/test/fixtures
       - name: Create isolated keys, public host pins and remote directories
@@ -246,7 +247,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter '@arkenivajs/example-mail...' build
       - name: Exercise real loopback SMTP with verified STARTTLS, native MIME and isolated cancellation
         run: pnpm --filter @arkenivajs/mail test:integration
@@ -270,7 +271,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter '@arkenivajs/example-upload...' build
       - name: Exercise real multipart HTTP, HTTPS and HTTP2 with verified identity and bounded streams
         run: pnpm --filter @arkenivajs/upload test:integration
@@ -294,7 +295,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter '@arkenivajs/example-webhooks...' build
       - name: Exercise actual HMAC HTTP and verified HTTPS, replay rejection and bounded delivery
         run: pnpm --filter @arkenivajs/webhooks test:integration
@@ -313,7 +314,7 @@ jobs:
           node-version: '24.22.1'
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - run: docker compose -f packages/telemetry/test/fixtures/compose.yaml up -d
       - run: pnpm test:integration:telemetry
@@ -340,7 +341,7 @@ jobs:
           node-version: '24.22.1'
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Verify independently persisted and deduplicated event batches
         env:
@@ -374,7 +375,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Verify PostgreSQL fixture input guards before allocating credentials
         run: python3 packages/database-postgres/test/fixtures/test_prepare.py
@@ -432,7 +433,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Prepare private MySQL credentials and verified DNS TLS fixtures
         run: python3 packages/database-mysql/test/fixtures/prepare.py "$RUNNER_TEMP/mysql-fixture" --github-env "$GITHUB_ENV"
@@ -462,7 +463,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Prepare private MariaDB credentials and verified DNS TLS fixtures
         run: python3 packages/database-mariadb/test/fixtures/prepare.py "$RUNNER_TEMP/mariadb-fixture" --github-env "$GITHUB_ENV"
@@ -492,7 +493,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Configure only the disposable runner for Redis background persistence
         run: sudo sysctl -w vm.overcommit_memory=1
@@ -532,7 +533,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Prepare private etcd certificate identities and isolated data
         run: python3 packages/database-etcd/test/fixtures/prepare.py "$RUNNER_TEMP/etcd-fixture" --github-env "$GITHUB_ENV"
@@ -568,7 +569,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Prepare private MongoDB TLS identities, SCRAM users and isolated data
         run: python3 packages/database-mongodb/test/fixtures/prepare.py "$RUNNER_TEMP/mongodb-fixture" --github-env "$GITHUB_ENV"
@@ -602,7 +603,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Prepare private scoped NATS credentials and TLS identities
         run: python3 packages/messaging/test/fixtures/prepare.py "$RUNNER_TEMP/nats-fixture" --github-env "$GITHUB_ENV"
@@ -620,3 +621,89 @@ jobs:
         run: docker compose -f packages/messaging/test/fixtures/compose.yaml logs --no-color
       - if: always() && env.NATS_FIXTURE_DIRECTORY != ''
         run: docker compose -f packages/messaging/test/fixtures/compose.yaml down
+
+  kafka-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MAKEFLAGS: '-j2'
+      npm_config_jobs: '2'
+      ARKENIVA_KAFKA_DISPOSABLE: '1'
+      ARKENIVA_KAFKA_CONTROL: '1'
+      ARKENIVA_KAFKA_BROKER: '127.0.0.1:19092'
+      ARKENIVA_KAFKA_RUN_ID: '${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.node }}'
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.4', '24.22.1', '26.12.1']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global corepack@0.36.0
+      - run: corepack enable && corepack install
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Compile the reviewed native binding explicitly on the target Node ABI
+        run: pnpm rebuild @confluentinc/kafka-javascript
+      - name: Compile public Kafka consumers and their declared dependencies
+        run: pnpm --filter '@arkenivajs/example-kafka...' --filter '@arkenivajs/messaging-kafka...' build
+      - name: Prepare private owned TLS certificates and SASL identities
+        run: |
+          printf 'ARKENIVA_KAFKA_SECRETS=%s/kafka-secrets\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'ARKENIVA_TEST_REPORT_DIRECTORY=%s/kafka-reports\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          python3 -B packages/messaging-kafka/test/fixtures/prepare.py "$RUNNER_TEMP/kafka-secrets"
+      - name: Start only this job's immutable owned KRaft brokers
+        run: |
+          image=apache/kafka@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+          docker run -d --name arkenivajs-kafka-test --network host --cpus 2 --memory 1g \
+            --label "arkenivajs.fixture.owner=$ARKENIVA_KAFKA_RUN_ID" \
+            -e KAFKA_NODE_ID=1 -e KAFKA_PROCESS_ROLES=broker,controller \
+            -e KAFKA_LISTENERS=PLAINTEXT://:19092,CONTROLLER://:19093 \
+            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:19092 \
+            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:19093 \
+            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+            -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=false \
+            -e 'KAFKA_HEAP_OPTS=-Xms256m -Xmx512m' "$image"
+          docker run -d --name arkenivajs-kafka-secure --network host --cpus 2 --memory 1g --user 0:0 \
+            --label "arkenivajs.fixture.owner=$ARKENIVA_KAFKA_RUN_ID" \
+            --env-file "$ARKENIVA_KAFKA_SECRETS/secure.env" \
+            -v "$ARKENIVA_KAFKA_SECRETS:/etc/kafka/secrets:ro" "$image"
+          for pair in arkenivajs-kafka-test:19092 arkenivajs-kafka-secure:19096; do
+            container=${pair%:*}
+            port=${pair#*:}
+            docker exec "$container" /opt/kafka/bin/kafka-topics.sh --bootstrap-server "127.0.0.1:$port" \
+              --create --topic orders.created --partitions 2 --replication-factor 1 \
+              --config cleanup.policy=compact --config min.compaction.lag.ms=3600000
+          done
+          docker exec arkenivajs-kafka-secure /opt/kafka/bin/kafka-acls.sh --bootstrap-server 127.0.0.1:19096 \
+            --add --allow-principal User:fixture-allowed --operation Read --operation Write --operation Describe --topic orders.created
+          docker exec arkenivajs-kafka-secure /opt/kafka/bin/kafka-acls.sh --bootstrap-server 127.0.0.1:19096 \
+            --add --allow-principal User:fixture-allowed --operation IdempotentWrite --cluster
+          docker exec arkenivajs-kafka-secure /opt/kafka/bin/kafka-acls.sh --bootstrap-server 127.0.0.1:19096 \
+            --add --allow-principal User:fixture-allowed --operation Read --operation Describe --group owned-secure- --resource-pattern-type prefixed
+      - name: Verify actual native offsets, durable commits, ownership, failures, TLS/SASL and SDK privacy
+        run: pnpm --filter @arkenivajs/messaging-kafka test:integration
+      - name: Verify the compiled public Kafka example
+        run: pnpm --filter @arkenivajs/example-kafka test:integration
+      - name: Verify independent public package archives with the actual native backend
+        run: pnpm test:packed:examples --integration kafka
+      - name: Retain native broker test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kafka-results-node-${{ matrix.node }}
+          path: ${{ env.ARKENIVA_TEST_REPORT_DIRECTORY }}
+          retention-days: 14
+          if-no-files-found: error
+      - name: Remove only brokers carrying this job's ownership label
+        if: always()
+        run: |
+          for container in arkenivajs-kafka-test arkenivajs-kafka-secure; do
+            owner=$(docker inspect --format '{{ index .Config.Labels "arkenivajs.fixture.owner" }}' "$container" 2>/dev/null || true)
+            if [ "$owner" = "$ARKENIVA_KAFKA_RUN_ID" ]; then docker rm -f "$container"; fi
+          done

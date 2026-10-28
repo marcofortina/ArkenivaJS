@@ -9,7 +9,7 @@ Install the pinned package manager and verify the workspace:
 ```sh
 npm install --global corepack@0.36.0
 corepack enable
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm verify
 ```
 
@@ -54,6 +54,11 @@ safe HTTP readiness, optional actual Redis probes and graceful shutdown.
 
 The [Core NATS consumer](examples/messaging/README.md) demonstrates checked JSON,
 correlation, explicit handler error policy and truthful acknowledgment semantics.
+
+The optional [Kafka adapter](packages/messaging-kafka/README.md) provides confirmed
+publications, exact offsets and manually committed consumers. Its [public example](examples/kafka/README.md)
+checks binary values, empty records and tombstones against an owned broker. Live Kafka
+checks require explicitly compiling the reviewed native dependency in a suitable build environment.
 
 Follow the [developer learning path](docs/learning-path.md) for executable
 projects and independent verification with packed public artifacts.

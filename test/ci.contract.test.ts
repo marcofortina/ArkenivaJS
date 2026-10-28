@@ -5,6 +5,36 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+test('Kafka integration uses actual pinned KRaft, TLS/SASL, native ABI builds and independent public consumers on every Node line', () => {
+  const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
+    job = workflow.jobs['kafka-integration'];
+  assert.deepEqual(job.strategy.matrix.node, ['22.23.4', '24.22.1', '26.12.1']);
+  assert.equal(job.strategy['fail-fast'], false);
+  assert.equal(job.env.ARKENIVA_KAFKA_DISPOSABLE, '1');
+  assert.equal(job.env.ARKENIVA_KAFKA_CONTROL, '1');
+  assert.equal(job.env.MAKEFLAGS, '-j2');
+  assert.equal(job.env.npm_config_jobs, '2');
+  const commands = (job.steps as readonly { run?: string }[]).flatMap((step) =>
+    step.run ? [step.run] : [],
+  );
+  for (const command of [
+    'pnpm rebuild @confluentinc/kafka-javascript',
+    'pnpm --filter @arkenivajs/messaging-kafka test:integration',
+    'pnpm --filter @arkenivajs/example-kafka test:integration',
+    'pnpm test:packed:examples --integration kafka',
+  ])
+    assert.ok(commands.includes(command));
+  assert.ok(
+    commands.some((command) =>
+      command.includes(
+        'apache/kafka@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f',
+      ),
+    ),
+  );
+  assert.ok(commands.some((command) => command.includes('arkenivajs.fixture.owner')));
+  assert.ok(!JSON.stringify(job).includes('continue-on-error'));
+  assert.ok(!JSON.stringify(job).includes('NODE_TLS_REJECT_UNAUTHORIZED'));
+});
 test('XML integration requires vetted native schema binaries and isolated real consumers on every supported Node line', () => {
   const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
     job = workflow.jobs['xml-integration'];
@@ -195,6 +225,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
       'dns',
       'mail',
       'messaging-amqp',
+      'messaging-kafka',
       'proxy',
       'realtime',
       'security-apikey',
@@ -226,7 +257,7 @@ test('Optional standard APIs retain explicit Node/package coverage and cannot by
     assert.ok(
       commands.some((command) => command.includes('matrix.package') && command.includes(gate)),
     );
-  assert.ok(commands.includes('pnpm install --frozen-lockfile'));
+  assert.ok(commands.includes('pnpm install --frozen-lockfile --ignore-scripts'));
   const checks = (workflow.jobs.checks.steps as readonly { run?: string }[]).flatMap((step) =>
     step.run ? [step.run] : [],
   );

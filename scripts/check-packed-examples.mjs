@@ -22,13 +22,20 @@ assert.ok(
   'Use --example EXAMPLE, --integration EXAMPLE or --browser EXAMPLE to select a suite',
 );
 const selected = args[1];
+const nativeKafka = args[0] === '--integration' && selected === 'kafka';
+if (nativeKafka)
+  assert.equal(
+    process.env.ARKENIVA_KAFKA_DISPOSABLE,
+    '1',
+    'Native Kafka builds require an explicitly disposable environment',
+  );
 const selectedScript =
   args[0] === '--example' ? 'test' : args[0] === '--browser' ? 'test:browser' : 'test:integration';
 if (selected) assert.match(selected, /^[a-z][a-z0-9-]*$/);
 const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-packed-examples-'));
 await chmod(directory, 0o700);
-function execute(command, arguments_, cwd) {
-  const result = spawnSync(command, arguments_, { cwd, stdio: 'inherit', timeout: 180000 });
+function execute(command, arguments_, cwd, timeout = 180000, env = process.env) {
+  const result = spawnSync(command, arguments_, { cwd, stdio: 'inherit', timeout, env });
   if (result.error) throw result.error;
   assert.equal(result.status, 0, 'Packed example verification failed');
 }
@@ -138,6 +145,18 @@ try {
       '\n',
   );
   execute('pnpm', ['install', '--ignore-scripts'], directory);
+  if (nativeKafka) {
+    await writeFile(
+      join(directory, 'pnpm-workspace.yaml'),
+      (await readFile(join(directory, 'pnpm-workspace.yaml'), 'utf8')) +
+        "allowBuilds:\n  '@confluentinc/kafka-javascript@1.11.0': true\n",
+    );
+    execute('pnpm', ['rebuild', '@confluentinc/kafka-javascript'], directory, 600000, {
+      ...process.env,
+      MAKEFLAGS: '-j2',
+      npm_config_jobs: '2',
+    });
+  }
   console.log('Applied reviewed compatibility diffs: ' + Object.keys(activePatches).length);
   for (const example of examples) {
     for (const configuration of ['tsconfig.json', 'tsconfig.test.json'])
