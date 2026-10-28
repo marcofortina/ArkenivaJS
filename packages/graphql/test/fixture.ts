@@ -65,6 +65,8 @@ export async function fixture(
     tls?: ServerTlsFiles;
     plugins?: readonly Plugin[];
     databases?: ApplicationOptions['databases'];
+    environment?: ApplicationOptions['service']['environment'];
+    port?: number;
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -88,6 +90,16 @@ export async function fixture(
   if (!address || typeof address !== 'object')
     throw new Error('GraphQL authority address is unavailable');
   issuer = 'http://127.0.0.1:' + address.port;
+  let port = options.port ?? 0;
+  if (options.port === undefined && options.environment && options.environment !== 'test') {
+    const reserved = createServer();
+    await new Promise<void>((resolve) => reserved.listen(0, '127.0.0.1', resolve));
+    const selected = reserved.address();
+    await new Promise<void>((resolve) => reserved.close(() => resolve()));
+    if (!selected || typeof selected !== 'object')
+      throw new Error('The explicit fixture port is unavailable');
+    port = selected.port;
+  }
   let logs = '';
   const sink = new Writable({
     write(chunk: Buffer, _encoding, done) {
@@ -108,10 +120,14 @@ export async function fixture(
   try {
     const authenticated = options.authenticated ?? true;
     app = await createApplication({
-      service: { name: 'graphql-fixture', version: '1.0.0', environment: 'test' },
+      service: {
+        name: 'graphql-fixture',
+        version: '1.0.0',
+        environment: options.environment ?? 'test',
+      },
       http: {
         host: '127.0.0.1',
-        port: 0,
+        port,
         ...(options.tls ? { protocol: 'https' as const, tls: options.tls } : {}),
       },
       logging: { level: 'debug' },

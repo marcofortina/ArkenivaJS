@@ -9,3 +9,4 @@
 - Add bounded native request loaders, opaque parent correlation, isolated caches and serial mutation invalidation, verified against actual PostgreSQL query counts.
 - Protect upstream metadata fields with per-request field policy and explicitly scoped administrative introspection while preserving unrelated native schemas.
 - Enforce result byte limits during standard JSON encoding and recheck the total operation deadline before sending.
+- Add a development/test-only authenticated GraphiQL IDE with local workers, disabled persistent storage and preserved bundled dependency notices.

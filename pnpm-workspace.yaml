@@ -8,11 +8,15 @@ packages:
 # Dependency installation is explicit; running a script must not start native compilation.
 verifyDepsBeforeRun: false
 overrides:
+  # The stable helper's JavaScript artifact is byte-identical to both reviewed RC helpers.
+  react-compiler-runtime@19.1.0-rc.1: 1.0.0
+  react-compiler-runtime@19.1.0-rc.3: 1.0.0
   # ExcelJS uses only the compatible CommonJS v4 API; retain the upstream bounds-check fix.
   exceljs@4.4.0>uuid: 11.1.1
   # Keep the native Parse API while removing the legacy decoder's unlicensed buffers dependency.
   exceljs@4.4.0>unzipper: 0.12.5
 patchedDependencies:
+  '@graphiql/react@0.39.1': packages/graphql/compat/graphiql-monaco-public-types.diff
   '@confluentinc/kafka-javascript@1.11.0': packages/messaging-kafka/compat/confluent-exact-offsets-and-build.diff
   scimmy@1.3.5: packages/security-scim/compat/scimmy-replacement-and-empty-page.diff
   '@fastify/sse@0.6.1': packages/realtime/compat/fastify-sse-bounded-output.diff

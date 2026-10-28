@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { packPackage } from './pack.mjs';
 import { parse as parseYaml, parseAllDocuments } from 'yaml';
 import {
   selectTestFiles,
@@ -57,7 +58,7 @@ try {
   for (const folder of (await readdir(join(root, 'packages'))).sort()) {
     const location = join(root, 'packages', folder),
       manifest = JSON.parse(await readFile(join(location, 'package.json'), 'utf8'));
-    execute('pnpm', ['pack', '--pack-destination', archiveDirectory], location);
+    await packPackage(location, archiveDirectory);
     const archive = join(
       archiveDirectory,
       manifest.name.replace('@', '').replace('/', '-') + '-' + manifest.version + '.tgz',

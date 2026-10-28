@@ -8,9 +8,12 @@ import { createRequire } from 'node:module';
 test('GraphQL contract imports expose no listener or implicit engine initialization', async () => {
   const require = createRequire(import.meta.url);
   const engine = require.resolve('mercurius');
+  const frontend = require.resolve('react');
   assert.equal(require.cache[engine], undefined);
+  assert.equal(require.cache[frontend], undefined);
   const contracts = await import('../../dist/index.js');
   assert.equal(typeof contracts.GRAPHQL_CAPABILITY, 'symbol');
   assert.deepEqual(Object.keys(contracts), ['GRAPHQL_CAPABILITY', 'graphqlPlugin']);
   assert.equal(require.cache[engine], undefined);
+  assert.equal(require.cache[frontend], undefined);
 });
