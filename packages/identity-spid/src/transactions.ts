@@ -44,6 +44,11 @@ function base64(value: unknown, maximum: number, exact?: number) {
     throw failure('EK_EID_FEDERATION');
   return decoded;
 }
+function loginReference(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value))
+    throw failure('EK_EID_FEDERATION');
+  return value;
+}
 function envelope(value: unknown): SealedEnvelope {
   const data = fields(value, ['version', 'algorithm', 'keyId', 'nonce', 'ciphertext', 'tag']);
   if (data.version !== 1 || data.algorithm !== 'AES-256-GCM') throw failure('EK_EID_FEDERATION');
@@ -187,8 +192,8 @@ export class FederationTransactions {
         !this.profile.allowedAssurance.includes(assurance)
       )
         throw failure('EK_EID_PROFILE');
-      const transactionId = randomBytes(32).toString('base64url'),
-        nonce = randomBytes(32).toString('base64url'),
+      const transactionId = randomBytes(32).toString('hex'),
+        nonce = randomBytes(32).toString('hex'),
         verifier = randomBytes(32).toString('base64url'),
         expires = Date.now() + this.profile.sessionTtlSeconds * 1000;
       if (!Number.isSafeInteger(expires)) throw failure();
@@ -267,7 +272,7 @@ export class FederationTransactions {
   ): Promise<LoginTransaction> {
     try {
       call.check();
-      base64(token, 32, 32);
+      loginReference(token);
       const issuer = url(expectedIssuer);
       if (!this.profile.expectedIssuers.includes(issuer)) throw failure('EK_EID_FEDERATION');
       for (const macRef of this.settings.macRefs) {
@@ -335,7 +340,7 @@ export class FederationTransactions {
             'returnPath',
             'tenantHint',
           ]);
-          base64(data.nonce, 32, 32);
+          loginReference(data.nonce);
           base64(data.verifier, 32, 32);
           const path = returnPath(data.returnPath),
             tenantHint = data.tenantHint === undefined ? undefined : text(data.tenantHint),

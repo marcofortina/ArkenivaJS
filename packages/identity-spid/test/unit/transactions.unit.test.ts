@@ -20,8 +20,8 @@ test('Actual framework cryptography protects nonce and PKCE state before shared 
       created.tenantHint!,
     ])
       assert.equal(serialized.includes(value), false);
-    assert.equal(created.transactionId.length, 43);
-    assert.equal(created.nonce.length, 43);
+    assert.match(created.transactionId, /^[a-f0-9]{64}$/u);
+    assert.match(created.nonce, /^[a-f0-9]{64}$/u);
     assert.equal(created.verifier.length, 43);
     assert.notEqual(created.nonce, created.verifier);
     const consumed = await f.runtime.run((call) =>
