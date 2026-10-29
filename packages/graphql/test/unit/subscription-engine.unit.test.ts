@@ -16,6 +16,7 @@ import { tlsFiles } from '../fixture.js';
 import { OwnedContexts } from '../../dist/contexts.js';
 import { installSubscriptionIngress } from '../../dist/subscription-ingress.js';
 import { capture } from '../../dist/policy.js';
+import { SubscriptionStream } from '../../dist/subscription-stream.js';
 
 /** Engine compatibility probes do not activate the framework's subscription transport. */
 function deferred<T>() {
@@ -69,6 +70,8 @@ async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
   const sessions = new OwnedContexts<Session>();
   const retiring = new WeakMap<Session, () => void>();
   const revoked = new Set<string>();
+  const sourceOwner = new AbortController();
+  const sources: SubscriptionStream[] = [];
   const started = new Map<string, ReturnType<typeof deferred<void>>>();
   const ended = new Map<string, ReturnType<typeof deferred<void>>>();
   const parsingContexts: object[] = [];
@@ -113,7 +116,12 @@ async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
             async subscribe(_parent: unknown, _args: unknown, context: MercuriusContext) {
               resolverContexts.push(context);
               const session = await revalidate(context);
-              const stream = await context.pubsub.subscribe(session.tenant);
+              const stream = new SubscriptionStream(
+                () => context.pubsub.subscribe(session.tenant),
+                sourceOwner.signal,
+              );
+              sources.push(stream);
+              await stream.open();
               started.get(session.tenant)?.resolve();
               return stream;
             },
@@ -184,6 +192,7 @@ async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
       ended,
       parsingContexts,
       resolverContexts,
+      sources,
       verified: () => verified,
       revoked,
       async client(
@@ -234,8 +243,10 @@ async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
         return { client, connected, pong, closed };
       },
       async close() {
+        sourceOwner.abort();
         await Promise.all([...clients].map((client) => client.dispose()));
         await server.close();
+        await Promise.all(sources.map((source) => source.completion));
         await tls.close();
       },
     };
@@ -305,6 +316,8 @@ test(
       assert.ok(fixture.verified() >= 8);
       for (const stop of stops.splice(0)) stop();
       await Promise.all([...fixture.ended.values()].map((value) => value.promise));
+      await Promise.all(fixture.sources.map((source) => source.completion));
+      assert.ok(fixture.sources.every((source) => !source.hasFailure()));
     } finally {
       for (const stop of stops) stop();
       await fixture.close();
