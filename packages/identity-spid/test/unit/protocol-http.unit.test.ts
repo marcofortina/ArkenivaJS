@@ -82,6 +82,10 @@ test(
                 response.end('unexpected');
                 return;
               }
+              if (path === '/missing-type') {
+                response.end('untyped');
+                return;
+              }
               if (path === '/jwks') {
                 response.setHeader('content-type', 'application/jwk-set+json');
                 response.end('{"keys":[]}');
@@ -94,6 +98,10 @@ test(
                 return;
               }
               response.setHeader('content-type', 'application/jwt');
+              if (path === '/empty') {
+                response.end();
+                return;
+              }
               if (path === '/utf8') {
                 response.end(Buffer.from([0xc3, 0x28]));
                 return;

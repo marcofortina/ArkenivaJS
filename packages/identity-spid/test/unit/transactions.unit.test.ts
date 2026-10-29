@@ -7,6 +7,260 @@ import { transactionFixture } from '../fixtures/transactions.js';
 import { capture } from '../../dist/settings.js';
 import { FederationTransactions } from '../../dist/transactions.js';
 import type { ItalianEidPluginSettings } from '../../dist/index.js';
+import type { SealedEnvelope } from '@arkenivajs/security-crypto';
+
+test('Noncanonical state references are rejected before any cryptographic provider or storage work', async () => {
+  const f = await transactionFixture();
+  let work = 0;
+  try {
+    const instance = new FederationTransactions(
+      capture(
+        {
+          ...f.settings,
+          stateStore: {
+            ...f.settings.stateStore,
+            store: {
+              ...f.settings.stateStore.store,
+              async read() {
+                work++;
+                throw new Error('Malformed state must not reach storage');
+              },
+            },
+          },
+        },
+        'test',
+      ),
+      f.profile.profileId,
+      {
+        ...f.crypto,
+        async hmac() {
+          work++;
+          throw new Error('Malformed state must not reach key material');
+        },
+      },
+    );
+    for (const token of [
+      'a'.repeat(64) + '\n',
+      'a'.repeat(64) + '\r',
+      'a'.repeat(64) + '\u2028',
+      'a'.repeat(63),
+      'a'.repeat(65),
+      'A'.repeat(64),
+    ]) {
+      await assert.rejects(
+        () => f.runtime.run((call) => instance.consume(call, token, f.input.issuer)),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      assert.equal(work, 0);
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test('Malformed cryptographic provider outputs cannot create protected state or retain shared byte buffers', async () => {
+  const f = await transactionFixture();
+  try {
+    for (const value of [
+      new Uint8Array(31),
+      new Uint8Array(33),
+      new Uint8Array(new SharedArrayBuffer(32)),
+      'not-bytes',
+    ]) {
+      const instance = new FederationTransactions(
+        capture(f.settings, 'test'),
+        f.profile.profileId,
+        {
+          ...f.crypto,
+          async hmac() {
+            return value as Uint8Array;
+          },
+        },
+      );
+      await assert.rejects(() => f.runtime.run((call) => instance.create(call, f.input)), {
+        code: 'EK_EID_FEDERATION',
+      });
+      assert.equal(f.rows.size, 0);
+    }
+    const original = await f.crypto.encrypt(
+      Buffer.from('Synthetic provider envelope'),
+      f.settings.stateEncryptionKeyRefs![0]!,
+    );
+    for (const mutation of [
+      { version: 2 },
+      { algorithm: 'unsupported' },
+      { keyId: '' },
+      { nonce: new Uint8Array(11) },
+      { tag: new Uint8Array(15) },
+      { ciphertext: new Uint8Array(16385) },
+      { tag: new Uint8Array(new SharedArrayBuffer(16)) },
+    ]) {
+      const instance = new FederationTransactions(
+        capture(f.settings, 'test'),
+        f.profile.profileId,
+        {
+          ...f.crypto,
+          async encrypt() {
+            return { ...original, ...mutation } as SealedEnvelope;
+          },
+        },
+      );
+      await assert.rejects(() => f.runtime.run((call) => instance.create(call, f.input)), {
+        code: 'EK_EID_FEDERATION',
+      });
+      assert.equal(f.rows.size, 0);
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test('Encoded state budgets and rejected or malformed persistence receipts never return a transaction', async () => {
+  const f = await transactionFixture();
+  let writes = 0;
+  try {
+    const limited = f.instance({
+      ...f.settings,
+      policy: { ...f.settings.policy, maxInputBytes: 100 },
+      stateStore: {
+        ...f.settings.stateStore,
+        store: {
+          ...f.settings.stateStore.store,
+          async compareAndSet() {
+            writes++;
+            throw new Error('Oversized state must not reach persistence');
+          },
+        },
+      },
+    });
+    await assert.rejects(() => f.runtime.run((call) => limited.create(call, f.input)), {
+      code: 'EK_EID_FEDERATION',
+    });
+    assert.equal(writes, 0);
+    assert.equal(f.rows.size, 0);
+    for (const receipt of [
+      { committed: false },
+      { committed: true, version: '' },
+      { committed: true, version: 42 },
+    ]) {
+      const instance = f.instance({
+        ...f.settings,
+        stateStore: {
+          ...f.settings.stateStore,
+          store: {
+            ...f.settings.stateStore.store,
+            async compareAndSet() {
+              writes++;
+              return receipt as { committed: boolean; version?: string };
+            },
+          },
+        },
+      });
+      await assert.rejects(
+        () =>
+          f.runtime.run((call) =>
+            instance.create(call, {
+              issuer: f.input.issuer,
+              assurance: f.input.assurance,
+              returnPath: f.input.returnPath,
+            }),
+          ),
+        { code: 'EK_EID_FEDERATION' },
+      );
+    }
+    assert.equal(writes, 3);
+    assert.equal(f.rows.size, 0);
+    assert.equal(f.claims.size, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test('An omitted pre-session tenant hint remains absent after actual encrypted single-use state consumption', async () => {
+  const f = await transactionFixture();
+  try {
+    const created = await f.runtime.run((call) =>
+        f.first.create(call, {
+          issuer: f.input.issuer,
+          assurance: f.input.assurance,
+          returnPath: f.input.returnPath,
+        }),
+      ),
+      consumed = await f.runtime.run((call) =>
+        f.second.consume(call, created.transactionId, created.issuer),
+      );
+    assert.equal(Object.hasOwn(created, 'tenantHint'), false);
+    assert.equal(Object.hasOwn(consumed, 'tenantHint'), false);
+    assert.equal(consumed.verifier, created.verifier);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Persisted envelope type, byte bounds and canonical encoding fail before any one-use claim', async () => {
+  const f = await transactionFixture();
+  try {
+    const created = await f.runtime.run((call) => f.first.create(call, f.input));
+    for (const mutation of [
+      { version: 2 },
+      { algorithm: 'unsupported' },
+      { nonce: '' },
+      { nonce: 17 },
+      { nonce: '='.repeat(16) },
+      { nonce: 'x'.repeat(17) },
+      { nonce: 'x'.repeat(15) },
+      { tag: 'x'.repeat(21) },
+      { ciphertext: 'x'.repeat(22000) },
+      { ciphertext: 'not valid encoding' },
+    ]) {
+      const instance = f.instance({
+        ...f.settings,
+        stateStore: {
+          ...f.settings.stateStore,
+          store: {
+            ...f.settings.stateStore.store,
+            async read(...args) {
+              const row = await f.settings.stateStore.store.read(...args);
+              return row
+                ? { ...row, sealed: { ...(row.sealed as Record<string, unknown>), ...mutation } }
+                : null;
+            },
+          },
+        },
+      });
+      await assert.rejects(
+        () =>
+          f.runtime.run((call) => instance.consume(call, created.transactionId, created.issuer)),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      assert.equal(f.claims.size, 0);
+    }
+    assert.equal(
+      (await f.runtime.run((call) => f.second.consume(call, created.transactionId, created.issuer)))
+        .verifier,
+      created.verifier,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('A profile lifetime that overflows the trusted clock cannot create transaction state', async () => {
+  const f = await transactionFixture();
+  try {
+    const instance = f.instance({
+      ...f.settings,
+      profiles: [{ ...f.profile, sessionTtlSeconds: Number.MAX_SAFE_INTEGER }],
+    });
+    await assert.rejects(() => f.runtime.run((call) => instance.create(call, f.input)), {
+      code: 'EK_EID_FEDERATION',
+    });
+    assert.equal(f.rows.size, 0);
+    assert.equal(f.claims.size, 0);
+  } finally {
+    await f.close();
+  }
+});
 
 test('Readiness probes use independent absent records without creating or claiming authentication state', async () => {
   const f = await transactionFixture(),

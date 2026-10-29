@@ -43,6 +43,8 @@ async function run(input: Input) {
     '/status',
     '/redirect',
     '/wrong-type',
+    '/missing-type',
+    '/empty',
     '/utf8',
     '/oversized',
     '/slow',
@@ -86,10 +88,45 @@ async function run(input: Input) {
       () => source.trustMarkStatus(input.origin + '/wrong-type', input.trustMark),
       { code: 'EK_EID_FEDERATION' },
     );
-    for (const path of ['/redirect', '/wrong-type', '/utf8', '/oversized'])
+    for (const path of [
+      '/redirect',
+      '/wrong-type',
+      '/missing-type',
+      '/empty',
+      '/utf8',
+      '/oversized',
+    ])
       await assert.rejects(() => source.statement(input.origin + path), {
         code: 'EK_EID_FEDERATION',
       });
+    const tiny = new FederationHttp(metadata, { ...policy, maxInputBytes: 1 }, 'test'),
+      formBound = new FederationHttp(
+        metadata,
+        { ...policy, maxInputBytes: Buffer.byteLength(input.trustMark) + 1 },
+        'test',
+      ),
+      fixedSubject = new FederationHttp(
+        { ...metadata, approvedMetadataEndpoints: [input.origin + '/fetch?sub=approved'] },
+        policy,
+        'test',
+      );
+    try {
+      await assert.rejects(() => tiny.statement(input.origin + '/statement'), {
+        code: 'EK_EID_FEDERATION',
+      });
+      await assert.rejects(
+        () => formBound.trustMarkStatus(input.origin + '/status', input.trustMark),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      await assert.rejects(
+        () => fixedSubject.statement(input.origin + '/fetch?sub=approved', input.subject),
+        { code: 'EK_EID_FEDERATION' },
+      );
+    } finally {
+      await tiny.close();
+      await formBound.close();
+      await fixedSubject.close();
+    }
     await assert.rejects(() => source.statement(input.origin + '/not-approved'), {
       code: 'EK_EID_FEDERATION',
     });
@@ -192,6 +229,11 @@ async function run(input: Input) {
       await runtime.close();
       await transport.close();
     }
+    await source.close();
+    await assert.rejects(() => source.statement(input.origin + '/statement'), {
+      code: 'EK_RESOURCE_CLOSED',
+    });
+    assert.equal(source.stats().active, 0);
   } finally {
     await source.close();
     await source.close();

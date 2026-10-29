@@ -130,6 +130,8 @@ test('Public-only, malformed, shared, weak and algorithm-incompatible material c
     for (const [bytes, algorithm] of [
       [Buffer.from(rsa.publicKey.export({ format: 'pem', type: 'spki' })), 'RS256'],
       [Buffer.from('invalid-private-material'), 'RS256'],
+      [new Uint8Array(), 'RS256'],
+      [new Uint8Array(16385), 'RS256'],
       [encoded(weak.privateKey, 'pem'), 'RS256'],
       [encoded(ec.privateKey, 'pem'), 'RS512'],
       [encoded(rsa.privateKey, 'pem'), 'ES256'],

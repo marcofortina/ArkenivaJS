@@ -102,6 +102,10 @@ export async function checkMapping(
               if (authorityMode === 'deny') throw new Error('Private authorization diagnostic');
               if (authorityMode === 'foreign') return { ...subject, subject: 'foreign-account' };
               if (authorityMode === 'clone') return { ...subject, tenant: { ...tenant } };
+              if (authorityMode === 'tenant-b') return { ...subject, tenant: tenantB };
+              if (authorityMode === 'identity-only')
+                return { issuer: subject.issuer, subject: subject.subject };
+              if (authorityMode === 'close-auth') await auth.close();
               if (authorityMode === 'wait') {
                 entered();
                 await pending;
@@ -133,6 +137,35 @@ export async function checkMapping(
     assert.equal(mappingCalls, 1);
     assert.equal(authorityCalls, 1);
     assert.equal(auth.isVerifiedTenant({ tenantId: 'tenant-A', identity }), false);
+    authorityMode = 'identity-only';
+    assert.equal(
+      (await runtime.run((call) => mapping.map(call, proof))).claims.tenant_id,
+      'tenant-A',
+    );
+    authorityMode = 'allow';
+    const limited = new FederationIdentityMapping(
+      { ...settings, policy: { ...settings.policy, maxOutputBytes: 1 } },
+      profile.profileId,
+      callback,
+      auth,
+    );
+    await assert.rejects(() => runtime.run((call) => limited.map(call, proof)), {
+      code: 'EK_EID_FEDERATION',
+    });
+    assert.throws(
+      () => new FederationIdentityMapping(settings, 'missing-profile', callback, auth),
+      { code: 'EK_EID_PROFILE' },
+    );
+    assert.throws(
+      () =>
+        new FederationIdentityMapping(
+          settings,
+          profile.profileId,
+          {} as FederationOidcCallback,
+          auth,
+        ),
+      { code: 'EK_EID_PROFILE' },
+    );
     for (const invalid of [
       { ...valid, tenant: { ...tenant } },
       { ...valid, tenant: foreign },
@@ -163,7 +196,7 @@ export async function checkMapping(
       assert.equal(authorityCalls, before);
     }
     mapped = valid;
-    for (const mode of ['deny', 'foreign', 'clone', 'getter']) {
+    for (const mode of ['deny', 'foreign', 'clone', 'tenant-b', 'getter']) {
       authorityMode = mode;
       await assert.rejects(() => runtime.run((call) => mapping.map(call, proof)), {
         code: 'EK_EID_FEDERATION',
@@ -208,6 +241,10 @@ export async function checkMapping(
     await rejected;
     assert.equal(runtime.stats().active, 1);
     release();
+    authorityMode = 'close-auth';
+    await assert.rejects(() => runtime.run((call) => mapping.map(call, proof)), {
+      code: 'EK_EID_FEDERATION',
+    });
     authorityMode = 'allow';
     await auth.close();
     await assert.rejects(() => runtime.run((call) => mapping.map(call, proof)), {

@@ -34,6 +34,7 @@ type Mode =
   | 'audience'
   | 'loa'
   | 'hash'
+  | 'hash-equal-length'
   | 'access-signature'
   | 'access-audience'
   | 'access-client'
@@ -42,7 +43,22 @@ type Mode =
   | 'info-signature'
   | 'info-subject'
   | 'wrong-id-encryption'
-  | 'wrong-info-encryption';
+  | 'wrong-info-encryption'
+  | 'id-audience-array'
+  | 'id-nbf-mismatch'
+  | 'id-jti'
+  | 'id-issued-future'
+  | 'id-expired'
+  | 'access-jti'
+  | 'access-scope'
+  | 'access-issued-future'
+  | 'info-audience-array'
+  | 'info-issued-future'
+  | 'info-expired'
+  | 'info-object'
+  | 'info-long'
+  | 'info-array'
+  | 'info-omitted';
 process.once(
   'message',
   (input: {
@@ -194,8 +210,8 @@ async function run(files: {
                   record.mode === 'access-client'
                     ? 'https://foreign.example.test'
                     : f.profile.clientId,
-                scope: 'openid',
-                jti: randomUUID(),
+                scope: record.mode === 'access-scope' ? 'unapproved' : 'openid',
+                jti: record.mode === 'access-jti' ? 'not-a-version-four-identifier' : randomUUID(),
               })
                 .setProtectedHeader({ alg: 'RS512', kid: 'op-protocol', typ: 'at+jwt' })
                 .setIssuer(op)
@@ -205,7 +221,7 @@ async function run(files: {
                     ? 'https://foreign.example.test/userinfo'
                     : origin + '/userinfo',
                 )
-                .setIssuedAt(now)
+                .setIssuedAt(record.mode === 'access-issued-future' ? now + 30 : now)
                 .setExpirationTime(now + 120)
                 .sign(
                   record.mode === 'access-signature' ? foreign.privateKey : provider.privateKey,
@@ -220,18 +236,27 @@ async function run(files: {
                 acr:
                   'https://www.spid.gov.it/SpidL' +
                   (record.mode === 'loa' ? 1 : record.mode === 'higher' ? 3 : 2),
-                at_hash: record.mode === 'hash' ? 'wrong-hash' : atHash,
-                nbf: now,
-                jti: randomUUID(),
+                at_hash:
+                  record.mode === 'hash'
+                    ? 'wrong-hash'
+                    : record.mode === 'hash-equal-length'
+                      ? (atHash.startsWith('A') ? 'B' : 'A') + atHash.slice(1)
+                      : atHash,
+                nbf: record.mode === 'id-nbf-mismatch' ? now - 1 : now,
+                jti: record.mode === 'id-jti' ? 'not-a-version-four-identifier' : randomUUID(),
               })
                 .setProtectedHeader({ alg: 'RS512', kid: 'op-protocol', cty: 'JWT' })
                 .setIssuer(op)
                 .setSubject(subject)
                 .setAudience(
-                  record.mode === 'audience' ? 'https://foreign.example.test' : f.profile.clientId!,
+                  record.mode === 'audience'
+                    ? 'https://foreign.example.test'
+                    : record.mode === 'id-audience-array'
+                      ? [f.profile.clientId!, 'https://unapproved.example.test']
+                      : f.profile.clientId!,
                 )
-                .setIssuedAt(now)
-                .setExpirationTime(now + 120)
+                .setIssuedAt(record.mode === 'id-issued-future' ? now + 30 : now)
+                .setExpirationTime(record.mode === 'id-expired' ? now - 1 : now + 120)
                 .sign(record.mode === 'id-signature' ? foreign.privateKey : provider.privateKey);
             access.set(accessToken, { mode: record.mode, subject });
             response.setHeader('content-type', 'application/json');
@@ -253,7 +278,18 @@ async function run(files: {
             const record = access.get(request.headers.authorization?.slice(7) ?? '');
             assert.ok(record);
             const token = await new SignJWT({
-              name: 'Fixture Member',
+              ...(record.mode === 'info-omitted'
+                ? {}
+                : {
+                    name:
+                      record.mode === 'info-object'
+                        ? { untrusted: 'value' }
+                        : record.mode === 'info-long'
+                          ? 'x'.repeat(4097)
+                          : record.mode === 'info-array'
+                            ? ['Fixture', 'Member']
+                            : 'Fixture Member',
+                  }),
               email_verified: true,
               age: 42,
               family_name: 'Native',
@@ -261,9 +297,21 @@ async function run(files: {
             })
               .setProtectedHeader({ alg: 'RS512', kid: 'op-protocol' })
               .setIssuer(op)
-              .setAudience(f.profile.clientId!)
-              .setIssuedAt()
-              .setExpirationTime('2m')
+              .setAudience(
+                record.mode === 'info-audience-array'
+                  ? [f.profile.clientId!, 'https://unapproved.example.test']
+                  : f.profile.clientId!,
+              )
+              .setIssuedAt(
+                record.mode === 'info-issued-future'
+                  ? Math.floor(Date.now() / 1000) + 30
+                  : Math.floor(Date.now() / 1000),
+              )
+              .setExpirationTime(
+                record.mode === 'info-expired'
+                  ? Math.floor(Date.now() / 1000) - 1
+                  : Math.floor(Date.now() / 1000) + 120,
+              )
               .sign(record.mode === 'info-signature' ? foreign.privateKey : provider.privateKey);
             response.setHeader('content-type', 'application/jwt');
             response.end(
@@ -436,12 +484,19 @@ async function run(files: {
       callback.consume(call, (await begin('higher')).href),
     );
     assert.equal(higher.assurance, 'spid-l3');
+    for (const mode of ['info-array', 'info-omitted'] as const) {
+      const target = await begin(mode),
+        verified = await f.runtime.run((call) => callback.consume(call, target.href));
+      if (mode === 'info-array') assert.deepEqual(verified.attributes.name, ['Fixture', 'Member']);
+      else assert.equal(Object.hasOwn(verified.attributes, 'name'), false);
+    }
     for (const mode of [
       'nonce',
       'id-signature',
       'audience',
       'loa',
       'hash',
+      'hash-equal-length',
       'access-signature',
       'access-audience',
       'access-client',
@@ -451,6 +506,19 @@ async function run(files: {
       'info-subject',
       'wrong-id-encryption',
       'wrong-info-encryption',
+      'id-audience-array',
+      'id-nbf-mismatch',
+      'id-jti',
+      'id-issued-future',
+      'id-expired',
+      'access-jti',
+      'access-scope',
+      'access-issued-future',
+      'info-audience-array',
+      'info-issued-future',
+      'info-expired',
+      'info-object',
+      'info-long',
     ] as const) {
       const target = await begin(mode);
       await assert.rejects(() => f.runtime.run((call) => callback.consume(call, target.href)), {

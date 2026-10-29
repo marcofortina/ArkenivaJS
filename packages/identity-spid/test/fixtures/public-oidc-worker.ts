@@ -120,6 +120,7 @@ export async function runPublicOidc(files: {
     rotateDecrypt: false,
     signingReads: 0,
     decryptionReads: 0,
+    statusGate: undefined as { entered: () => void; wait: Promise<void> } | undefined,
   };
   const token = (
       issuer: string,
@@ -206,6 +207,10 @@ export async function runPublicOidc(files: {
               return;
             }
             if (target.pathname === '/root/status') {
+              if (state.statusGate) {
+                state.statusGate.entered();
+                await state.statusGate.wait;
+              }
               const submitted = new URLSearchParams(body).get('trust_mark');
               assert.ok(submitted === rpMark || submitted === opMark);
               response.setHeader('content-type', 'application/trust-mark-status-response+jwt');
@@ -629,6 +634,27 @@ export async function runPublicOidc(files: {
       true,
     );
     assert.equal((await service.verifyFederationTrust('invalid-statement')).trusted, false);
+    let release!: () => void, entered!: () => void;
+    const wait = new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+      arrived = new Promise<void>((resolve) => {
+        entered = resolve;
+      }),
+      controller = new AbortController();
+    state.statusGate = { entered, wait };
+    try {
+      const pending = service.verifyFederationTrust(await providerConfiguration(), {
+          signal: controller.signal,
+        }),
+        rejected = assert.rejects(pending, { code: 'EK_ABORTED' });
+      await arrived;
+      controller.abort();
+      await rejected;
+    } finally {
+      state.statusGate = undefined;
+      release();
+    }
     state.rpActive = false;
     assert.equal(await health.check({ timeoutMs: 5000 }), false);
     await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, 'spid-l2'), {
