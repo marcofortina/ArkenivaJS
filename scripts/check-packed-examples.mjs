@@ -123,7 +123,9 @@ try {
     }),
   );
   const configuration =
-    'packages: []\noverrides:\n' +
+    'packages: []\npackageExtensions: ' +
+    JSON.stringify(workspace.packageExtensions ?? {}) +
+    '\noverrides:\n' +
     Object.entries(overrides)
       .map(([name, value]) => '  ' + JSON.stringify(name) + ': ' + JSON.stringify(value))
       .join('\n') +

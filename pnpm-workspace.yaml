@@ -7,6 +7,11 @@ packages:
   - tools/*
 # Dependency installation is explicit; running a script must not start native compilation.
 verifyDepsBeforeRun: false
+packageExtensions:
+  # Multipart's public declarations import Ajv 8, but upstream lists it only for development.
+  '@fastify/multipart@10.1.6':
+    dependencies:
+      ajv: 8.20.0
 overrides:
   # The stable helper's JavaScript artifact is byte-identical to both reviewed RC helpers.
   react-compiler-runtime@19.1.0-rc.1: 1.0.0
