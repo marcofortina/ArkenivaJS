@@ -32,6 +32,11 @@ const native = mtls.toNodeClientOptions(material);
 
 This snippet uses application-owned providers and bootstrap references. `MtlsCredentialProvider.load` resolves only approved profiles through secure secret infrastructure. Missing providers or unknown settings fail at construction; unavailable credentials, empty or invalid CA sets, expired material, chain-linkage errors, mismatched keys and weakened TLS/ALPN settings prevent readiness. Provider-owned buffers are copied and never cleared by the adapter.
 
+Provider methods retain their captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy providers
+or callbacks, accessors and prototype traversal beyond 32 levels fail configuration
+validation; later method replacement does not alter captured ports.
+
 All twelve public interfaces, `mtlsPlugin`, `MTLS_CAPABILITY` and the core `OperationOptions` type are exported. `TlsMaterial` is a byte-material contract, not a native Node options object. `toNodeClientOptions` and `toNodeServerOptions` explicitly produce the prescribed PEM fields, `rejectUnauthorized: true`, a client `servername`, and server `requestCert: true`. Strict positive and negative fixtures compile these actual converter results against the pinned `node:tls` `ConnectionOptions` and `TlsOptions` declarations.
 
 ## Two mandatory trust stages
