@@ -10,10 +10,10 @@ import { KitError } from '@arkenivajs/core';
 import { freezeData } from '@arkenivajs/core/support';
 import type { FederationCall } from './runtime.js';
 import type { Settings } from './settings.js';
+import type { FederationSignatureAlgorithm } from './contracts.js';
 import { failure, fields, text } from './validation.js';
 
-export type FederationSignatureAlgorithm =
-  'RS256' | 'RS512' | 'PS256' | 'PS384' | 'PS512' | 'ES256' | 'ES384' | 'ES512';
+export type { FederationSignatureAlgorithm } from './contracts.js';
 export interface FederationSigningMaterial {
   readonly key: ReturnType<KeyObject['toCryptoKey']>;
   readonly publicJwk: Readonly<JWK>;

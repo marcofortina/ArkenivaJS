@@ -77,11 +77,11 @@ export function url(input: unknown): string {
   }
   return value;
 }
-export function list(input: unknown, maximum = 64): readonly unknown[] {
+export function list(input: unknown, maximum = 64, allowEmpty = false): readonly unknown[] {
   if (
     !Array.isArray(input) ||
     types.isProxy(input) ||
-    !input.length ||
+    (!allowEmpty && !input.length) ||
     input.length > maximum ||
     Reflect.ownKeys(input).length !== input.length + 1
   )

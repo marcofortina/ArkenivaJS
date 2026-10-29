@@ -10,6 +10,7 @@ import type {
   ItalianEidPluginSettings,
 } from './contracts.js';
 import { failure, fields, integer, list, method, property, text, url } from './validation.js';
+import { captureRegistration } from './registration.js';
 
 function strings(input: unknown, convert: (value: unknown) => string = text) {
   const result = list(input).map((value) => convert(value));
@@ -80,6 +81,7 @@ export function captureProfile(input: unknown): FederationProfileV1 {
     'tenantMappingId',
     'identityMappingVersion',
     'sessionTtlSeconds',
+    'oidcRegistration',
   ]);
   if (
     value.schemaVersion !== '1.0.0' ||
@@ -111,21 +113,30 @@ export function captureProfile(input: unknown): FederationProfileV1 {
     throw failure();
   const clientId = value.clientId === undefined ? undefined : text(value.clientId, 2048);
   if (value.protocol === 'oidc-federation' && !clientId) throw failure();
+  const entityId = url(value.entityId),
+    signingKeyRef = text(value.signingKeyRef),
+    maxBytes = integer(metadata.maxBytes);
+  if (value.protocol !== 'oidc-federation' && value.oidcRegistration !== undefined) throw failure();
+  const oidcRegistration =
+    value.oidcRegistration === undefined
+      ? undefined
+      : captureRegistration(value.oidcRegistration, entityId, signingKeyRef, maxBytes);
+  if (oidcRegistration && (clientId !== entityId || new URL(entityId).search)) throw failure();
   return freezeData({
     schemaVersion: '1.0.0',
     profileId: text(value.profileId),
     system: 'spid',
     protocol: value.protocol as FederationProfileV1['protocol'],
-    entityId: url(value.entityId),
+    entityId,
     ...(clientId ? { clientId } : {}),
     redirectUri: url(value.redirectUri),
-    signingKeyRef: text(value.signingKeyRef),
+    signingKeyRef,
     expectedIssuers: strings(value.expectedIssuers, url),
     allowedAssurance: assurance as readonly FederationAssurance[],
     metadata: {
       trustAnchors: anchors,
       approvedMetadataEndpoints: strings(metadata.approvedMetadataEndpoints, url),
-      maxBytes: integer(metadata.maxBytes),
+      maxBytes,
       refreshIntervalSeconds: integer(metadata.refreshIntervalSeconds),
       maxChainDepth: integer(metadata.maxChainDepth),
       revocation: 'mandatory',
@@ -135,6 +146,7 @@ export function captureProfile(input: unknown): FederationProfileV1 {
     tenantMappingId: text(value.tenantMappingId),
     identityMappingVersion: text(value.identityMappingVersion),
     sessionTtlSeconds: integer(value.sessionTtlSeconds),
+    ...(oidcRegistration ? { oidcRegistration } : {}),
   });
 }
 /** Capture immutable policy and bound provider methods without performing secret or network I/O. */
@@ -166,7 +178,12 @@ export function capture(
   if (
     (encryptionRefs.length === 0) !== (macRefs.length === 0) ||
     new Set([...encryptionRefs, ...macRefs]).size !== encryptionRefs.length + macRefs.length ||
-    profiles.some((profile) => [...encryptionRefs, ...macRefs].includes(profile.signingKeyRef))
+    profiles.some((profile) =>
+      [
+        profile.signingKeyRef,
+        ...(profile.oidcRegistration ? [profile.oidcRegistration.decryptionKeyRef] : []),
+      ].some((reference) => [...encryptionRefs, ...macRefs].includes(reference)),
+    )
   )
     throw failure();
   const mappers = fields(value.identityMappers),

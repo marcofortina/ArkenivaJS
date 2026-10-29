@@ -1570,6 +1570,13 @@ importers:
       openid-client:
         specifier: 6.8.8
         version: 6.8.8(patch_hash=44db73c59877ea006f5685ab89cf8376825af3e19216af871aa6f07a19b2deaf)
+      validator:
+        specifier: 13.15.35
+        version: 13.15.35
+    devDependencies:
+      '@types/validator':
+        specifier: 13.15.10
+        version: 13.15.10
 
   packages/logging:
     dependencies:
