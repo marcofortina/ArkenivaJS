@@ -102,10 +102,12 @@ export function property(input: unknown, name: string): unknown {
   if (current) throw failure();
   return undefined;
 }
-export function method<T>(input: unknown, name: string): T {
+export function method<T extends (...args: never[]) => unknown>(input: unknown, name: string): T {
   const value = property(input, name);
   if (typeof value !== 'function' || types.isProxy(value)) throw failure();
-  return value.bind(input) as T;
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(value, input, args) as ReturnType<T>;
+  return invoke as T;
 }
 export function url(input: unknown, environment: string): string {
   const value = text(input, 2048);
