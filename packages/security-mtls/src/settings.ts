@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { isIP } from 'node:net';
+import { types } from 'node:util';
 import type {
   MtlsCredentialProvider,
   MtlsPluginSettings,
@@ -91,21 +92,27 @@ export function profileKey(value: TlsProfile): string {
   return JSON.stringify(profile(value));
 }
 function method(value: unknown, name: string): (...args: never[]) => unknown {
-  if (!value || typeof value !== 'object') throw invalid();
+  if (!value || typeof value !== 'object' || types.isProxy(value)) throw invalid();
   let current: object | null = value;
-  while (current) {
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
     const field = Object.getOwnPropertyDescriptor(current, name);
     if (field) {
-      if (!('value' in field) || typeof field.value !== 'function') throw invalid();
-      return field.value.bind(value) as (...args: never[]) => unknown;
+      if (!('value' in field) || typeof field.value !== 'function' || types.isProxy(field.value))
+        throw invalid();
+      const captured = field.value;
+      // Callable metadata cannot replace the configured provider or its original receiver.
+      return (...args: never[]) => Reflect.apply(captured, value, args) as unknown;
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
   throw invalid();
 }
 function usage(value: object): boolean {
+  if (types.isProxy(value)) throw invalid();
   let current: object | null = value;
-  while (current) {
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
     const field = Object.getOwnPropertyDescriptor(current, 'usage');
     if (field) {
       if (!('value' in field) || !['production', 'test-only'].includes(field.value as string))
@@ -114,6 +121,7 @@ function usage(value: object): boolean {
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
+  if (current) throw invalid();
   return false;
 }
 function integer(value: unknown, maximum: number): number {
