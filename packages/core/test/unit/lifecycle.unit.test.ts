@@ -224,6 +224,77 @@ test('EK-CORE-001 stop before start closes without initializing; invalid deadlin
   assert.equal(app.state, 'CLOSED');
 });
 
+test('An expired shutdown cancels owned work even when a synchronous drain delays the deadline timer', async () => {
+  let signal: AbortSignal | undefined;
+  const closed: boolean[] = [];
+  const drain: ComposablePlugin = {
+    ...plugin('blocking-drain', {
+      init(context) {
+        signal = context.require<AbortSignal>(APPLICATION_SIGNAL);
+      },
+      close(context) {
+        closed.push(context.require<AbortSignal>(APPLICATION_SIGNAL).aborted);
+      },
+    }),
+    [DRAIN_PLUGIN]() {
+      // Hold one turn beyond the deadline without allowing the timer callback to run.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    },
+  };
+  const app = await createApplication({ service, plugins: [drain] });
+  await app.start();
+  await assert.rejects(app.stop({ timeoutMs: 10 }), code('EK_TIMEOUT'));
+  assert.deepEqual(closed, [true]);
+  assert.equal(signal?.aborted, true);
+  assert.equal(app.state, 'CLOSED');
+});
+
+test('A blocking close cannot extend shutdown or leave downstream cleanup with an uncancelled signal', async () => {
+  const closed: boolean[] = [];
+  let signal: AbortSignal | undefined;
+  const a = plugin('dependent-resource', {
+    init(context) {
+      signal = context.require<AbortSignal>(APPLICATION_SIGNAL);
+    },
+    close(context) {
+      closed.push(context.require<AbortSignal>(APPLICATION_SIGNAL).aborted);
+    },
+  });
+  const b = plugin('blocking-close', {
+    dependencies: [a.id],
+    close() {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    },
+  });
+  const app = await createApplication({ service, plugins: [a, b] });
+  await app.start();
+  await assert.rejects(app.stop({ timeoutMs: 10 }), code('EK_TIMEOUT'));
+  assert.deepEqual(closed, [true]);
+  assert.equal(signal?.aborted, true);
+  assert.equal(app.state, 'CLOSED');
+});
+
+test('Graceful shutdown retains an unaborted lifecycle signal when every hook settles before its deadline', async () => {
+  let signal: AbortSignal | undefined;
+  const app = await createApplication({
+    service,
+    plugins: [
+      plugin('graceful', {
+        init(context) {
+          signal = context.require<AbortSignal>(APPLICATION_SIGNAL);
+        },
+        close() {
+          assert.equal(signal?.aborted, false);
+        },
+      }),
+    ],
+  });
+  await app.start();
+  await app.stop({ timeoutMs: 1000 });
+  assert.equal(signal?.aborted, false);
+  assert.equal(app.state, 'CLOSED');
+});
+
 test('EK-CORE-002 duplicate, missing and cyclic plugin dependencies reject before hooks', async () => {
   for (const [plugins, expected] of [
     [[plugin('a'), plugin('a')], 'EK_PLUGIN_DUPLICATE'],
