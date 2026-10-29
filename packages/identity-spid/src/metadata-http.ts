@@ -168,6 +168,14 @@ export class FederationHttp {
       throw transportFailure(error);
     }
   }
+  /** Retrieve the approved registry representation; transport alone grants no participation. */
+  async samlRegistryStatus(endpoint: string, options?: OperationOptions): Promise<string> {
+    try {
+      return await this.read(this.endpoint(endpoint), 'application/json', undefined, options, true);
+    } catch (error) {
+      throw transportFailure(error);
+    }
+  }
   async trustMarkStatus(
     endpoint: string,
     trustMark: string,

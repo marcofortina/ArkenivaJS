@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Retrieve explicit SAML registry JSON locations through the existing bounded HTTPS
+  transport with strict media types, fresh requests and shared admission. Reading
+  a status document does not establish active participation or enable SAML.
 - Capture federation provider functions without inspecting executable `name`,
   `length` or `bind` properties; preserve the original receiver and method snapshot.
 - Capture explicit metadata/status sources for the SP and every configured SAML
