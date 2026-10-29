@@ -168,6 +168,8 @@ overrides:
   exceljs@4.4.0>uuid: 11.1.1
   exceljs@4.4.0>unzipper: 0.12.5
 
+packageExtensionsChecksum: sha256-+6QzCQW/mydxB2oS8DkcoFZg8lzz/D7pLZTn4z8zdGU=
+
 patchedDependencies:
   '@confluentinc/kafka-javascript@1.11.0': 46e9a5b1bd7a683cc3840d3202a6cb6c61f02ea802eb93214f5ee0a39c20b767
   '@fastify/sse@0.6.1': 2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df
@@ -6209,6 +6211,7 @@ snapshots:
       '@fastify/busboy': 3.2.4
       '@fastify/deepmerge': 3.2.4
       '@fastify/error': 4.2.1
+      ajv: 8.20.0
       fastify-plugin: 6.0.1
       secure-json-parse: 4.1.1
 

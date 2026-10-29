@@ -7,6 +7,8 @@ Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 `@arkenivajs/upload` registers bounded POST/PUT routes on the existing `@arkenivajs/api` Fastify listener. It delegates multipart syntax, MIME boundaries and native file backpressure to `@fastify/multipart` 10.1.6. Importing the package opens no listener and stores no file. The same routes support HTTP, verified direct HTTPS and secure HTTP/2.
 
+The pinned workspace declares the SDK's missing Ajv 8 dependency through `packageExtensions`; its public declarations require that type even though upstream lists Ajv only as a development dependency. Independent packed-consumer verification preserves this exact extension. This prevents unrelated dependencies from selecting Ajv 6 for those declarations without changing multipart runtime code or disabling library type checks.
+
 ```typescript
 import { uploadPlugin } from '@arkenivajs/upload';
 
