@@ -19,6 +19,19 @@ export function contract(settings: SamlSettings, identity: SamlVerifiedIdentity)
   void service.beginLogout(identity);
   void service.consumeLogoutResponse('base64');
   void service.createMetadata();
+  createSamlService({
+    ...settings,
+    requestedAuthnContext: {
+      classReferences: ['https://www.spid.gov.it/SpidL2'],
+      comparison: 'minimum',
+      acceptedClassReferences: ['https://www.spid.gov.it/SpidL2', 'https://www.spid.gov.it/SpidL3'],
+    },
+  });
+  createSamlService({
+    ...settings,
+    // @ts-expect-error A requested context requires an explicit accepted class catalog.
+    requestedAuthnContext: { classReferences: ['urn:example:context'], comparison: 'exact' },
+  });
   // @ts-expect-error Unknown configuration fields are rejected by the public contract.
   createSamlService({ ...settings, trustEveryCertificate: true });
   // @ts-expect-error Login requires an explicit local return path.

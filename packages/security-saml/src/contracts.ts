@@ -7,6 +7,12 @@ import type { SecurityStateStore, TrustedSecurityAuthority } from '@arkenivajs/s
 export type { SecretProvider, SecretValue } from '@arkenivajs/security-crypto';
 export type { SecurityStateStore, TrustedSecurityAuthority } from '@arkenivajs/security-apikey';
 
+/** Application-owned request and acceptance policy; class ordering is never inferred from URI text. */
+export interface SamlAuthenticationContext {
+  readonly classReferences: readonly string[];
+  readonly comparison: 'exact' | 'minimum' | 'maximum' | 'better';
+  readonly acceptedClassReferences: readonly string[];
+}
 export interface SamlSettings {
   readonly entityId: string;
   readonly acsUrl: string;
@@ -20,6 +26,7 @@ export interface SamlSettings {
   readonly replayStore: SecurityStateStore;
   readonly clockSkewSeconds?: number;
   readonly binding?: 'redirect' | 'post';
+  readonly requestedAuthnContext?: SamlAuthenticationContext;
   /** Login proves only an upstream identity; sensitive logout needs independent local session authorization. */
   readonly authority?: TrustedSecurityAuthority;
   readonly environment?: 'development' | 'test' | 'production';
