@@ -280,7 +280,7 @@ export async function runPublicOidc(files: {
             response.end(
               JSON.stringify({
                 access_token: access,
-                id_token: await encrypt(id, 'id'),
+                id_token: id,
                 token_type: 'Bearer',
                 expires_in: 120,
               }),
@@ -349,8 +349,6 @@ export async function runPublicOidc(files: {
               token_endpoint_auth_signing_alg_values_supported: ['RS256'],
               id_token_signing_alg_values_supported: ['RS512'],
               userinfo_signing_alg_values_supported: ['RS512'],
-              id_token_encryption_alg_values_supported: ['RSA-OAEP'],
-              id_token_encryption_enc_values_supported: ['A128CBC-HS256'],
               userinfo_encryption_alg_values_supported: ['RSA-OAEP-256'],
               userinfo_encryption_enc_values_supported: ['A256CBC-HS512'],
             },
@@ -399,7 +397,6 @@ export async function runPublicOidc(files: {
         idTokenSigningAlgorithm: 'RS512' as const,
         userInfoSigningAlgorithm: 'RS512' as const,
         decryptionKeyRef: 'oidc-decryption-ref',
-        idTokenEncryption: { algorithm: 'RSA-OAEP' as const, encryption: 'A128CBC-HS256' as const },
         userInfoEncryption: {
           algorithm: 'RSA-OAEP-256' as const,
           encryption: 'A256CBC-HS512' as const,

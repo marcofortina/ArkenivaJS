@@ -10,6 +10,9 @@ import { CRYPTO_CAPABILITY } from '@arkenivajs/security-crypto';
 import type { ItalianEidPluginSettings, FederationProfileV1 } from '../../dist/index.js';
 import { SPID_CAPABILITY, spidPlugin } from '../../dist/index.js';
 import { capture } from '../../dist/settings.js';
+import { assuranceLevels, assuranceContext, acrValues } from '../../dist/assurance.js';
+import type { FederationAssurance, ItalianIdentitySystem } from '../../dist/index.js';
+import { registration } from '../fixtures/registration.js';
 
 const publicKeyPem = generateKeyPairSync('rsa', { modulusLength: 2048 })
   .publicKey.export({ format: 'pem', type: 'spki' })
@@ -78,6 +81,72 @@ function fixture() {
   };
   return { settings, profile, calls: () => calls };
 }
+
+test('Italian profile capture keeps SPID and CIE systems and application assurance strictly separate', () => {
+  const f = fixture(),
+    profile = { ...f.profile, system: 'cie' as const, allowedAssurance: ['cie-l2' as const] },
+    input = { ...f.settings, profiles: [profile] },
+    captured = capture(input, 'test', 'cie');
+  assert.equal(captured.profiles[0]!.system, 'cie');
+  assert.deepEqual(captured.profiles[0]!.allowedAssurance, ['cie-l2']);
+  for (const work of [
+    () => capture(input),
+    () => spidPlugin(input),
+    () => capture(f.settings, 'test', 'cie'),
+    () => capture({ ...input, profiles: [profile, f.profile] }, 'test', 'cie'),
+    () =>
+      capture(
+        { ...input, profiles: [{ ...profile, allowedAssurance: ['spid-l2'] }] },
+        'test',
+        'cie',
+      ),
+    () => capture({ ...f.settings, profiles: [{ ...f.profile, allowedAssurance: ['cie-l2'] }] }),
+  ])
+    assert.throws(work, (error: unknown) => error instanceof KitError);
+  Reflect.set(profile, 'system', 'spid');
+  assert.equal(captured.profiles[0]!.system, 'cie');
+  assert.equal(f.calls(), 0);
+});
+
+test('Italian profile registration permits optional ID Token encryption only in the CIE family', async () => {
+  const f = fixture(),
+    oidcRegistration = {
+      ...(await registration(f.profile.entityId)),
+      idTokenEncryption: { algorithm: 'RSA-OAEP' as const, encryption: 'A128CBC-HS256' as const },
+    },
+    profile = { ...f.profile, oidcRegistration };
+  assert.throws(() => capture({ ...f.settings, profiles: [profile] }), { code: 'EK_EID_PROFILE' });
+  const cie = { ...profile, system: 'cie' as const, allowedAssurance: ['cie-l2' as const] };
+  assert.equal(
+    capture({ ...f.settings, profiles: [cie] }, 'test', 'cie').profiles[0]!.oidcRegistration!
+      .idTokenEncryption!.algorithm,
+    'RSA-OAEP',
+  );
+  assert.equal(f.calls(), 0);
+});
+
+test('Italian wire assurance references cannot relabel an application assurance into another identity system', () => {
+  for (const system of ['spid', 'cie'] as const) {
+    const values = assuranceLevels(system);
+    assert.ok(Object.isFrozen(values));
+    for (const [index, value] of values.entries())
+      assert.equal(assuranceContext(system, value), acrValues[index]);
+    const foreign = (system === 'spid' ? 'cie-l2' : 'spid-l2') as FederationAssurance;
+    assert.throws(() => assuranceContext(system, foreign), { code: 'EK_EID_ASSURANCE' });
+  }
+  let coercions = 0;
+  const hostile = {
+    [Symbol.toPrimitive]() {
+      coercions++;
+      return 'spid';
+    },
+  };
+  for (const system of [null, 1, 'generic', hostile])
+    assert.throws(() => assuranceLevels(system as ItalianIdentitySystem), {
+      code: 'EK_EID_ASSURANCE',
+    });
+  assert.equal(coercions, 0);
+});
 test('SPID exports a stable capability and captures immutable profiles without provider I/O', async () => {
   const f = fixture(),
     settings = capture(f.settings);

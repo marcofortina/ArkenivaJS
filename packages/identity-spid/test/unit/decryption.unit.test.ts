@@ -12,7 +12,8 @@ import {
   enableNonRepudiationChecks,
   fetchUserInfo,
 } from 'openid-client';
-import { capture } from '../../dist/settings.js';
+import { capture as captureSettings } from '../../dist/settings.js';
+import type { ItalianEidPluginSettings } from '../../dist/index.js';
 import { loadFederationDecryptionKey } from '../../dist/decryption.js';
 import { registration } from '../fixtures/registration.js';
 import { transactionFixture } from '../fixtures/transactions.js';
@@ -23,15 +24,18 @@ const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 }),
   ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const encoded = (pair = rsa) =>
   Buffer.from(pair.privateKey.export({ format: 'pem', type: 'pkcs8' }));
+const capture = (input: ItalianEidPluginSettings, environment: 'test') =>
+  captureSettings(input, environment, 'cie');
 async function fixture() {
   const f = await transactionFixture();
-  const input = await registration(f.profile.entityId);
+  const profile = { ...f.profile, system: 'cie' as const, allowedAssurance: ['cie-l2' as const] },
+    input = await registration(profile.entityId);
   f.material.set(input.decryptionKeyRef, { bytes: encoded(), keyVersion: 'fixture' });
   const settings = {
     ...f.settings,
     profiles: [
       {
-        ...f.profile,
+        ...profile,
         oidcRegistration: {
           ...input,
           idTokenEncryption: {
@@ -42,7 +46,7 @@ async function fixture() {
       },
     ],
   };
-  return { ...f, settings, configuration: capture(settings, 'test') };
+  return { ...f, profile, settings, configuration: capture(settings, 'test') };
 }
 test('External decryption keys remain non-extractable and decrypt all prescribed native JWE combinations', async () => {
   const f = await fixture();

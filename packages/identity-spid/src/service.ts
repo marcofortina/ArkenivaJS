@@ -148,7 +148,12 @@ export async function managed(
           return runtime.run(async (call) => {
             const receipt = fields(
               await call.step((operation) =>
-                settings.authority.require('spid.begin_authentication', undefined, {}, operation),
+                settings.authority.require(
+                  instance.profile.system + '.begin_authentication',
+                  undefined,
+                  {},
+                  operation,
+                ),
               ),
               ['issuer', 'subject', 'tenant'],
             );

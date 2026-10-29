@@ -33,6 +33,7 @@ export interface FederationOidcRegistration {
   readonly idTokenSigningAlgorithm: FederationSignatureAlgorithm;
   readonly userInfoSigningAlgorithm: FederationSignatureAlgorithm;
   readonly decryptionKeyRef: string;
+  /** CIE registration only; SPID ID Tokens remain signed and unencrypted. */
   readonly idTokenEncryption?: FederationEncryptionPolicy;
   readonly userInfoEncryption: FederationEncryptionPolicy;
   readonly requestedClaims: readonly string[];

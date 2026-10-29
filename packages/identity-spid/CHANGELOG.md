@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Separate SPID/CIE application assurance and protected-state families while reusing the native Italian OIDC wire references; reject CIE-only ID Token encryption in SPID configuration and callbacks.
+- Verify signed SPID ID Tokens in public HTTPS consumers and optional encrypted ID Tokens in private CIE-profile engine tests, including cross-system state and encrypted-record substitution denial.
+
 - Borrow explicitly installed observation services and export only bounded SPID handshake/trust-failure counters, with safe operation outcomes and real SDK privacy tests in both telemetry modes.
 
 - Define versioned federation profiles, approved mapping and provider contracts, with immutable policy capture and safe configuration validation.

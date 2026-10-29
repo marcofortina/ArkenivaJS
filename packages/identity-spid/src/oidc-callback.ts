@@ -32,6 +32,7 @@ import { loadFederationSigningKey } from './signing.js';
 import { loadFederationDecryptionKey } from './decryption.js';
 import { publicKeys, verifyFederationToken } from './statements.js';
 import { failure, fields, list, method, text, url } from './validation.js';
+import { assuranceLevels, acrValues } from './assurance.js';
 
 export interface VerifiedOidcResult {
   readonly profileId: string;
@@ -43,8 +44,6 @@ export interface VerifiedOidcResult {
   readonly tenantHint?: string;
   readonly expiresAt: string;
 }
-const assuranceLevels = ['spid-l1', 'spid-l2', 'spid-l3'] as const,
-  acrValues = assuranceLevels.map((_, index) => 'https://www.spid.gov.it/SpidL' + (index + 1));
 function encrypted(token: unknown, policy: FederationEncryptionPolicy) {
   if (typeof token !== 'string' || token.split('.').length !== 5)
     throw failure('EK_EID_FEDERATION');
@@ -317,13 +316,12 @@ export class FederationOidcCallback {
             new TextDecoder('utf-8', { fatal: true }).decode(bytes),
             registration.userInfoEncryption,
           );
-        if (
-          address === tokenEndpoint &&
-          response.status === 200 &&
-          registration.idTokenEncryption
-        ) {
+        if (address === tokenEndpoint && response.status === 200) {
           const body = fields(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)));
-          encrypted(body.id_token, registration.idTokenEncryption);
+          if (registration.idTokenEncryption)
+            encrypted(body.id_token, registration.idTokenEncryption);
+          else if (typeof body.id_token !== 'string' || body.id_token.split('.').length !== 3)
+            throw failure('EK_EID_FEDERATION');
         }
         return new Response(bytes, {
           status: response.status,
@@ -343,9 +341,8 @@ export class FederationOidcCallback {
         subject = text(claims.sub, 2048),
         now = Math.floor(Date.now() / 1000),
         level = acrValues.indexOf(claims.acr as string),
-        requested = assuranceLevels.indexOf(
-          transaction.assurance as (typeof assuranceLevels)[number],
-        );
+        levels = assuranceLevels(this.profile.system),
+        requested = levels.indexOf(transaction.assurance);
       if (level < 0 || requested < 0 || level < requested) throw failure('EK_EID_ASSURANCE');
       supported('acr_values_supported', claims.acr as string);
       if (
@@ -454,7 +451,7 @@ export class FederationOidcCallback {
         profileId: this.profile.profileId,
         issuer,
         subject: mappedSubject,
-        assurance: assuranceLevels[level]!,
+        assurance: levels[level]!,
         attributes,
         returnPath: transaction.returnPath,
         ...(transaction.tenantHint ? { tenantHint: transaction.tenantHint } : {}),
