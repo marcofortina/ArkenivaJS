@@ -31,3 +31,4 @@
 - Enable authenticated test-environment subscriptions on the public GraphQL endpoint through the native protocol, preserving guarded HTTP/HTTP2 execution and realtime coexistence while other environments remain fail-closed.
 - Verify actual mTLS NATS fan-out across independent public GraphQL server processes, shared signed identity authority, tenant isolation and complete iterator retirement in the existing broker CI matrix.
 - Verify subscription process restart and native mTLS reconnection after a lost broker round trip, preserving uncertain publication outcomes without replaying business events.
+- Isolate source delivery failures after confirmed iterator retirement, retain quarantine for failed or unverifiable cleanup, and verify real paused WSS consumers cannot exhaust another tenant's connection.

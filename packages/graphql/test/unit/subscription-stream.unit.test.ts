@@ -147,6 +147,7 @@ test('Acquisition, malformed sources, read and cleanup failures remain safe and 
     else await stream.open();
     await stream.return();
     assert.equal(stream.hasFailure(), true);
+    assert.equal(stream.retirementFailed(), mode === 'malformed' || mode === 'cleanup');
     assert.equal(closes, mode === 'read' || mode === 'cleanup' ? 1 : 0);
   }
 });

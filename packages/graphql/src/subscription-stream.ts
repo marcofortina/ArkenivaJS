@@ -16,6 +16,7 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
   private reading = false;
   private retired = false;
   private failed = false;
+  private cleanupFailed = false;
   private readonly aborted: () => void;
 
   constructor(
@@ -33,6 +34,9 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
   }
   hasFailure() {
     return this.failed;
+  }
+  retirementFailed() {
+    return this.cleanupFailed;
   }
   [Symbol.asyncIterator]() {
     return this;
@@ -52,9 +56,11 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
       this.opening = true;
       this.ready = this.watch(
         Promise.resolve().then(async () => {
+          let acquired = false;
           try {
             if (this.stopped) throw failure('EK_GQL_SUBSCRIPTION');
             const source = await this.acquire(this.controller.signal);
+            acquired = true;
             if (!source || typeof source[Symbol.asyncIterator] !== 'function')
               throw failure('EK_GQL_SUBSCRIPTION');
             const iterator = source[Symbol.asyncIterator]();
@@ -63,6 +69,7 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
             this.iterator = iterator;
             if (typeof iterator.next !== 'function') throw failure('EK_GQL_SUBSCRIPTION');
           } catch {
+            if (acquired && !this.iterator) this.cleanupFailed = true;
             if (!this.stopped) this.failed = true;
             this.stop();
             throw failure('EK_GQL_SUBSCRIPTION');
@@ -123,6 +130,7 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
           () => undefined,
           () => {
             this.failed = true;
+            this.cleanupFailed = true;
           },
         ),
     );
