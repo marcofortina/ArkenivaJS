@@ -19,6 +19,7 @@ export class Operation {
   loaderBatches = 0;
   loaderItems = 0;
   mutationEpoch = 0;
+  failed = false;
   /** Private adapter context, captured only after runtime authentication. */
   runInContext: (<T>(work: () => T) => T) | undefined;
   private readonly pending = new Set<Promise<unknown>>();

@@ -58,7 +58,8 @@ export class SubscriptionConnection {
     private readonly signals: {
       changed?(): void;
       event?(result: 'deliver' | 'drop'): void;
-      scope?(scope: Operation): Promise<void>;
+      authenticated?(principal: VerifiedTenantContext): void;
+      scope?(scope: Operation, phase: 'source' | 'event'): Promise<void>;
     } = {},
   ) {
     if (!settings.subscriptions || !settings.security.auth.required) throw failure();
@@ -196,6 +197,7 @@ export class SubscriptionConnection {
   async authenticate(): Promise<void> {
     const assertion = this.admission.authorization();
     const principal = await this.verify(assertion);
+    this.signals.authenticated?.(principal);
     this.assertion = assertion;
     this.principal = principal;
     this.admission.authenticate({
@@ -272,9 +274,14 @@ export class SubscriptionConnection {
       throw failure('EK_GQL_SUBSCRIPTION');
     const scope = reservation.execution.current;
     if (!scope) throw failure('EK_GQL_SUBSCRIPTION');
-    scope.check();
-    sealSubscriptionResult(execution, this.settings.security.limits.maxResultBytes);
-    scope.check();
+    try {
+      scope.check();
+      sealSubscriptionResult(execution, this.settings.security.limits.maxResultBytes);
+      scope.check();
+    } catch (error) {
+      scope.failed = true;
+      throw error;
+    }
   }
 
   stop(id: string) {

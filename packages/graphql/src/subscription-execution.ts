@@ -40,7 +40,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
     owner: AbortSignal,
     private readonly entered?: (scope: Operation) => void,
     private readonly taken?: () => void,
-    private readonly observed?: (scope: Operation) => Promise<void>,
+    private readonly observed?: (scope: Operation, phase: 'source' | 'event') => Promise<void>,
   ) {
     try {
       if (authority.tenantFrom(principal.identity) !== principal) throw failure('EK_GQL_AUTH');
@@ -88,7 +88,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
       throw error;
     }
   }
-  private async fresh(): Promise<Operation> {
+  private async fresh(phase: 'source' | 'event'): Promise<Operation> {
     if (this.closed) throw failure('EK_GQL_SUBSCRIPTION');
     const scope = new Operation(this.metadata, this.settings.security.limits, this.signal);
     this.scopes.add(scope);
@@ -118,7 +118,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
       Object.defineProperty(scope, 'context', {
         value: Object.freeze({ ...scope.context, identity, auth: tenant }),
       });
-      await this.observed?.(scope);
+      await this.observed?.(scope, phase);
       scope.check();
       return scope;
     } catch (error) {
@@ -129,7 +129,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
   }
   prepare(): Promise<void> {
     if (this.closed) return Promise.reject(failure('EK_GQL_SUBSCRIPTION'));
-    return (this.preparation ??= this.fresh().then(
+    return (this.preparation ??= this.fresh('source').then(
       (scope) => {
         if (this.closed) {
           scope.abort();
@@ -190,7 +190,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
         return { done: true, value: undefined };
       }
       observe(() => this.taken?.());
-      const event = await this.fresh();
+      const event = await this.fresh('event');
       if (this.closed) {
         event.abort();
         event.end();

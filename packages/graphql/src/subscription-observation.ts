@@ -12,7 +12,6 @@ export async function traceSubscriptionScope(
   parent: AsyncResource | undefined,
   scope: Operation,
 ): Promise<void> {
-  if (!telemetry) return;
   let ready!: () => void;
   const captured = new Promise<void>((resolve) => {
     ready = resolve;
@@ -27,7 +26,12 @@ export async function traceSubscriptionScope(
       scope.runInContext = undefined;
       resource.emitDestroy();
     })());
-  const start = () => traceOperation({ telemetry, detailed: false }, 'subscription', capture);
+  const start = () =>
+    traceOperation(
+      { ...(telemetry ? { telemetry } : {}), detailed: false },
+      'subscription',
+      capture,
+    );
   // The existing instrumentation helper invokes capture once even when diagnostics throw.
   const pending = parent ? parent.runInAsyncScope(start) : start();
   void pending.catch(() => ready());

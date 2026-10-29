@@ -94,6 +94,7 @@ export async function authorizedField(
     scope.resolvedFields++;
     return result;
   } catch (error) {
+    if (scope) scope.failed = true;
     const safe =
       error instanceof KitError &&
       ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(error.code)

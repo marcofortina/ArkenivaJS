@@ -13,6 +13,7 @@ export interface Observers {
   readonly telemetry?: Telemetry;
   readonly meter?: UsageMeter & {
     run<T>(session: MeterSession, work: () => T): T;
+    withoutScope?<T>(work: () => T): T;
     markMissing(
       session: MeterSession,
       reason: 'driver_bytes_unavailable' | 'span_not_instrumented',
