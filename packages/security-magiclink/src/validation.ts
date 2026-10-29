@@ -51,6 +51,7 @@ export function property(value: unknown, key: string): unknown {
     throw failure('EK_CONFIG_INVALID');
   let current: object | null = value;
   for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw failure('EK_CONFIG_INVALID');
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
     if (descriptor) {
       if (!('value' in descriptor)) throw failure('EK_CONFIG_INVALID');
@@ -61,10 +62,13 @@ export function property(value: unknown, key: string): unknown {
   if (current) throw failure('EK_CONFIG_INVALID');
   return undefined;
 }
-export function method<T>(value: unknown, key: string): T {
+export function method<T extends (...args: never[]) => unknown>(value: unknown, key: string): T {
   const callable = property(value, key);
   if (typeof callable !== 'function' || types.isProxy(callable)) throw failure('EK_CONFIG_INVALID');
-  return callable.bind(value) as T;
+  // Callable metadata cannot replace the configured function or its original receiver.
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(callable, value, args) as ReturnType<T>;
+  return invoke as T;
 }
 export function text(value: unknown, maximum: number): string {
   if (
