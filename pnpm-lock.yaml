@@ -1586,6 +1586,28 @@ importers:
         specifier: 8.12.3
         version: 8.12.3
 
+  packages/identity-cie:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arkenivajs/identity-spid':
+        specifier: workspace:*
+        version: link:../identity-spid
+    devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../security
+      '@arkenivajs/security-crypto':
+        specifier: workspace:*
+        version: link:../security-crypto
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+
   packages/identity-spid:
     dependencies:
       '@arkenivajs/core':

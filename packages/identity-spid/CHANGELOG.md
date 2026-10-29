@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Expose trusted Italian adapter composition through the documented support entry while retaining the fixed SPID facade and independent CIE registration.
+- Keep CIE duration/check/failure observations separate from SPID counters and prevent executable error properties from entering diagnostic classification.
+
 - Separate SPID/CIE application assurance and protected-state families while reusing the native Italian OIDC wire references; reject CIE-only ID Token encryption in SPID configuration and callbacks.
 - Verify signed SPID ID Tokens in public HTTPS consumers and optional encrypted ID Tokens in private CIE-profile engine tests, including cross-system state and encrypted-record substitution denial.
 

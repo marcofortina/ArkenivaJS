@@ -2,6 +2,15 @@
 
 Optional SPID OIDC federation plugin using the existing HTTP, Crypto and security services, JOSE and OpenID Client. It verifies both relying-party and provider participation before returning a login or canonical identity. SAML profiles currently fail with `EK_UNSUPPORTED_CAPABILITY`; SAML integration remains incomplete. Local technical tests do not establish official interoperability, accreditation or production certification.
 
+The documented `@arkenivajs/identity-spid/support` entry exports
+`createItalianFederationPlugin(system, capability, settings)` for trusted adapter
+composition over this native backend. The separate CIE package uses it with its
+own fixed system and unique capability. It creates no SPID registration when
+composing CIE. Application code should use the owning package's `spidPlugin` or
+`ciePlugin`; never select the support factory's system, capability or settings
+from a request. The native configuration, cryptographic and lifecycle logic is
+shared; activated profiles, authority actions and state remain independent.
+
 ## Explicit application composition
 
 Install `loggingPlugin`, `securityPlugin`, `cryptoPlugin` and `spidPlugin` explicitly. The SPID plugin depends on the current application's security and Crypto plugins; it does not install routes, open an application listener or create a session. The application's configured environment controls provider and network restrictions. Test-only stores, secrets, authorities and mappers are rejected in production and development, including labels captured before a caller mutates the original object.
@@ -71,6 +80,6 @@ The [executable application and browser transaction example](../../examples/iden
 
 If the application explicitly installs telemetry or logging, the plugin borrows those existing services. SPID telemetry is limited to `spid.handshakes` and `spid.trust.failures`, with closed `spid.operation` and `spid.outcome` labels. Begin and consume attempts are counted once, including rejections; a negative public trust verdict records a failure without changing the returned result. Internal federation HTTP/JOSE steps do not duplicate handshake counts. Debug logs contain only the operation and bounded outcome. No profile, tenant, subject, endpoint, attribute, statement, OTP, token, key reference or provider error is exported. Diagnostic sink errors cannot change authentication or state-consumption outcomes. Native SDK tests inspect actual standard and detailed telemetry exports and captured log output.
 
-Tests exercise real JOSE signatures, native SDK request/token processing, signed SPID ID Tokens and encrypted UserInfo, actual HTTPS federation and canonical JWKS, two independent canonical security services, replay and concurrent claims, revocation, key changes, profile isolation, lifecycle and production restrictions. Separate private CIE-profile engine tests cover optional ID Token encryption and CIE assurance; they do not expose or certify a public CIE adapter. Shared-store tests reject cross-system transaction and encrypted-record substitution while preserving the correct owner's one-use state. PostgreSQL integration tests exercise shared atomic consumption and ambiguous acknowledgements. HTTPS fixtures trust their ephemeral CA only inside an isolated child process.
+Tests exercise real JOSE signatures, native SDK request/token processing, signed SPID ID Tokens and encrypted UserInfo, actual HTTPS federation and canonical JWKS, two independent canonical security services, replay and concurrent claims, revocation, key changes, profile isolation, lifecycle and production restrictions. CIE-profile engine tests cover optional ID Token encryption and CIE assurance; the separately installed [CIE adapter](../identity-cie/README.md) owns its public registration and capability. Shared-store tests reject cross-system transaction and encrypted-record substitution while preserving the correct owner's one-use state. PostgreSQL integration tests exercise shared atomic consumption and ambiguous acknowledgements. HTTPS fixtures trust their ephemeral CA only inside an isolated child process.
 
 Administrative accreditation, official interoperability suites, current technical-rule review and independent release acceptance remain external requirements. Consult the [Italian SPID/CIE OIDC rules](https://docs.italia.it/italia/spid/spid-cie-oidc-docs/it/versione-corrente/index.html) and [OpenID Federation](https://openid.net/specs/openid-federation-1_0.html).
