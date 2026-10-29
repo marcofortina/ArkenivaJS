@@ -19,7 +19,7 @@ import type { SubscriptionExecution } from './subscription-execution.js';
 import { SubscriptionConnection } from './subscription-connection.js';
 import { assertMetadata } from './metadata.js';
 import { subscriptionError } from './subscription-output.js';
-import { observe, traceRequest } from './observation.js';
+import { Observation, observe, traceRequest } from './observation.js';
 import { traceSubscriptionScope } from './subscription-observation.js';
 import type { Observers } from './observation.js';
 import { SubscriptionUsage } from './subscription-usage.js';
@@ -57,6 +57,7 @@ export class SubscriptionTransport {
     private readonly started: () => void = () => {},
     private readonly telemetry?: Telemetry,
     meter?: Observers['meter'],
+    private readonly diagnostics: { detailed?: boolean; rejected?(): void } = {},
   ) {
     if (!settings.subscriptions || !settings.security.auth.required || server.server.listening)
       throw failure();
@@ -80,6 +81,13 @@ export class SubscriptionTransport {
           owner,
           entered,
           {
+            observation: () =>
+              new Observation({
+                ...(this.telemetry ? { telemetry: this.telemetry } : {}),
+                detailed: this.diagnostics.detailed ?? false,
+              }),
+            operation: this.started,
+            rejected: () => this.diagnostics.rejected?.(),
             changed: () => this.report(connection),
             event: (result) =>
               observe(() =>
@@ -226,7 +234,6 @@ export class SubscriptionTransport {
     engine.addHook('preSubscriptionExecution', async (_schema, _document, context: object, id) => {
       try {
         assertMetadata();
-        this.started();
         await connection(context).start(context, String(id));
       } catch (error) {
         const safe = subscriptionError(

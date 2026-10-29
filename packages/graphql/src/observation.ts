@@ -147,6 +147,9 @@ export class Observation {
               ? 'size'
               : 'policy';
   }
+  isRejected() {
+    return this.outcome !== 'ok';
+  }
   loader(size: number) {
     observe(() =>
       this.observers.telemetry?.recordHistogram('arkenivajs.graphql.loader.batch_size', size),

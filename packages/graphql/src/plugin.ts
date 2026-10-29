@@ -214,6 +214,12 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           },
           observers.telemetry,
           observers.meter,
+          {
+            detailed: observers.detailed,
+            rejected: () => {
+              counters.rejected++;
+            },
+          },
         );
       }
       server.register(async (child) => {

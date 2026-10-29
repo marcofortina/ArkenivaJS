@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Observe each subscription request once through physical retirement, including preflight denials, derived complexity, detailed guarded-field timings and process-local rejection counts.
+
 - Export verified tenant subscription connection/source/event usage with isolated live scopes, explicit wire-byte coverage gaps and no repeated HTTP accounting.
 
 - Retain authenticated subscription source and event trace context through native resolver callbacks and physical retirement, with bounded W3C propagation and diagnostic failure isolation.
