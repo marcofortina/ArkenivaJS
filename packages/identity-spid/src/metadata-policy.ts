@@ -172,9 +172,8 @@ export function applyMetadataPolicies(
       }
     }
     for (const [entity, parameters] of Object.entries(merged)) {
-      const current = own(result, entity)
-        ? fields(result[entity])
-        : (Object.create(null) as Record<string, unknown>);
+      if (!own(result, entity)) continue;
+      const current = fields(result[entity]);
       for (const [parameter, rule] of Object.entries(parameters)) {
         let value = current[parameter];
         if (own(rule, 'value')) value = rule.value === null ? undefined : rule.value;
@@ -197,7 +196,7 @@ export function applyMetadataPolicies(
         if (value === undefined) delete current[parameter];
         else current[parameter] = value;
       }
-      if (own(result, entity) || Object.keys(current).length) result[entity] = current;
+      result[entity] = current;
     }
     if (Buffer.byteLength(JSON.stringify(result)) > maxBytes) throw failure('EK_EID_FEDERATION');
     return freezeData(result);

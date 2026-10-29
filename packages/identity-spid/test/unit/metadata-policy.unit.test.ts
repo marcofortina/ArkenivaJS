@@ -78,16 +78,28 @@ test('Value removal, defaults and essential presence use the required applicatio
     ),
     { openid_provider: {} },
   );
-  assert.deepEqual(plain(apply({}, [one({ default: 'RS256', essential: true })])), {
-    openid_provider: { policy_parameter: 'RS256' },
-  });
-  assert.deepEqual(plain(apply({}, [one({ value: 'RS512', default: 'RS256' })])), {
-    openid_provider: { policy_parameter: 'RS512' },
-  });
-  assert.deepEqual(plain(apply({}, [one({ subset_of: ['code'], essential: false })])), {});
-  assert.throws(() => apply({}, [one({ essential: true }), one({ essential: false })]), {
-    code: 'EK_EID_FEDERATION',
-  });
+  assert.deepEqual(
+    plain(apply({ openid_provider: {} }, [one({ default: 'RS256', essential: true })])),
+    {
+      openid_provider: { policy_parameter: 'RS256' },
+    },
+  );
+  assert.deepEqual(
+    plain(apply({ openid_provider: {} }, [one({ value: 'RS512', default: 'RS256' })])),
+    {
+      openid_provider: { policy_parameter: 'RS512' },
+    },
+  );
+  assert.deepEqual(
+    plain(apply({ openid_provider: {} }, [one({ subset_of: ['code'], essential: false })])),
+    { openid_provider: {} },
+  );
+  assert.throws(
+    () => apply({ openid_provider: {} }, [one({ essential: true }), one({ essential: false })]),
+    {
+      code: 'EK_EID_FEDERATION',
+    },
+  );
 });
 test('Conflicting upper/lower values, defaults and one-of restrictions invalidate the chain', () => {
   for (const [upper, lower] of [
@@ -128,7 +140,7 @@ test('Policy combinations are validated even when the metadata parameter is abse
 test('Object-valued Italian JWKS policy compares normalized JSON without depending on property order', () => {
   const first = { keys: [{ kid: 'public', kty: 'RSA' }] },
     second = { keys: [{ kty: 'RSA', kid: 'public' }] };
-  const result = apply({}, [
+  const result = apply({ openid_provider: {} }, [
     { openid_provider: { jwks: { value: first, essential: true } } },
     { openid_provider: { jwks: { value: second } } },
   ]);
@@ -137,6 +149,14 @@ test('Object-valued Italian JWKS policy compares normalized JSON without dependi
   assert.ok(Object.isFrozen((result.openid_provider as { jwks: object }).jwks));
 });
 test('Entity-type policies remain isolated and do not rewrite a different role', () => {
+  assert.deepEqual(
+    plain(
+      apply({ openid_provider: { issuer: 'https://provider.example.test' } }, [
+        { openid_relying_party: { client_id: { default: 'unrelated-client', essential: true } } },
+      ]),
+    ),
+    { openid_provider: { issuer: 'https://provider.example.test' } },
+  );
   assert.deepEqual(
     plain(
       apply(
@@ -166,7 +186,7 @@ test('Set comparison supports finite numbers and objects without permissive type
   fail({ subset_of: [true] }, [true]);
   fail({ subset_of: [['nested']] }, [['nested']]);
   fail({ subset_of: ['a', 'a'] }, ['a']);
-  assert.deepEqual(plain(apply({}, [one({ value: -0 }), one({ value: 0 })])), {
+  assert.deepEqual(plain(apply({ openid_provider: {} }, [one({ value: -0 }), one({ value: 0 })])), {
     openid_provider: { policy_parameter: 0 },
   });
 });
