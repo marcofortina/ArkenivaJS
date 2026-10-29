@@ -93,6 +93,7 @@ export function capture(input: SamlSettings) {
     'clockSkewSeconds',
     'binding',
     'requestedAuthnContext',
+    'authenticationRequestProfile',
     'authority',
     'environment',
   ]);
@@ -153,6 +154,43 @@ export function capture(input: SamlSettings) {
       throw failure();
     }
   }
+  let authenticationRequestProfile: SamlSettings['authenticationRequestProfile'];
+  if (value.authenticationRequestProfile !== undefined) {
+    const profile = fields(value.authenticationRequestProfile, [
+      'kind',
+      'attributeConsumingServiceIndex',
+    ]);
+    if (
+      profile.kind !== 'spid' ||
+      !requestedAuthnContext ||
+      requestedAuthnContext.comparison !== 'exact' ||
+      requestedAuthnContext.classReferences.length !== 1 ||
+      ![
+        'https://www.spid.gov.it/SpidL1',
+        'https://www.spid.gov.it/SpidL2',
+        'https://www.spid.gov.it/SpidL3',
+      ].includes(requestedAuthnContext.classReferences[0]!) ||
+      value.signingKeyRef === undefined ||
+      value.signingCertificateRef === undefined ||
+      value.signingKeyRef === value.signingCertificateRef ||
+      audience !== entityId
+    )
+      throw failure();
+    url(entityId, 'production');
+    url(acsUrl, 'production');
+    authenticationRequestProfile = Object.freeze({
+      kind: 'spid',
+      ...(profile.attributeConsumingServiceIndex === undefined
+        ? {}
+        : {
+            attributeConsumingServiceIndex: integer(
+              profile.attributeConsumingServiceIndex,
+              65535,
+              0,
+            ),
+          }),
+    });
+  }
   if (typeof value.trustedIdpMetadata !== 'string') throw failure();
   let trusted: ReturnType<typeof metadata>;
   try {
@@ -205,6 +243,7 @@ export function capture(input: SamlSettings) {
         audience,
         trusted.issuer,
         ...(requestedAuthnContext ? [requestedAuthnContext] : []),
+        ...(authenticationRequestProfile ? [authenticationRequestProfile] : []),
       ]),
     )
     .digest('hex');
@@ -214,6 +253,7 @@ export function capture(input: SamlSettings) {
     audience,
     binding,
     ...(requestedAuthnContext ? { requestedAuthnContext } : {}),
+    ...(authenticationRequestProfile ? { authenticationRequestProfile } : {}),
     environment: environment as 'production' | 'development' | 'test',
     clockSkewSeconds: integer(value.clockSkewSeconds ?? 0, 120, 0),
     trusted,

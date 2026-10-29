@@ -13,6 +13,11 @@ export interface SamlAuthenticationContext {
   readonly comparison: 'exact' | 'minimum' | 'maximum' | 'better';
   readonly acceptedClassReferences: readonly string[];
 }
+/** SPID request formatting only; verified federation membership remains the adapter's responsibility. */
+export interface SamlAuthenticationRequestProfile {
+  readonly kind: 'spid';
+  readonly attributeConsumingServiceIndex?: number;
+}
 export interface SamlSettings {
   readonly entityId: string;
   readonly acsUrl: string;
@@ -27,6 +32,7 @@ export interface SamlSettings {
   readonly clockSkewSeconds?: number;
   readonly binding?: 'redirect' | 'post';
   readonly requestedAuthnContext?: SamlAuthenticationContext;
+  readonly authenticationRequestProfile?: SamlAuthenticationRequestProfile;
   /** Login proves only an upstream identity; sensitive logout needs independent local session authorization. */
   readonly authority?: TrustedSecurityAuthority;
   readonly environment?: 'development' | 'test' | 'production';

@@ -6,7 +6,8 @@ import { inflateRawSync } from 'node:zlib';
 import { TextDecoder } from 'node:util';
 import { SAML, ValidateInResponseTo } from '@node-saml/node-saml';
 import type { CacheProvider, SamlConfig } from '@node-saml/node-saml';
-import { signSamlPost } from '@node-saml/node-saml/lib/saml-post-signing.js';
+import { signSamlPost, signAuthnRequestPost } from '@node-saml/node-saml/lib/saml-post-signing.js';
+import { XMLSerializer } from '@xmldom/xmldom';
 import { KitError } from '@arkenivajs/core';
 import type { NativeRequest, NativeResult, VerifiedAssertion } from './backend-contracts.js';
 import { parse, NS, children, one, content, strongSignatures } from './xml.js';
@@ -229,13 +230,62 @@ async function run(input: NativeRequest): Promise<NativeResult> {
           racComparison: selected.requestedAuthnContext.comparison,
         }
       : {}),
+    ...(selected.authenticationRequestProfile
+      ? {
+          forceAuthn:
+            selected.requestedAuthnContext!.classReferences[0] !== 'https://www.spid.gov.it/SpidL1',
+          identifierFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
+          allowCreate: false,
+          ...(selected.authenticationRequestProfile.attributeConsumingServiceIndex === undefined
+            ? {}
+            : {
+                attributeConsumingServiceIndex: String(
+                  selected.authenticationRequestProfile.attributeConsumingServiceIndex,
+                ),
+              }),
+        }
+      : {}),
     logoutCallbackUrl: selected.acsUrl,
     ...(selected.logoutUrl ? { logoutUrl: selected.logoutUrl } : {}),
     ...(selected.privateKey
       ? { privateKey: selected.privateKey, publicCert: selected.publicCert! }
       : {}),
   };
-  const saml = new SAML(options);
+  /** Apply prescribed request attributes before delegating signing to the unchanged pinned SDK. */
+  class ProfiledRequestSaml extends SAML {
+    protected override async generateAuthorizeRequestAsync(
+      isPassive: boolean,
+      isHttpPostBinding: boolean,
+    ): Promise<string> {
+      if (isPassive || !selected.privateKey || !selected.publicCert)
+        throw failure('EK_SAML_ASSERTION');
+      const document = parse(await super.generateAuthorizeRequestAsync(false, false)),
+        root = document.documentElement;
+      if (
+        root.namespaceURI !== NS.protocol ||
+        root.localName !== 'AuthnRequest' ||
+        root.getAttribute('ID') !== input.requestId ||
+        children(root, NS.signature, 'Signature').length
+      )
+        throw failure('EK_SAML_ASSERTION');
+      const issuer = one(root, NS.assertion, 'Issuer');
+      if (content(issuer, 2048) !== selected.entityId) throw failure('EK_SAML_ASSERTION');
+      issuer.setAttribute('Format', 'urn:oasis:names:tc:SAML:2.0:nameid-format:entity');
+      issuer.setAttribute('NameQualifier', selected.entityId);
+      one(root, NS.protocol, 'NameIDPolicy').removeAttribute('AllowCreate');
+      const xml = new XMLSerializer().serializeToString(document);
+      return isHttpPostBinding
+        ? signAuthnRequestPost(xml, {
+            ...options,
+            privateKey: selected.privateKey,
+            publicCert: selected.publicCert,
+          })
+        : xml;
+    }
+  }
+  const saml = selected.authenticationRequestProfile
+    ? new ProfiledRequestSaml(options)
+    : new SAML(options);
   if (input.action === 'metadata')
     return {
       kind: 'metadata',

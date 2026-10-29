@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import type { SamlAuthenticationContext } from './contracts.js';
+import type { SamlAuthenticationContext, SamlAuthenticationRequestProfile } from './contracts.js';
 
 export interface NativeConfiguration {
   readonly entityId: string;
@@ -14,6 +14,7 @@ export interface NativeConfiguration {
   readonly clockSkewSeconds: number;
   readonly binding: 'redirect' | 'post';
   readonly requestedAuthnContext?: SamlAuthenticationContext;
+  readonly authenticationRequestProfile?: SamlAuthenticationRequestProfile;
   readonly privateKey?: string;
   readonly publicCert?: string;
 }

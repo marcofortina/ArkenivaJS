@@ -1,5 +1,13 @@
 # Third-party notices
 
+The optional SPID request formatter extends the pinned SDK's protected
+`generateAuthorizeRequestAsync` method. It requests unsigned SDK XML and applies
+bounded issuer/NameID attributes before the same SDK performs Redirect query
+signing or `signAuthnRequestPost`. It never rewrites a signature or RelayState.
+Native signature, HTTPS and durable SQL tests cover both bindings. Review this
+extension point when upgrading Node-SAML; request formatting establishes no
+federation participation or accreditation.
+
 This adapter uses the unmodified `@node-saml/node-saml` 5.1.0 package (MIT), `@xmldom/xmldom` 0.8.15 (MIT) and Node-SAML's resolved `xml-crypto` 6.4.0 dependency (MIT). Their original license and copyright notices remain in their distributed packages. ArkenivaJS does not copy their implementation into this package.
 
 The pinned Node-SAML public methods provide request URLs, authentication verification, Redirect logout verification and metadata. Its existing `signSamlPost` helper and `_generateLogoutRequest` method provide signed POST logout requests because version 5.1.0 has no public equivalent for that request shape. POST logout uses native signature verification with the SDK correlation option disabled only for that operation, after independent issuer, destination, status and request checks; durable atomic correlation is enforced by this adapter after verification. Authentication verification always retains mandatory SDK correlation. These compatibility assumptions are covered by the protocol and negative logout tests and must be reviewed when changing the native version.
