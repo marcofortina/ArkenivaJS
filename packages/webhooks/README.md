@@ -9,6 +9,11 @@ Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 Register `webhooksPlugin(settings)` before `app.start()`, then resolve `WEBHOOKS_CAPABILITY` as `WebhookService`. The service has four methods:
 
+Secret, authority and nonce store methods retain their original callback and
+receiver without evaluating callable `bind`, `name` or `length` properties.
+Later method replacement cannot change captured callbacks. Proxy providers,
+callbacks and prototypes fail configuration before their traps execute.
+
 ```typescript
 const signature = await webhooks.sign(rawBody, 'provider/current-key', context, {
   timeoutMs: 2000,

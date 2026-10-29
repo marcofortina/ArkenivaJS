@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { BlockList, isIP } from 'node:net';
+import { types } from 'node:util';
 import type {
   WebhooksPluginSettings,
   SecretProvider,
@@ -15,6 +16,7 @@ function property(input: unknown, name: string): unknown {
   if (!input || typeof input !== 'object') throw failure();
   let current: object | null = input;
   for (let depth = 0; current && depth < 64; depth++) {
+    if (types.isProxy(current)) throw failure();
     const descriptor = Object.getOwnPropertyDescriptor(current, name);
     if (descriptor) {
       if (!('value' in descriptor)) throw failure();
@@ -27,8 +29,8 @@ function property(input: unknown, name: string): unknown {
 }
 function method<T>(input: unknown, name: string): T {
   const value = property(input, name);
-  if (typeof value !== 'function') throw failure();
-  return value.bind(input) as T;
+  if (typeof value !== 'function' || types.isProxy(value)) throw failure();
+  return ((...args: unknown[]) => Reflect.apply(value, input, args)) as T;
 }
 /** Fixed DNS destinations and native CIDR policy, with no caller-selected URL or credentials. */
 export function capture(input: WebhooksPluginSettings) {

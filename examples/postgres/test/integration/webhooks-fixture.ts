@@ -57,6 +57,17 @@ export async function webhooksFixture() {
     },
   };
   async function instance(store: SecurityTransactionalStore = backend.store) {
+    // Exercise the real providers while rejecting executable callable metadata.
+    for (const provider of [settings.secretProvider, settings.authority, store])
+      for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(provider)))
+        if ('value' in descriptor && typeof descriptor.value === 'function')
+          for (const key of ['bind', 'name', 'length'])
+            Object.defineProperty(descriptor.value, key, {
+              configurable: true,
+              get() {
+                throw new Error('Webhook provider callable metadata must not execute');
+              },
+            });
     const app = await createApplication({
       service: { name: 'webhooks-postgres-fixture', version: '1.0.0', environment: 'test' },
       logging: { level: 'silent' },
