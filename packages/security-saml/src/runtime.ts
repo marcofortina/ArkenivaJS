@@ -153,12 +153,13 @@ export class Runtime {
     }
   }
   close(): Promise<void> {
-    return (this.closing ??= (async () => {
-      this.stop.abort();
-      await within(
-        () => Promise.all([...this.calls].map((call) => call.completion)).then(() => undefined),
-        { timeoutMs: 5000 },
-      );
-    })());
+    if (this.closing) return this.closing;
+    const completion = this.drain();
+    return (this.closing = within(() => completion, { timeoutMs: 5000 }));
+  }
+  /** Stop admission and retain actual settlement beyond a bounded caller's close deadline. */
+  drain(): Promise<void> {
+    this.stop.abort();
+    return Promise.all([...this.calls].map((call) => call.completion)).then(() => undefined);
   }
 }

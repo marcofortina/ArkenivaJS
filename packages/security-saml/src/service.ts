@@ -507,6 +507,7 @@ export function managed(
   return {
     service,
     close: () => runtime.close(),
+    drain: () => runtime.drain(),
     async bootstrap() {
       await operation(
         'bootstrap',
