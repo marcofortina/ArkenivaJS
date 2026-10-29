@@ -12,3 +12,4 @@
 - Preserve native SSE framing with a reviewed compatibility diff for heartbeat
   pressure, close acknowledgment and HTTP/2 response headers.
 - Include a public HTTPS/WSS consumer and an ordered PostgreSQL replay source.
+- Reuse one native WebSocket dispatcher on the application listener so optional GraphQL transport can coexist without duplicate upgrade handlers or weakened route limits.

@@ -137,7 +137,7 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
       prepared.set(context.options, () => context.state() === 'READY');
       return new Map();
     },
-    init(context) {
+    async init(context) {
       const ready = prepared.get(context.options);
       if (settings.testOnly && context.options.service.environment !== 'test') throw failure();
       if (!ready) throw failure();
@@ -145,6 +145,14 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
         server = api.native(),
         auth = context.require<AuthService>(AUTH),
         owner = context.require<AbortSignal>(APPLICATION_SIGNAL);
+      if (!server.hasDecorator('websocketServer')) {
+        await server.register(websocket, {
+          options: { maxPayload: 1048576, perMessageDeflate: false },
+          errorHandler(_error, socket) {
+            socket.terminate();
+          },
+        });
+      }
       const observation = new Observation(context.require<Ports>(OBSERVATION));
       const routes: Route[] = settings.routes.map((route) =>
         route.kind === 'sse'
@@ -293,12 +301,6 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
       });
       server.register(
         async (child) => {
-          await child.register(websocket, {
-            options: { maxPayload: 1048576, perMessageDeflate: false },
-            errorHandler(_error, socket) {
-              socket.terminate();
-            },
-          });
           child.setErrorHandler((error, request, reply) => {
             const connection = byRequest.get(request);
             connection?.close();
