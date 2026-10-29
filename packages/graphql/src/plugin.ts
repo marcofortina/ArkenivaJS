@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import { TextDecoder, toUSVString } from 'node:util';
+import { TextDecoder } from 'node:util';
 import { getOperationAST, parse } from 'graphql';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { APPLICATION_SIGNAL, COMPONENTS, KitError } from '@arkenivajs/core';
@@ -17,7 +17,8 @@ import { installLoaders } from './loaders.js';
 import { installMetadata, assertMetadata, ownMetadata, authorizeMetadata } from './metadata.js';
 import { Operation } from './operation.js';
 import { OwnedContexts } from './contexts.js';
-import { capture, failure, record } from './policy.js';
+import { operationInput } from './input.js';
+import { capture, failure } from './policy.js';
 import { compileSchema } from './schema.js';
 import { encodeResult } from './encoding.js';
 import { registerIde } from './ide.js';
@@ -328,40 +329,14 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
               )
             )
               throw failure('EK_GQL_VALIDATION');
-            const body = record(
+            const body = operationInput(
               request.method === 'GET'
                 ? { ...(request.query as Record<string, unknown>) }
                 : request.body,
-              ['query', 'variables', 'operationName'],
+              settings.security.limits,
+              request.method,
             );
-            if (
-              typeof body.query !== 'string' ||
-              !body.query.trim() ||
-              toUSVString(body.query) !== body.query ||
-              (body.operationName !== undefined &&
-                (typeof body.operationName !== 'string' ||
-                  !/^[_A-Za-z][_0-9A-Za-z]*$/.test(body.operationName)))
-            )
-              throw failure('EK_GQL_VALIDATION');
-            if (Buffer.byteLength(body.query) > settings.security.limits.maxDocumentBytes)
-              throw failure('EK_GQL_INPUT_LIMIT');
-            let variables = body.variables;
-            if (request.method === 'GET' && typeof variables === 'string') {
-              if (Buffer.byteLength(variables) > settings.security.limits.maxVariablesBytes)
-                throw failure('EK_GQL_INPUT_LIMIT');
-              variables = JSON.parse(variables);
-            }
-            if (
-              variables !== undefined &&
-              (variables === null || typeof variables !== 'object' || Array.isArray(variables))
-            )
-              throw failure('EK_GQL_VALIDATION');
-            if (
-              variables !== undefined &&
-              Buffer.byteLength(JSON.stringify(variables)) >
-                settings.security.limits.maxVariablesBytes
-            )
-              throw failure('EK_GQL_INPUT_LIMIT');
+            const variables = body.variables;
             const metadata: Omit<GraphqlRequestContext, 'signal'> = {
               requestId: request.id,
               ...(body.operationName === undefined

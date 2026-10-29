@@ -37,12 +37,16 @@ export function budget(
   },
 ) {
   const operation = getOperationAST(document, context.operationName);
+  const subscription = method === 'WEBSOCKET';
   if (
     !operation ||
-    operation.operation === 'subscription' ||
+    (subscription
+      ? operation.operation !== 'subscription' || !settings.subscriptions
+      : operation.operation === 'subscription') ||
     (method === 'GET' && operation.operation !== 'query')
   )
     throw failure('EK_GQL_VALIDATION');
+  if (subscription && !context.auth) throw failure('EK_GQL_AUTH');
   const coercion = getVariableValues(schema, operation.variableDefinitions ?? [], variables ?? {}, {
     maxErrors: 1,
   });
@@ -53,7 +57,12 @@ export function budget(
       .filter((node) => node.kind === Kind.FRAGMENT_DEFINITION)
       .map((node) => [node.name.value, node]),
   );
-  const root = operation.operation === 'query' ? schema.getQueryType() : schema.getMutationType();
+  const root =
+    operation.operation === 'query'
+      ? schema.getQueryType()
+      : operation.operation === 'mutation'
+        ? schema.getMutationType()
+        : schema.getSubscriptionType();
   if (!root) throw failure('EK_GQL_VALIDATION');
   const limits = settings.security.limits;
   let complexity = 0,
