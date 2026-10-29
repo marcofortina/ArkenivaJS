@@ -14,6 +14,14 @@ The internal XML verifier runs in a memory-bounded native worker. Cancellation a
 deadlines retain admission until the thread actually terminates; signature results
 are immutable, owner-bound and expiry-checked before reuse. These results remain
 separate from current registry participation and official conformance.
+The internal registry verifier fetches XML and JSON afresh, requires explicit active
+state for the exact entity and binds the status origin to the configured authority
+that actually verified the XML signature. Both documents must contain the same
+current RSA signing certificates. RP metadata must register the configured POST ACS.
+Evidence expires at the earliest document, root, certificate or refresh boundary;
+a failed refresh retires earlier evidence and prevents earlier concurrent work from
+restoring it. These technical checks do not enable the public SAML authentication
+flow or establish official interoperability.
 
 Optional SPID OIDC federation plugin using the existing HTTP, Crypto and security services, JOSE and OpenID Client. It verifies both relying-party and provider participation before returning a login or canonical identity. SAML profiles currently fail with `EK_UNSUPPORTED_CAPABILITY`; SAML integration remains incomplete. Local technical tests do not establish official interoperability, accreditation or production certification.
 

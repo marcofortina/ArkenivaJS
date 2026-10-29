@@ -14,10 +14,10 @@ const metadataNs = 'urn:oasis:names:tc:SAML:2.0:metadata',
   signatureNs = 'http://www.w3.org/2000/09/xmldsig#',
   canonical = 'http://www.w3.org/2001/10/xml-exc-c14n#',
   enveloped = 'http://www.w3.org/2000/09/xmldsig#enveloped-signature';
-const reject = (): never => {
+function reject(): never {
   throw failure('EK_EID_FEDERATION');
-};
-function parse(xml: string, maximum: number): Document {
+}
+export function parseSamlMetadataXml(xml: string, maximum: number): Document {
   if (
     typeof xml !== 'string' ||
     !xml ||
@@ -54,7 +54,7 @@ function parse(xml: string, maximum: number): Document {
   }
   return document;
 }
-function children(parent: Element, namespace: string, name: string): Element[] {
+export function children(parent: Element, namespace: string, name: string): Element[] {
   return Array.from(parent.childNodes).filter(
     (node): node is Element =>
       node.nodeType === 1 &&
@@ -62,7 +62,7 @@ function children(parent: Element, namespace: string, name: string): Element[] {
       (node as Element).localName === name,
   );
 }
-function one(parent: Element, namespace: string, name: string): Element {
+export function one(parent: Element, namespace: string, name: string): Element {
   const values = children(parent, namespace, name);
   if (values.length !== 1) reject();
   return values[0]!;
@@ -108,7 +108,7 @@ export function verifySamlMetadataSignature(
     throw failure('EK_EID_PROFILE');
   try {
     const maximum = Math.min(profile.metadata.maxBytes, 65536),
-      document = parse(input, maximum),
+      document = parseSamlMetadataXml(input, maximum),
       original = entity(document, profile, role),
       signatures = document.getElementsByTagNameNS(signatureNs, 'Signature');
     if (signatures.length !== 1 || signatures[0]!.parentNode !== original.root) reject();
@@ -162,7 +162,7 @@ export function verifySamlMetadataSignature(
         if (!verifier.checkSignature(input)) continue;
         const signed = verifier.getSignedReferences();
         if (signed.length !== 1) reject();
-        const verified = entity(parse(signed[0]!, maximum), profile, role);
+        const verified = entity(parseSamlMetadataXml(signed[0]!, maximum), profile, role);
         if (verified.issuer !== original.issuer || verified.root.getAttribute('ID') !== id)
           reject();
         if (
@@ -174,6 +174,7 @@ export function verifySamlMetadataSignature(
           issuer: verified.issuer,
           role,
           signerKid: anchor.kid,
+          signerIssuer: anchor.issuer,
           ...(verified.validUntil ? { validUntil: verified.validUntil } : {}),
           verifiedXml: signed[0]!,
           trustAnchorExpiresAt: new Date(anchorExpiry).toISOString(),

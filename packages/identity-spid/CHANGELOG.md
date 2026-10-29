@@ -2,6 +2,10 @@
 
 ## 0.1.0
 
+- Bind fresh SAML registry state to the exact entity, current pinned XML signing
+  authority and matching native X.509 certificates. Validate RP POST registration,
+  bound freshness and retire older evidence after failed refresh or withdrawal,
+  including concurrent verification. Public SAML authentication remains incomplete.
 - Verify bounded SAML metadata signatures in owned native workers, retaining shared
   admission until physical termination and rejecting copied or expired signature
   evidence. Signature validation does not establish current registry participation.
