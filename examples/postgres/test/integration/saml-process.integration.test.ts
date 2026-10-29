@@ -7,6 +7,7 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createSamlService } from '@arkenivajs/security-saml';
 import { securityStateFixture } from './security-state-fixture.js';
 import { fixture } from './saml-fixture.js';
 
@@ -19,14 +20,24 @@ test(
       children: ReturnType<typeof fork>[] = [];
     const exits: Promise<unknown>[] = [];
     try {
-      const request = await f.service.beginLogin({ returnPath: '/app' }),
+      const configured = {
+          ...f.settings,
+          requestedAuthnContext: {
+            classReferences: ['urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport'],
+            acceptedClassReferences: [
+              'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport',
+            ],
+            comparison: 'exact' as const,
+          },
+        },
+        request = await createSamlService(configured).beginLogin({ returnPath: '/app' }),
         response = f.response(request.requestId);
       const {
         secretProvider: _secrets,
         replayStore: _state,
         authority: _authority,
         ...settings
-      } = f.settings;
+      } = configured;
       void _secrets;
       void _state;
       void _authority;

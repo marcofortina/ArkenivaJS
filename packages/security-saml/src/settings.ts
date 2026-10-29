@@ -3,7 +3,7 @@
 
 import { createHash, X509Certificate } from 'node:crypto';
 import type { SamlSettings } from './contracts.js';
-import { fields, failure, text, integer, method, property, url } from './validation.js';
+import { fields, failure, text, integer, method, property, url, list } from './validation.js';
 import { parse, NS, children, one } from './xml.js';
 
 function certificate(value: string): string {
@@ -92,6 +92,7 @@ export function capture(input: SamlSettings) {
     'replayStore',
     'clockSkewSeconds',
     'binding',
+    'requestedAuthnContext',
     'authority',
     'environment',
   ]);
@@ -102,6 +103,56 @@ export function capture(input: SamlSettings) {
     audience = text(value.expectedAudience, 2048);
   const binding = value.binding ?? 'redirect';
   if (binding !== 'redirect' && binding !== 'post') throw failure();
+  let requestedAuthnContext: SamlSettings['requestedAuthnContext'];
+  if (value.requestedAuthnContext !== undefined) {
+    const context = fields(value.requestedAuthnContext, [
+      'classReferences',
+      'comparison',
+      'acceptedClassReferences',
+    ]);
+    if (!['exact', 'minimum', 'maximum', 'better'].includes(context.comparison as string))
+      throw failure();
+    const references = (input: unknown) => {
+      const result = list(input, 8).map((entry) => {
+        const value = text(entry, 2048);
+        let uri: URL;
+        try {
+          uri = new URL(value);
+        } catch {
+          throw failure();
+        }
+        if (
+          !['https:', 'urn:'].includes(uri.protocol) ||
+          uri.username ||
+          uri.password ||
+          /\s/u.test(value)
+        )
+          throw failure();
+        return value;
+      });
+      if (!result.length || new Set(result).size !== result.length) throw failure();
+      return Object.freeze(result);
+    };
+    try {
+      const classReferences = references(context.classReferences),
+        acceptedClassReferences = references(context.acceptedClassReferences);
+      if (
+        context.comparison === 'exact' &&
+        (classReferences.length !== acceptedClassReferences.length ||
+          classReferences.some((value) => !acceptedClassReferences.includes(value)))
+      )
+        throw failure();
+      requestedAuthnContext = Object.freeze({
+        classReferences,
+        comparison: context.comparison as NonNullable<
+          SamlSettings['requestedAuthnContext']
+        >['comparison'],
+        acceptedClassReferences,
+      });
+    } catch {
+      throw failure();
+    }
+  }
   if (typeof value.trustedIdpMetadata !== 'string') throw failure();
   let trusted: ReturnType<typeof metadata>;
   try {
@@ -147,13 +198,22 @@ export function capture(input: SamlSettings) {
   )
     throw failure();
   const profile = createHash('sha256')
-    .update(JSON.stringify([entityId, acsUrl, audience, trusted.issuer]))
+    .update(
+      JSON.stringify([
+        entityId,
+        acsUrl,
+        audience,
+        trusted.issuer,
+        ...(requestedAuthnContext ? [requestedAuthnContext] : []),
+      ]),
+    )
     .digest('hex');
   return Object.freeze({
     entityId,
     acsUrl,
     audience,
     binding,
+    ...(requestedAuthnContext ? { requestedAuthnContext } : {}),
     environment: environment as 'production' | 'development' | 'test',
     clockSkewSeconds: integer(value.clockSkewSeconds ?? 0, 120, 0),
     trusted,

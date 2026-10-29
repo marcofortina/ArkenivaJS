@@ -131,6 +131,12 @@ function assertion(
   const authentication = one(statement, NS.assertion, 'AuthnContext'),
     classRefs = children(authentication, NS.assertion, 'AuthnContextClassRef');
   if (classRefs.length > 1) throw failure('EK_SAML_ASSERTION');
+  if (
+    config.requestedAuthnContext &&
+    (classRefs.length !== 1 ||
+      !config.requestedAuthnContext.acceptedClassReferences.includes(content(classRefs[0]!, 2048)))
+  )
+    throw failure('EK_SAML_ASSERTION');
   const attributes: Record<string, readonly string[]> = Object.create(null);
   let entries = 0,
     bytes = 0;
@@ -217,6 +223,12 @@ async function run(input: NativeRequest): Promise<NativeResult> {
     skipRequestCompression: selected.binding === 'post',
     generateUniqueId: () => input.requestId,
     cacheProvider: cache,
+    ...(selected.requestedAuthnContext
+      ? {
+          authnContext: [...selected.requestedAuthnContext.classReferences],
+          racComparison: selected.requestedAuthnContext.comparison,
+        }
+      : {}),
     logoutCallbackUrl: selected.acsUrl,
     ...(selected.logoutUrl ? { logoutUrl: selected.logoutUrl } : {}),
     ...(selected.privateKey

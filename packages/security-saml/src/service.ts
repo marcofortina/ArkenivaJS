@@ -174,6 +174,9 @@ export function managed(
       ...(settings.trusted.logoutUrl ? { logoutUrl: settings.trusted.logoutUrl } : {}),
       clockSkewSeconds: settings.clockSkewSeconds,
       binding: settings.binding,
+      ...(settings.requestedAuthnContext
+        ? { requestedAuthnContext: settings.requestedAuthnContext }
+        : {}),
       ...keys,
     };
     return call.step('EK_SAML_ASSERTION', (options) =>

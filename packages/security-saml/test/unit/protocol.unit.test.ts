@@ -11,7 +11,7 @@ import { inflateRawSync } from 'node:zlib';
 import { getVerifiedXml } from '@node-saml/node-saml/lib/xml.js';
 import { createSamlService } from '../../dist/index.js';
 import type { SamlService } from '../../dist/index.js';
-import { parse, NS } from '../../dist/xml.js';
+import { parse, NS, one, content } from '../../dist/xml.js';
 import { fixture } from '../fixture.js';
 
 for (const binding of ['redirect', 'post'] as const)
@@ -134,10 +134,21 @@ for (const binding of ['redirect', 'post'] as const)
             assert.equal(root.namespaceURI, NS.protocol);
             assert.equal(root.getAttribute('AssertionConsumerServiceURL'), spOrigin + '/acs');
             assert.equal(root.getAttribute('ID'), relay);
+            const requested = one(root, NS.protocol, 'RequestedAuthnContext');
+            assert.equal(requested.getAttribute('Comparison'), 'minimum');
+            assert.equal(
+              content(one(requested, NS.assertion, 'AuthnContextClassRef'), 2048),
+              'https://www.spid.gov.it/SpidL2',
+            );
             const response = f.response(relay, {
               issuer: idpOrigin + '/entity',
               destination: spOrigin + '/acs',
               audience: spOrigin + '/entity',
+              transformAssertion: (xml) =>
+                xml.replace(
+                  'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport',
+                  'https://www.spid.gov.it/SpidL2',
+                ),
             });
             outgoing.setHeader('content-type', 'application/json');
             outgoing.end(JSON.stringify({ SAMLResponse: response, RelayState: relay }));
@@ -194,6 +205,14 @@ for (const binding of ['redirect', 'post'] as const)
           entityId: spOrigin + '/entity',
           expectedAudience: spOrigin + '/entity',
           acsUrl: spOrigin + '/acs',
+          requestedAuthnContext: {
+            classReferences: ['https://www.spid.gov.it/SpidL2'],
+            comparison: 'minimum',
+            acceptedClassReferences: [
+              'https://www.spid.gov.it/SpidL2',
+              'https://www.spid.gov.it/SpidL3',
+            ],
+          },
           trustedIdpMetadata: f.settings.trustedIdpMetadata.replaceAll(
             'https://idp.fixture.invalid',
             idpOrigin,
