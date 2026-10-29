@@ -10,7 +10,11 @@ import { messagingPlugin } from '@arkenivajs/messaging';
 import { fixture, tlsFiles } from './fixture.js';
 import { NatsPubSubFixture } from './nats-pubsub.js';
 
-export async function natsSubscriptionFixture(namespace: string, issuer?: string) {
+export async function natsSubscriptionFixture(
+  namespace: string,
+  issuer?: string,
+  connectionStringEnv = 'ARKENIVA_NATS_URL',
+) {
   assert.equal(process.env.ARKENIVA_NATS_DISPOSABLE, '1');
   assert.ok(process.env.ARKENIVA_NATS_URL);
   const tls = await tlsFiles(),
@@ -57,7 +61,7 @@ export async function natsSubscriptionFixture(namespace: string, issuer?: string
         ...(issuer ? { issuer } : {}),
         plugins: [
           messagingPlugin({
-            connectionStringEnv: 'ARKENIVA_NATS_URL',
+            connectionStringEnv,
             onError: async () => {
               failures.push('broker-operation-failed');
             },
