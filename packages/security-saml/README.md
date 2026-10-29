@@ -20,6 +20,19 @@ export async function begin(settings: SamlSettings) {
 
 An optional application-owned `requestedAuthnContext` contains `classReferences`, the native SAML `comparison` (`exact`, `minimum`, `maximum` or `better`) and an explicit `acceptedClassReferences` catalog. Node-SAML places the requested classes and comparison in the signed AuthnRequest. After native signature validation, exactly one returned authentication class must belong to the captured acceptance catalog. URI text does not establish class ordering; a scheme adapter must define its approved higher/lower classes explicitly. For `exact`, the requested and accepted sets must be equal. Each catalog is nonempty, unique and limited to eight absolute HTTPS or URN references, each at most 2048 bytes. Missing or unexpected classes fail closed. The policy is immutable and contributes to the durable transaction namespace, so a different context policy cannot consume an older request. Omission preserves existing generic SDK behavior. This option supplies protocol policy, not SPID federation registration, trust or certification.
 
+An optional `authenticationRequestProfile: { kind: 'spid', attributeConsumingServiceIndex? }`
+formats authentication requests for the SPID protocol rules. It requires explicit
+distinct signing key/certificate references and exactly one SPID L1/L2/L3 class with `exact`
+comparison. Entity and ACS identifiers must use HTTPS, and the audience must equal
+the entity identifier. The native SDK supplies transient NameID and ForceAuthn for L2/L3;
+the bounded adapter qualifies the issuer and removes AllowCreate before delegating
+POST XML signing or Redirect query signing to that same SDK. An optional attribute
+index must be an integer in 0..65535 matching registered SP metadata; the consuming
+federation adapter must independently verify that registration and current membership.
+The captured profile and index contribute to the replay namespace. Omission preserves
+generic SAML behavior. Request formatting alone neither enables the public SPID
+adapter nor establishes AgID participation, revocation status or accreditation.
+
 For example, a scheme adapter requiring SPID level 2 or 3 can request `classReferences: ['https://www.spid.gov.it/SpidL2']`, use `comparison: 'minimum'` and explicitly accept both `https://www.spid.gov.it/SpidL2` and `https://www.spid.gov.it/SpidL3`. It must still validate all remaining scheme-specific registration, metadata, assurance and tenant requirements before returning a canonical identity. Returned generic SAML identity assurance remains `single-factor`; this option does not promote it to MFA.
 
 The ACS must obtain its expected request ID from its own one-use browser transaction, bound to a Secure, HttpOnly cookie. Never take that expected value solely from a submitted `InResponseTo` or RelayState. Pass `{ inResponseTo: expectedId, relayState: postedRelayState }` and the encoded response to `consumeResponse`. RelayState is an opaque request locator, never a caller-selected redirect URL. The application owns return-path handling. See the [HTTPS transfer example](../../examples/saml/README.md) and [PostgreSQL authorization example](../../examples/postgres/saml.md).

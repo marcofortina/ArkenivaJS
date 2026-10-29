@@ -174,6 +174,9 @@ export function managed(
       ...(settings.trusted.logoutUrl ? { logoutUrl: settings.trusted.logoutUrl } : {}),
       clockSkewSeconds: settings.clockSkewSeconds,
       binding: settings.binding,
+      ...(settings.authenticationRequestProfile
+        ? { authenticationRequestProfile: settings.authenticationRequestProfile }
+        : {}),
       ...(settings.requestedAuthnContext
         ? { requestedAuthnContext: settings.requestedAuthnContext }
         : {}),

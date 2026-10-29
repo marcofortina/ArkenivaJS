@@ -32,6 +32,22 @@ export function contract(settings: SamlSettings, identity: SamlVerifiedIdentity)
     // @ts-expect-error A requested context requires an explicit accepted class catalog.
     requestedAuthnContext: { classReferences: ['urn:example:context'], comparison: 'exact' },
   });
+  // @ts-expect-error Only explicitly supported request profiles are available.
+  createSamlService({ ...settings, authenticationRequestProfile: { kind: 'other' } });
+  createSamlService({
+    ...settings,
+    requestedAuthnContext: {
+      classReferences: ['https://www.spid.gov.it/SpidL2'],
+      comparison: 'exact',
+      acceptedClassReferences: ['https://www.spid.gov.it/SpidL2'],
+    },
+    authenticationRequestProfile: { kind: 'spid', attributeConsumingServiceIndex: 1 },
+  });
+  createSamlService({
+    ...settings,
+    // @ts-expect-error Metadata indexes are numeric, never coerced strings.
+    authenticationRequestProfile: { kind: 'spid', attributeConsumingServiceIndex: '1' },
+  });
   // @ts-expect-error Unknown configuration fields are rejected by the public contract.
   createSamlService({ ...settings, trustEveryCertificate: true });
   // @ts-expect-error Login requires an explicit local return path.
