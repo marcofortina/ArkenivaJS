@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError, COMPONENTS, APPLICATION_SIGNAL } from '@arkenivajs/core';
+import { types } from 'node:util';
 import type { ApplicationOptions, MessageBus, OperationOptions, Plugin } from '@arkenivajs/core';
 import { ACTIVATE_PLUGIN, PREPARE_PLUGIN, SUPPORT_PLUGINS } from '@arkenivajs/core/support';
 import type { ComposablePlugin, SupportPluginFactory } from '@arkenivajs/core/support';
@@ -67,6 +68,7 @@ export function messagingPlugin(options: MessagingPluginOptions): Plugin {
   if (
     !options ||
     typeof options !== 'object' ||
+    types.isProxy(options) ||
     Array.isArray(options) ||
     Object.values(Object.getOwnPropertyDescriptors(options)).some((entry) => !('value' in entry)) ||
     Object.keys(options).some(
