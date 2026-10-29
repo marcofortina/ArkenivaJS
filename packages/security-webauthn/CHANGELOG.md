@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject executable Proxy objects before browser JSON reflection, including
+  nested objects and arrays, without invoking their traps.
 - Verify native RSA and Ed25519 registration, self-attestation, assertions and
   one-use service evidence, including real PostgreSQL tenant authority and shared
   ceremony consumption through separate service instances.

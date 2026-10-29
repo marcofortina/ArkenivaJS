@@ -41,6 +41,54 @@ async function enroll(
   return { service, device, summary, userHandle: handle(ceremony) };
 }
 
+test('Public finish operations reject executable browser responses without trap execution or factor/evidence persistence', async () => {
+  for (const mode of ['registration', 'authentication', 'passwordless'] as const) {
+    const f = serviceFixture(),
+      service = createWebAuthnService({ ...f.options, passwordlessEnabled: true }),
+      device = authenticator();
+    if (mode !== 'registration') await enroll(f, service, f.subject, device);
+    const ceremony =
+      mode === 'registration'
+        ? await service.beginRegistration(f.subject)
+        : mode === 'authentication'
+          ? await service.beginAuthentication(f.subject)
+          : await service.beginPasswordless();
+    const response =
+      mode === 'registration'
+        ? device.registration(challenge(ceremony), { origin: 'https://example.test', counter: 0 })
+        : device.authentication(challenge(ceremony), { origin: 'https://example.test' });
+    let calls = 0;
+    const proxy = new Proxy(response, {
+      getPrototypeOf(target) {
+        calls++;
+        return Reflect.getPrototypeOf(target);
+      },
+      ownKeys(target) {
+        calls++;
+        return Reflect.ownKeys(target);
+      },
+      getOwnPropertyDescriptor(target, name) {
+        calls++;
+        return Reflect.getOwnPropertyDescriptor(target, name);
+      },
+    });
+    const finish = (value: unknown) =>
+      mode === 'registration'
+        ? service.finishRegistration(f.subject, ceremony.ceremonyId, value)
+        : mode === 'authentication'
+          ? service.finishAuthentication(f.subject, ceremony.ceremonyId, value)
+          : service.finishPasswordless(ceremony.ceremonyId, value);
+    await assert.rejects(finish(proxy), hasCode('EK_MFA_INVALID'));
+    assert.equal(calls, 0);
+    assert.equal(f.credentials.size, mode === 'registration' ? 0 : 1);
+    if (mode !== 'registration') assert.equal(f.credentials.get(device.id)!.counter, 0);
+    assert.equal(f.evidence.size, 0);
+    assert.equal(f.observed.anonymous, 0);
+    assert.equal(f.challenges.has(ceremony.ceremonyId), false);
+    await assert.rejects(finish(response), hasCode('EK_MFA_CHALLENGE_EXPIRED'));
+  }
+});
+
 for (const algorithm of ['RS256', 'EdDSA'] as const)
   test(`Public ${algorithm} factor ceremonies preserve atomic claims, counters and one-use MFA evidence`, async () => {
     const f = serviceFixture(),

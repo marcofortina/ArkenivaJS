@@ -12,6 +12,43 @@ import { authenticator } from '../support/authenticator.js';
 const invalid = (error: unknown) => error instanceof KitError && error.code === 'EK_MFA_INVALID';
 const challenge = () => randomBytes(32).toString('base64url');
 
+test('Executable proxy wrappers are rejected without invoking traps at any browser JSON depth', () => {
+  const device = authenticator(),
+    response = device.authentication(challenge());
+  let calls = 0;
+  const handler: ProxyHandler<object> = {
+    get(target, name, receiver) {
+      calls++;
+      return Reflect.get(target, name, receiver);
+    },
+    getPrototypeOf(target) {
+      calls++;
+      return Reflect.getPrototypeOf(target);
+    },
+    ownKeys(target) {
+      calls++;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, name) {
+      calls++;
+      return Reflect.getOwnPropertyDescriptor(target, name);
+    },
+  };
+  for (const input of [
+    new Proxy(response, handler),
+    { ...response, response: new Proxy(response.response, handler) },
+    { ...response, clientExtensionResults: new Proxy({}, handler) },
+    { ...response, extra: new Proxy([], handler) },
+    { ...response, extra: [{ value: new Proxy({ harmless: true }, handler) }] },
+  ])
+    assert.throws(() => readUnverifiedResponse(input, false), invalid);
+  assert.equal(calls, 0);
+  const revoked = Proxy.revocable(response, handler);
+  revoked.revoke();
+  assert.throws(() => readUnverifiedResponse(revoked.proxy, false), invalid);
+  assert.equal(calls, 0);
+});
+
 test('Browser snapshots retain JSON data and distinguish absent, null and exact account handles', () => {
   const device = authenticator(),
     proof = challenge();

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError } from '@arkenivajs/core';
+import { types } from 'node:util';
 
 const maximumBytes = 1048576;
 const invalid = () =>
@@ -26,7 +27,8 @@ function serialize(input: unknown): string {
     if (value === null || typeof value === 'boolean') return count(JSON.stringify(value));
     if (typeof value === 'string') return quoted(value);
     if (typeof value === 'number' && Number.isFinite(value)) return count(JSON.stringify(value));
-    if (!value || typeof value !== 'object' || ancestors.has(value)) throw invalid();
+    if (!value || typeof value !== 'object' || types.isProxy(value) || ancestors.has(value))
+      throw invalid();
     const array = Array.isArray(value),
       prototype = Object.getPrototypeOf(value);
     if (
