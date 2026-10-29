@@ -1555,6 +1555,9 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../core
+      '@arkenivajs/http':
+        specifier: workspace:*
+        version: link:../http
       '@arkenivajs/security-apikey':
         specifier: workspace:*
         version: link:../security-apikey
