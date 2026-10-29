@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
+import { KitError } from '@arkenivajs/core';
 import type { FederationProfileV1 } from './contracts.js';
 import type { FederationHttp } from './metadata-http.js';
 import type { FederationCall } from './runtime.js';
@@ -18,7 +19,13 @@ export class FederationSamlRegistry {
   private readonly status: FederationHttp['samlRegistryStatus'];
   readonly #owned = new WeakMap<
     Evidence,
-    { native: Evidence; expiresAt: number; issuer: string; generation: symbol | undefined }
+    {
+      native: Evidence;
+      xml: string;
+      expiresAt: number;
+      issuer: string;
+      generation: symbol | undefined;
+    }
   >();
   readonly #invalidations = new Map<string, symbol>();
   readonly #bytes = new WeakMap<FederationCall, number>();
@@ -77,7 +84,7 @@ export class FederationSamlRegistry {
       )
         throw failure('EK_EID_FEDERATION');
       call.check();
-      this.#owned.set(evidence, { native, expiresAt, issuer, generation });
+      this.#owned.set(evidence, { native, xml, expiresAt, issuer, generation });
       this.result(evidence);
       return evidence;
     } catch (error) {
@@ -95,5 +102,24 @@ export class FederationSamlRegistry {
       throw failure('EK_EID_FEDERATION');
     this.signatures.registryResult(owned.native);
     return input as Evidence;
+  }
+  /** Keep original signature bytes private and return them only while their current receipt is live. */
+  document(input: unknown): string {
+    const evidence = this.result(input);
+    return this.#owned.get(evidence)!.xml;
+  }
+  async verifyDocument(call: FederationCall, xml: string): Promise<Evidence> {
+    for (const role of ['sp', 'idp'] as const) {
+      try {
+        const supplied = await this.signatures.verify(call, xml, role),
+          current = await this.verify(call, supplied.issuer, role);
+        if (this.signatures.result(supplied).verifiedXml !== this.result(current).verifiedXml)
+          throw failure('EK_EID_FEDERATION');
+        return current;
+      } catch (error) {
+        if (!(error instanceof KitError) || error.code !== 'EK_EID_FEDERATION') throw error;
+      }
+    }
+    throw failure('EK_EID_FEDERATION');
   }
 }

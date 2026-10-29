@@ -2,18 +2,20 @@
 
 ## 0.1.0
 
+- Expose native SPID SAML Redirect initiation, signed POST acceptance, current registered metadata and trust verification through the existing managed service, with a cookie-bound HTTPS ACS consumer.
+
 - Bind native signed SAML callback acceptance to encrypted single-use correlation,
   fresh RP/IdP registration and the existing canonical AuthService tenant mapping;
   preserve owner-bound expiry and physical cancellation settlement.
 - Reuse the native SAML adapter for private SPID Redirect initiation, with current
   RP/IdP registration, per-read certificate pinning, encrypted request correlation
-  and physical drain ownership. Public SAML authentication remains unavailable.
+  and physical drain ownership.
 - Bind the native SAML request ID inside encrypted single-use federation state,
   rejecting missing or malformed correlation and cross-protocol substitution.
 - Bind fresh SAML registry state to the exact entity, current pinned XML signing
   authority and matching native X.509 certificates. Validate RP POST registration,
   bound freshness and retire older evidence after failed refresh or withdrawal,
-  including concurrent verification. Public SAML authentication remains incomplete.
+  including concurrent verification.
 - Verify bounded SAML metadata signatures in owned native workers, retaining shared
   admission until physical termination and rejecting copied or expired signature
   evidence. Signature validation does not establish current registry participation.

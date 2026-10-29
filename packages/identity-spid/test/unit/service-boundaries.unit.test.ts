@@ -11,6 +11,7 @@ import { managed } from '../../dist/service.js';
 import { capture } from '../../dist/settings.js';
 import { transactionFixture } from '../fixtures/transactions.js';
 import { registration } from '../fixtures/registration.js';
+import { FederationHttp } from '../../dist/metadata-http.js';
 
 const auth = {
   isVerifiedTenant: (value: unknown): value is never => {
@@ -39,7 +40,84 @@ async function fixture() {
   return { ...f, input, settings: capture(input, 'test') };
 }
 
-test('Operational activation rejects absent protected state, registration or unsupported protocol before secret/storage work', async () => {
+test('Protocol construction failure closes the actual metadata client without closing borrowed Crypto', async (context) => {
+  const f = await fixture(),
+    close = FederationHttp.prototype.close;
+  let closed = 0;
+  context.mock.method(
+    FederationHttp.prototype,
+    'close',
+    async function (this: FederationHttp, ...args: Parameters<FederationHttp['close']>) {
+      closed++;
+      return Reflect.apply(close, this, args);
+    },
+  );
+  try {
+    const profile = f.settings.profiles[0]!;
+    await assert.rejects(
+      () =>
+        managed(
+          {
+            ...f.settings,
+            profiles: [
+              {
+                ...profile,
+                oidcRegistration: { ...profile.oidcRegistration!, approvedProtocolEndpoints: [] },
+              },
+            ],
+          },
+          f.crypto,
+          auth,
+        ),
+      { code: 'EK_EID_PROFILE' },
+    );
+    assert.equal(closed, 1);
+    assert.equal(
+      (
+        await f.crypto.hmac(
+          Buffer.from('The borrowed dependency remains available'),
+          f.settings.macRefs[0]!,
+        )
+      ).length,
+      32,
+    );
+    assert.equal(f.rows.size, 0);
+    assert.equal(f.claims.size, 0);
+  } finally {
+    context.mock.restoreAll();
+    await f.close();
+  }
+});
+
+test('A native metadata close failure is reported after actual cleanup and remains stable on repeated close', async (context) => {
+  const f = await fixture(),
+    close = FederationHttp.prototype.close;
+  let closed = 0;
+  const instance = await managed(f.settings, f.crypto, auth);
+  context.mock.method(
+    FederationHttp.prototype,
+    'close',
+    async function (this: FederationHttp, ...args: Parameters<FederationHttp['close']>) {
+      closed++;
+      await Reflect.apply(close, this, args);
+      throw new KitError({
+        code: 'EK_BACKEND_UNAVAILABLE',
+        message: 'The disposable close acknowledgement was lost',
+      });
+    },
+  );
+  try {
+    for (let count = 0; count < 2; count++)
+      await assert.rejects(() => instance.close(), { code: 'EK_BACKEND_UNAVAILABLE' });
+    assert.equal(closed, 1);
+    await assert.rejects(() => instance.service.metadata(), { code: 'EK_RESOURCE_CLOSED' });
+  } finally {
+    context.mock.restoreAll();
+    await f.close();
+  }
+});
+
+test('Operational activation rejects absent protected state or incomplete protocol registration before secret/storage work', async () => {
   const f = await fixture();
   try {
     const withoutState = { ...f.input };
@@ -68,8 +146,7 @@ test('Operational activation rejects absent protected state, registration or uns
         'test',
       );
       await assert.rejects(() => managed(settings, f.crypto, auth), {
-        code:
-          input.profiles[0]!.protocol === 'saml2' ? 'EK_UNSUPPORTED_CAPABILITY' : 'EK_EID_PROFILE',
+        code: 'EK_EID_PROFILE',
       });
       assert.equal(reads, 0);
       assert.equal(f.rows.size, 0);

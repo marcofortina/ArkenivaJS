@@ -273,6 +273,7 @@ test(
           { nameIDFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent' },
         ],
         ['wrong NameID qualifier', { nameQualifier: 'https://foreign.example.test' }],
+        ['missing NameID qualifier', { nameQualifier: null }],
         ['wrong RP qualifier', { spNameQualifier: 'https://foreign.example.test' }],
       ] as const)
         await context.test(name, async () => {

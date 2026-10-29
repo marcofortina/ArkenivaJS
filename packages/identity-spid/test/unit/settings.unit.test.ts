@@ -388,7 +388,7 @@ test('SAML registration cannot mix OIDC configuration or cross the CIE profile b
   assert.equal(f.calls(), 0);
 });
 
-test('A captured SAML certificate does not enable an unimplemented protocol or touch authentication dependencies', async () => {
+test('A captured SAML certificate without complete registry sources cannot activate or touch authentication dependencies', async () => {
   const f = fixture(),
     settings = capture({
       ...f.settings,
@@ -408,7 +408,7 @@ test('A captured SAML certificate does not enable an unimplemented protocol or t
     {
       get() {
         reads++;
-        throw new Error('Unsupported protocols must not use authentication dependencies');
+        throw new Error('Incomplete profiles must not use authentication dependencies');
       },
     },
   );
@@ -418,7 +418,7 @@ test('A captured SAML certificate does not enable an unimplemented protocol or t
       unused as Parameters<typeof managed>[1],
       unused as Parameters<typeof managed>[2],
     ),
-    { code: 'EK_UNSUPPORTED_CAPABILITY' },
+    { code: 'EK_EID_PROFILE' },
   );
   assert.equal(reads, 0);
   assert.equal(f.calls(), 0);

@@ -15,6 +15,7 @@ import { FederationMembership } from './membership.js';
 import { FederationRelyingParty } from './relying-party.js';
 import { FederationOidcLogin } from './oidc-login.js';
 import { FederationOidcCallback } from './oidc-callback.js';
+import { FederationSamlLogin } from './saml-login.js';
 import { FederationIdentityMapping } from './identity-mapping.js';
 import { FederationTransactions, returnPath } from './transactions.js';
 import { failure, fields, text, url } from './validation.js';
@@ -32,27 +33,33 @@ export async function managed(
 ) {
   if (!settings.encryptionRefs.length || !settings.macRefs.length) throw failure('EK_EID_PROFILE');
   for (const profile of settings.profiles) {
-    if (profile.protocol !== 'oidc-federation')
-      throw new KitError({
-        code: 'EK_UNSUPPORTED_CAPABILITY',
-        message: 'The configured federation protocol is not available',
-      });
-    if (!profile.oidcRegistration?.approvedProtocolEndpoints) throw failure('EK_EID_PROFILE');
+    if (profile.protocol === 'saml2') {
+      if (!profile.samlRegistration?.registrySources) throw failure('EK_EID_PROFILE');
+    } else if (!profile.oidcRegistration?.approvedProtocolEndpoints)
+      throw failure('EK_EID_PROFILE');
   }
   const record = recorder(observers, settings.profiles[0]!.system),
     runtime = new FederationRuntime(settings.policy, ready, owner),
-    transports: Array<{ metadata: FederationHttp; protocol: FederationProtocolHttp }> = [],
+    transports: Array<{ metadata: FederationHttp; protocol?: FederationProtocolHttp }> = [],
     instances = new Map<
       string,
-      {
-        profile: Settings['profiles'][number];
-        rp: FederationRelyingParty;
-        login: FederationOidcLogin;
-        callback: FederationOidcCallback;
-        mapping: FederationIdentityMapping;
-        membership: FederationMembership;
-        transactions: FederationTransactions;
-      }
+      | {
+          kind: 'oidc';
+          profile: Settings['profiles'][number];
+          rp: FederationRelyingParty;
+          login: FederationOidcLogin;
+          callback: FederationOidcCallback;
+          mapping: FederationIdentityMapping;
+          membership: FederationMembership;
+          transactions: FederationTransactions;
+        }
+      | {
+          kind: 'saml';
+          profile: Settings['profiles'][number];
+          login: FederationSamlLogin;
+          mapping: FederationIdentityMapping;
+          transactions: FederationTransactions;
+        }
     >(),
     views = new Map<string, ItalianFederationService>();
   let closed: Promise<void> | undefined;
@@ -80,7 +87,7 @@ export async function managed(
         runtime.close(options),
         ...transports.flatMap((transport) => [
           transport.metadata.close(options),
-          transport.protocol.close(options),
+          ...(transport.protocol ? [transport.protocol.close(options)] : []),
         ]),
       ]);
       const failed = results.find((result) => result.status === 'rejected');
@@ -90,6 +97,18 @@ export async function managed(
   try {
     for (const profile of settings.profiles) {
       const metadata = new FederationHttp(profile.metadata, settings.policy, settings.environment);
+      if (profile.protocol === 'saml2') {
+        transports.push({ metadata });
+        const login = new FederationSamlLogin(settings, profile.profileId, metadata, crypto);
+        instances.set(profile.profileId, {
+          kind: 'saml',
+          profile,
+          login,
+          mapping: new FederationIdentityMapping(settings, profile.profileId, login, auth),
+          transactions: new FederationTransactions(settings, profile.profileId, crypto),
+        });
+        continue;
+      }
       let protocol: FederationProtocolHttp;
       try {
         protocol = new FederationProtocolHttp(settings, profile.profileId);
@@ -106,6 +125,7 @@ export async function managed(
         crypto,
       );
       instances.set(profile.profileId, {
+        kind: 'oidc',
         profile,
         rp: new FederationRelyingParty(settings, profile.profileId, metadata),
         login: new FederationOidcLogin(settings, profile.profileId, metadata, crypto),
@@ -161,6 +181,13 @@ export async function managed(
             );
             text(receipt.issuer, 2048);
             text(receipt.subject, 2048);
+            if (instance.kind === 'saml')
+              return instance.login.begin(call, {
+                issuer,
+                assurance,
+                returnPath: path,
+                ...(hint ? { tenantHint: hint } : {}),
+              });
             const rp = await instance.rp.verify(call),
               registration = instance.rp.registration(rp),
               result = await instance.login.begin(
@@ -180,6 +207,8 @@ export async function managed(
         async consumeAuthentication(response, options) {
           const instance = selected(id);
           return runtime.run(async (call) => {
+            if (instance.kind === 'saml')
+              return instance.mapping.map(call, await instance.login.consume(call, response));
             const rp = await instance.rp.verify(call),
               upstream = await instance.callback.consume(
                 call,
@@ -195,7 +224,8 @@ export async function managed(
           const instance = selected(id);
           return runtime.run(async (call) => {
             try {
-              await instance.membership.verify(call, statement);
+              if (instance.kind === 'saml') await instance.login.verifyTrust(call, statement);
+              else await instance.membership.verify(call, statement);
               return Object.freeze({
                 trusted: true,
                 source: instance.profile.profileId,
@@ -216,6 +246,7 @@ export async function managed(
         async metadata() {
           const instance = selected(id);
           return runtime.run(async (call) => {
+            if (instance.kind === 'saml') return instance.login.metadata(call);
             const proof = await instance.rp.verify(call);
             return instance.rp.registration(proof).metadata;
           });
@@ -247,7 +278,8 @@ export async function managed(
             async (call) => {
               for (const instance of instances.values()) {
                 await instance.transactions.probe(call);
-                await instance.rp.verify(call);
+                if (instance.kind === 'saml') await instance.login.metadata(call);
+                else await instance.rp.verify(call);
               }
             },
             undefined,
@@ -262,7 +294,8 @@ export async function managed(
               async (call) => {
                 for (const instance of instances.values()) {
                   await instance.transactions.probe(call);
-                  await instance.rp.verify(call);
+                  if (instance.kind === 'saml') await instance.login.metadata(call);
+                  else await instance.rp.verify(call);
                 }
               },
               options,
