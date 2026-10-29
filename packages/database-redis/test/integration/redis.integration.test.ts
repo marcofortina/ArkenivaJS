@@ -11,6 +11,8 @@ import type { RedisClientType } from 'redis';
 import { createApplication, KitError } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
 import { redisPlugin } from '@arkenivajs/database-redis';
+import { REDIS_PUBSUB_CAPABILITY } from '@arkenivajs/database-redis/pubsub';
+import type { RedisPubsubProvider } from '@arkenivajs/database-redis/pubsub';
 import { redisConfiguration } from '../../dist/config.js';
 
 const service = { name: 'redis-live-contract', version: '1.0.0', environment: 'test' as const };
@@ -103,6 +105,57 @@ async function control(context: TestContext) {
   await within(() => client.connect(), { timeoutMs: 5000 });
   return client;
 }
+
+test(
+  'Live Redis PubSub uses independent authenticated connections across applications and releases them at shutdown',
+  { timeout: 30_000 },
+  async (context) => {
+    const first = await fixture(context),
+      second = await fixture(context);
+    const a = first.app.resolve<RedisPubsubProvider>(REDIS_PUBSUB_CAPABILITY);
+    const b = second.app.resolve<RedisPubsubProvider>(REDIS_PUBSUB_CAPABILITY);
+    assert.equal(a.connectionName, 'main');
+    const topic = 'events:' + randomUUID(),
+      receivedA: string[] = [],
+      receivedB: string[] = [],
+      failures: unknown[] = [];
+    const onFailure = (error: unknown) => {
+      failures.push(error);
+    };
+    const one = await a.subscribe(
+      topic,
+      async (message) => {
+        receivedA.push(message);
+      },
+      { onFailure },
+    );
+    const two = await b.subscribe(
+      topic,
+      async (message) => {
+        receivedB.push(message);
+      },
+      { onFailure },
+    );
+    assert.equal(await first.provider.publish(topic, 'first'), 2);
+    await eventually(() => receivedA.length === 1 && receivedB.length === 1);
+    assert.deepEqual(receivedA, ['first']);
+    assert.deepEqual(receivedB, ['first']);
+    await assert.rejects(first.native.publish('unapproved:' + topic, 'denied'));
+    await one.close();
+    assert.equal(await second.provider.publish(topic, 'second'), 1);
+    await eventually(() => receivedB.length === 2);
+    assert.deepEqual(receivedA, ['first']);
+    assert.deepEqual(receivedB, ['first', 'second']);
+    await second.app.stop();
+    assert.equal(await first.provider.publish(topic, 'after-shutdown'), 0);
+    assert.throws(
+      () => b.subscribe(topic, async () => {}, { onFailure }),
+      code('EK_RESOURCE_CLOSED'),
+    );
+    await two.close();
+    assert.deepEqual(failures, []);
+  },
+);
 
 test(
   'EK-DB-002 live Redis authenticates scoped TLS and preserves missing, empty, Unicode, BOM and literal values',
