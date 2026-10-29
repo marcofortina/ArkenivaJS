@@ -71,12 +71,6 @@ export async function fixture(
   if (!issuerAddress || typeof issuerAddress !== 'object')
     throw new Error('The issuer fixture is unavailable');
   authority = 'http://127.0.0.1:' + issuerAddress.port;
-  const reserve = createServer();
-  await new Promise<void>((resolve) => reserve.listen(0, '127.0.0.1', resolve));
-  const reserved = reserve.address();
-  await new Promise<void>((resolve) => reserve.close(() => resolve()));
-  if (!reserved || typeof reserved !== 'object')
-    throw new Error('The proxy fixture port is unavailable');
   let logs = '';
   const sink = new Writable({
     write(chunk: Buffer, _encoding, done) {
@@ -121,7 +115,7 @@ export async function fixture(
       service: { name: 'proxy-fixture', version: '1.0.0', environment: 'test' },
       http: {
         host: '127.0.0.1',
-        port: reserved.port,
+        port: 0,
         ...(transport.inboundTls ? { protocol: 'https' as const, tls: transport.inboundTls } : {}),
       },
       security: { issuer: authority, audience: 'api://proxy', algorithms: ['ES256'] },
