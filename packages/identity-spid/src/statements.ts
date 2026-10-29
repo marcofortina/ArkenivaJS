@@ -33,6 +33,12 @@ export interface StatementVerification {
   readonly keys: readonly StatementKey[];
   readonly maxBytes: number;
 }
+interface TokenVerification extends Omit<StatementVerification, 'subject'> {
+  readonly subject?: string;
+  readonly type: 'entity-statement+jwt' | 'trust-mark+jwt' | 'trust-mark-status-response+jwt';
+  readonly requiredClaims: readonly string[];
+  readonly maxAgeSeconds?: number;
+}
 function key(input: KeyObject): KeyObject {
   if (!(
     (input.asymmetricKeyType === 'rsa' &&
@@ -129,15 +135,15 @@ function publicKeys(input: unknown, expiresAt: number): readonly StatementKey[] 
   return Object.freeze(result);
 }
 /** JOSE owns JWS/JWT verification; callers must separately verify chain, policy and live revocation. */
-export async function verifyStatement(
+export async function verifyFederationToken(
   token: string,
-  expected: StatementVerification,
+  expected: TokenVerification,
   options?: OperationOptions,
-): Promise<SignedStatement> {
+) {
   try {
     integer(expected.maxBytes);
     url(expected.issuer);
-    url(expected.subject);
+    if (expected.subject !== undefined) url(expected.subject);
     if (
       typeof token !== 'string' ||
       Buffer.byteLength(token) > expected.maxBytes ||
@@ -145,7 +151,7 @@ export async function verifyStatement(
     )
       throw failure('EK_EID_FEDERATION');
     const header = fields(decodeProtectedHeader(token), ['typ', 'alg', 'kid']);
-    if (header.typ !== 'entity-statement+jwt' || !algorithms.includes(header.alg as string))
+    if (header.typ !== expected.type || !algorithms.includes(header.alg as string))
       throw failure('EK_EID_FEDERATION');
     const kid = text(header.kid),
       keys = expected.keys.filter((item) => item.kid === kid);
@@ -169,10 +175,13 @@ export async function verifyStatement(
       () =>
         jwtVerify(token, keys[0]!.publicKey, {
           algorithms,
-          typ: 'entity-statement+jwt',
+          typ: expected.type,
           issuer: expected.issuer,
-          subject: expected.subject,
-          requiredClaims: ['iss', 'sub', 'iat', 'exp', 'jwks'],
+          ...(expected.subject === undefined ? {} : { subject: expected.subject }),
+          requiredClaims: [...new Set(['iss', 'iat', ...expected.requiredClaims])],
+          ...(expected.maxAgeSeconds === undefined
+            ? {}
+            : { maxTokenAge: integer(expected.maxAgeSeconds) }),
           clockTolerance: 0,
         }),
       options,
@@ -184,24 +193,47 @@ export async function verifyStatement(
     active();
     if (
       !Number.isSafeInteger(issuedAt) ||
-      !Number.isSafeInteger(expiresAt) ||
       (issuedAt as number) < 0 ||
       (issuedAt as number) > now ||
-      (expiresAt as number) <= now ||
-      (expiresAt as number) <= (issuedAt as number)
+      (expiresAt !== undefined &&
+        (!Number.isSafeInteger(expiresAt) ||
+          (expiresAt as number) <= now ||
+          (expiresAt as number) <= (issuedAt as number)))
     )
       throw failure('EK_EID_FEDERATION');
     const effectiveExpiry = Math.min(
-      expiresAt as number,
+      expiresAt === undefined ? Infinity : (expiresAt as number),
       signing.expiresAt === undefined ? Infinity : signing.expiresAt / 1000,
+    );
+    return Object.freeze({
+      expiresAt: effectiveExpiry,
+      claims,
+    });
+  } catch (error) {
+    if (error instanceof KitError && ['EK_TIMEOUT', 'EK_ABORTED'].includes(error.code)) throw error;
+    throw failure('EK_EID_FEDERATION');
+  }
+}
+
+/** Entity statements require public descendant keys as well as explicit bounded expiry. */
+export async function verifyStatement(
+  token: string,
+  expected: StatementVerification,
+  options?: OperationOptions,
+): Promise<SignedStatement> {
+  try {
+    const verified = await verifyFederationToken(
+      token,
+      { ...expected, type: 'entity-statement+jwt', requiredClaims: ['sub', 'exp', 'jwks'] },
+      options,
     );
     return Object.freeze({
       issuer: expected.issuer,
       subject: expected.subject,
-      issuedAt: issuedAt as number,
-      expiresAt: effectiveExpiry,
-      keys: publicKeys(claims.jwks, Math.floor(effectiveExpiry * 1000)),
-      claims,
+      issuedAt: verified.claims.iat as number,
+      expiresAt: verified.expiresAt,
+      keys: publicKeys(verified.claims.jwks, Math.floor(verified.expiresAt * 1000)),
+      claims: verified.claims,
     });
   } catch (error) {
     if (error instanceof KitError && ['EK_TIMEOUT', 'EK_ABORTED'].includes(error.code)) throw error;

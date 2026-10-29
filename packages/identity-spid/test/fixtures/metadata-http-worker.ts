@@ -2,11 +2,11 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import assert from 'node:assert/strict';
-import { jwtVerify } from 'jose';
 import type { OperationOptions } from '@arkenivajs/core';
 import type { FederationTrustAnchor } from '../../dist/index.js';
 import { FederationHttp } from '../../dist/metadata-http.js';
 import { anchorKeys, verifyStatement } from '../../dist/statements.js';
+import { TrustMarkVerifier } from '../../dist/trust-marks.js';
 
 interface Input {
   origin: string;
@@ -63,15 +63,16 @@ async function run(input: Input) {
       input.subject,
     );
     assert.equal(await source.statement(input.origin + '/fetch', input.subject), encoded);
-    const status = await source.trustMarkStatus(input.origin + '/status', input.trustMark);
-    const verified = await jwtVerify(status, keys[0]!.publicKey, {
-      algorithms: ['RS256'],
-      typ: 'trust-mark-status-response+jwt',
+    const marks = new TrustMarkVerifier();
+    const owned = await marks.verify(input.trustMark, {
       issuer: input.issuer,
-      requiredClaims: ['iss', 'iat', 'trust_mark', 'status'],
+      subject: input.subject,
+      type: input.issuer + '/openid_provider',
+      keys,
+      maxBytes: 4096,
     });
-    assert.equal(verified.payload.trust_mark, input.trustMark);
-    assert.equal(verified.payload.status, 'active');
+    const status = await source.trustMarkStatus(input.origin + '/status', marks.request(owned));
+    await marks.verifyStatus(status, owned, 30);
     await assert.rejects(() => source.trustMarkStatus(input.origin + '/status', encoded), {
       code: 'EK_EID_FEDERATION',
     });
