@@ -115,3 +115,21 @@ test('Failed synchronous admission and physically closed sockets never forward a
     );
   }
 });
+
+test('Benign protocol completion races can be dropped synchronously without entering or closing the native connection', () => {
+  const wire = new EventEmitter();
+  let delivered = 0,
+    closed = 0;
+  wire.on('message', () => {
+    delivered++;
+  });
+  const socket = Object.assign(wire, {
+    close() {
+      closed++;
+    },
+  }) as unknown as WebSocket;
+  installSubscriptionIngress(socket, limits, () => false);
+  wire.emit('message', encoded({ type: 'complete', id: 'already-retired' }), false);
+  assert.equal(delivered, 0);
+  assert.equal(closed, 0);
+});
