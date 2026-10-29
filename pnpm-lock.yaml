@@ -874,6 +874,31 @@ importers:
         specifier: workspace:*
         version: link:../../packages/socket
 
+  examples/tenant-routing:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@arkenivajs/tenant-routing':
+        specifier: workspace:*
+        version: link:../../packages/tenant-routing
+    devDependencies:
+      canonicalize:
+        specifier: 5.1.0
+        version: 5.1.0
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+
   examples/upload:
     dependencies:
       '@arkenivajs/api':

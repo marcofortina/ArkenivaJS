@@ -264,3 +264,8 @@ startup additionally checks deployed handlers, transforms, approved upstreams
 and listener collisions. A one-shot CLI cannot prove historical activation
 admission across recreated processes; retain the operator's audited promotion
 history or durable checkpoint authority. Registry edits still require restart.
+
+The [tenant quote example](../../examples/tenant-routing/README.md) exercises this
+command, actual signed identities and HTTPS, separate application processes,
+registry-only onboarding, implementation swaps, new operations and a controlled
+higher-generation rollback. It also runs against independently packed packages.

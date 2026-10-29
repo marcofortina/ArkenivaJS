@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { readdir, readFile, writeFile, mkdir, mkdtemp, chmod, cp, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -178,7 +178,13 @@ try {
         [join(example.target, 'test/fixtures/run.py'), '--', process.execPath, ...flags, ...files],
         example.target,
       );
-    else execute(process.execPath, [...flags, ...files], example.target);
+    else
+      // Direct Node execution retains example-relative files while exposing
+      // commands installed in the isolated consumer, as a package script does.
+      execute(process.execPath, [...flags, ...files], example.target, 180000, {
+        ...process.env,
+        PATH: join(directory, 'node_modules', '.bin') + delimiter + (process.env.PATH ?? ''),
+      });
   }
   console.log('Packed public artifacts passed ' + examples.length + ' executable example suites.');
 } finally {
