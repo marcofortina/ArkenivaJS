@@ -3,7 +3,7 @@
 
 import { createPublicKey } from 'node:crypto';
 import type { KeyObject, JsonWebKey } from 'node:crypto';
-import { decodeProtectedHeader, jwtVerify } from 'jose';
+import { decodeJwt, decodeProtectedHeader, jwtVerify } from 'jose';
 import { freezeData, within } from '@arkenivajs/core/support';
 import type { OperationOptions } from '@arkenivajs/core';
 import { KitError } from '@arkenivajs/core';
@@ -96,6 +96,28 @@ function boundedClaims(input: unknown): Readonly<Record<string, unknown>> {
     return result;
   };
   return freezeData(fields(visit(input, 0)));
+}
+/** Unverified claims may guide bounded approved discovery, but never authorize identity or keys. */
+export function inspectConfiguration(token: string, maxBytes: number) {
+  try {
+    integer(maxBytes);
+    if (
+      typeof token !== 'string' ||
+      Buffer.byteLength(token) > maxBytes ||
+      !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(token)
+    )
+      throw failure('EK_EID_FEDERATION');
+    const header = fields(decodeProtectedHeader(token), ['typ', 'alg', 'kid']);
+    if (header.typ !== 'entity-statement+jwt' || !algorithms.includes(header.alg as string))
+      throw failure('EK_EID_FEDERATION');
+    text(header.kid);
+    const claims = boundedClaims(decodeJwt(token));
+    const entity = url(claims.iss);
+    if (claims.sub !== entity) throw failure('EK_EID_FEDERATION');
+    return Object.freeze({ entity, claims });
+  } catch {
+    throw failure('EK_EID_FEDERATION');
+  }
 }
 /** Parse only public federation JWKS; private/symmetric material never becomes a verification key. */
 function publicKeys(input: unknown, expiresAt: number): readonly StatementKey[] {

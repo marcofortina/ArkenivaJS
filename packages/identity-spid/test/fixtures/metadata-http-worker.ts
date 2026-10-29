@@ -3,10 +3,12 @@
 
 import assert from 'node:assert/strict';
 import type { OperationOptions } from '@arkenivajs/core';
-import type { FederationTrustAnchor } from '../../dist/index.js';
+import type { FederationTrustAnchor, FederationProfileV1 } from '../../dist/index.js';
 import { FederationHttp } from '../../dist/metadata-http.js';
 import { anchorKeys, verifyStatement } from '../../dist/statements.js';
 import { TrustMarkVerifier } from '../../dist/trust-marks.js';
+import { FederationResolver } from '../../dist/resolver.js';
+import { FederationRuntime } from '../../dist/runtime.js';
 
 interface Input {
   origin: string;
@@ -14,6 +16,8 @@ interface Input {
   subject: string;
   trustMark: string;
   anchor: FederationTrustAnchor;
+  leafConfiguration: string;
+  deniedConfiguration: string;
 }
 process.once('message', (input: Input) => {
   void run(input).then(
@@ -126,6 +130,57 @@ async function run(input: Input) {
       assert.equal(bounded.stats().active, 0);
     } finally {
       await bounded.close();
+    }
+    const federationRoot = input.origin + '/federation-root',
+      federationLeaf = input.origin + '/federation-leaf';
+    const profile: FederationProfileV1 = {
+      schemaVersion: '1.0.0',
+      profileId: 'native-discovery',
+      system: 'spid',
+      protocol: 'oidc-federation',
+      entityId: input.origin + '/service',
+      clientId: input.origin + '/service',
+      redirectUri: input.origin + '/service/callback',
+      signingKeyRef: 'signing-ref',
+      expectedIssuers: [federationLeaf],
+      allowedAssurance: ['spid-l2'],
+      subjectClaim: 'sub',
+      tenantMappingId: 'approved-accounts',
+      identityMappingVersion: '1',
+      sessionTtlSeconds: 300,
+      metadata: {
+        trustAnchors: [{ ...input.anchor, issuer: federationRoot }],
+        approvedMetadataEndpoints: [
+          federationRoot + '/.well-known/openid-federation',
+          federationRoot + '/fetch',
+        ],
+        maxBytes: 16384,
+        maxChainDepth: 2,
+        refreshIntervalSeconds: 60,
+        revocation: 'mandatory',
+        stalePolicy: 'reject',
+      },
+    };
+    const transport = new FederationHttp(
+        profile.metadata,
+        { ...policy, maxInputBytes: 16384, maxOutputBytes: 16384 },
+        'test',
+      ),
+      runtime = new FederationRuntime(policy),
+      resolver = new FederationResolver(profile, transport);
+    try {
+      const proof = await runtime.run((call) => resolver.resolve(call, input.leafConfiguration));
+      assert.equal(proof.anchor, federationRoot);
+      assert.equal(proof.subject, federationLeaf);
+      assert.equal(resolver.nodes(proof).length, 2);
+      assert.equal('trusted' in proof, false);
+      await assert.rejects(
+        () => runtime.run((call) => resolver.resolve(call, input.deniedConfiguration)),
+        { code: 'EK_EID_FEDERATION' },
+      );
+    } finally {
+      await runtime.close();
+      await transport.close();
     }
   } finally {
     await source.close();

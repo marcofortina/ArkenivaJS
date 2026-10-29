@@ -10,3 +10,4 @@
 - Apply metadata parameter policies only within existing entity types, preventing defaults from creating unrelated roles or bypassing type constraints.
 - Own federation provider and native work through physical settlement, with shared admission, one deadline, readiness enforcement and bounded shutdown.
 - Verify explicit pinned federation paths, delegated key rotation, inherited expiry, independent path/name/type constraints and ordered metadata resolution, returning owned signature/policy evidence for subsequent live membership validation.
+- Resolve approved federation configuration graphs within cumulative discovery budgets and a shared deadline, with operation-local document caches, full pinned verification for every selected path and actual HTTPS fixtures.
