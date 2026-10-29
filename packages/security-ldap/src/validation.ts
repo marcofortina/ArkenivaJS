@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError } from '@arkenivajs/core';
+import { types } from 'node:util';
 import type { ErrorCode } from '@arkenivajs/core';
 export const failure = (code: ErrorCode = 'EK_LDAP_FILTER', unknown = false) =>
   new KitError({
@@ -94,9 +95,10 @@ export function attribute(input: unknown): string {
   return value;
 }
 export function property(input: unknown, name: string): unknown {
-  if (!input || typeof input !== 'object') throw failure();
+  if (!input || typeof input !== 'object' || types.isProxy(input)) throw failure();
   let current: object | null = input;
   for (let depth = 0; current && depth < 64; depth++) {
+    if (types.isProxy(current)) throw failure();
     const value = Object.getOwnPropertyDescriptor(current, name);
     if (value) {
       if (!('value' in value)) throw failure();
@@ -104,10 +106,14 @@ export function property(input: unknown, name: string): unknown {
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
+  if (current) throw failure();
   return undefined;
 }
-export function method<T>(input: unknown, name: string): T {
+export function method<T extends (...args: never[]) => unknown>(input: unknown, name: string): T {
   const value = property(input, name);
-  if (typeof value !== 'function') throw failure();
-  return value.bind(input) as T;
+  if (typeof value !== 'function' || types.isProxy(value)) throw failure();
+  // Callable metadata cannot replace the configured function or its original receiver.
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(value, input, args) as ReturnType<T>;
+  return invoke as T;
 }

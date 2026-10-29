@@ -59,6 +59,38 @@ function withoutTrust(change: Partial<LdapSettings> = {}): LdapSettings {
   void tlsTrustBundleRef;
   return rest;
 }
+test('Actual verified OpenLDAP operations retain captured external secret methods without executable metadata', async () => {
+  const input = settings(),
+    original = input.secretProvider;
+  let effects = 0,
+    reads = 0;
+  const provider = {
+    async get(reference: string, options?: import('@arkenivajs/core').OperationOptions) {
+      assert.equal(this, provider);
+      reads++;
+      return original.get(reference, options);
+    },
+  };
+  for (const field of ['bind', 'name', 'length'])
+    Object.defineProperty(provider.get, field, {
+      get() {
+        effects++;
+        throw new Error('Executable native LDAP secret metadata');
+      },
+    });
+  const directory = createLdapService({ ...input, secretProvider: provider });
+  provider.get = async () => {
+    throw new Error('Late native LDAP provider replacement');
+  };
+  assert.equal(await directory.ping(), true);
+  assert.equal((await directory.findUser({ username: 'alice' }))?.uid, 'alice');
+  assert.equal(
+    await directory.verifyCredentials({ username: 'alice' }, metadata.userPassword),
+    true,
+  );
+  assert.ok(reads >= 9);
+  assert.equal(effects, 0);
+});
 test('OpenLDAP verified LDAPS finds a unique user, projects immutable attributes and verifies an isolated user bind', async () => {
   const directory = createLdapService(settings());
   assert.equal(await directory.ping(), true);
