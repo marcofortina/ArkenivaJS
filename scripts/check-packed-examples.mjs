@@ -118,6 +118,7 @@ try {
       name: 'packed-example-verification',
       private: true,
       type: 'module',
+      packageManager: tooling.packageManager,
       dependencies,
     }),
   );
@@ -129,7 +130,11 @@ try {
     '\n';
   await writeFile(join(directory, 'pnpm-workspace.yaml'), configuration);
   // Resolve without installing code, then apply exactly the reviewed patches present in this graph.
-  execute('pnpm', ['install', '--ignore-scripts', '--lockfile-only'], directory);
+  execute(
+    'pnpm',
+    ['install', '--ignore-scripts', '--lockfile-only', '--no-frozen-lockfile'],
+    directory,
+  );
   const activePatches = resolvedPatches(
     patches,
     parseAllDocuments(await readFile(join(directory, 'pnpm-lock.yaml'), 'utf8')).map((document) =>
@@ -145,7 +150,14 @@ try {
         .join('\n') +
       '\n',
   );
-  execute('pnpm', ['install', '--ignore-scripts'], directory);
+  // This isolated graph is created here, so resolve its patch hashes before
+  // requiring an immutable installation under the same policy used by CI.
+  execute(
+    'pnpm',
+    ['install', '--ignore-scripts', '--lockfile-only', '--no-frozen-lockfile'],
+    directory,
+  );
+  execute('pnpm', ['install', '--ignore-scripts', '--frozen-lockfile'], directory);
   if (nativeKafka) {
     await writeFile(
       join(directory, 'pnpm-workspace.yaml'),
