@@ -29,7 +29,7 @@ export interface ChainEvidence {
   readonly expiresAt: number;
   readonly metadata: Readonly<Record<string, unknown>>;
 }
-interface ChainNode {
+export interface ChainNode {
   readonly configuration: SignedStatement;
   readonly delegation?: SignedStatement;
   readonly keys: readonly StatementKey[];

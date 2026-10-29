@@ -73,6 +73,8 @@ test(
         cookie?: string;
         body: string;
       }[] = [];
+      let rootConfiguration = '',
+        delegation = '';
       const server = createServer(
         { key: await readFile(privateKey), cert: await readFile(certificate) },
         async (request, response) => {
@@ -88,6 +90,13 @@ test(
             ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
             body: Buffer.concat(chunks).toString(),
           });
+          if (path.startsWith('/federation-root/')) {
+            response.setHeader('content-type', 'application/entity-statement+jwt');
+            response.end(
+              path.startsWith('/federation-root/fetch?') ? delegation : rootConfiguration,
+            );
+            return;
+          }
           if (path.startsWith('/status')) {
             response.setHeader('content-type', 'application/trust-mark-status-response+jwt');
             response.end(status);
@@ -122,6 +131,45 @@ test(
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
       const address = server.address();
       assert.ok(address && typeof address === 'object');
+      const origin = `https://127.0.0.1:${address.port}`,
+        federationRoot = origin + '/federation-root',
+        federationLeaf = origin + '/federation-leaf';
+      rootConfiguration = await sign(
+        {
+          iss: federationRoot,
+          sub: federationRoot,
+          exp: now + 60,
+          jwks,
+          constraints: { max_path_length: 0 },
+          metadata: { federation_entity: { federation_fetch_endpoint: federationRoot + '/fetch' } },
+        },
+        'entity-statement+jwt',
+      );
+      delegation = await sign(
+        { iss: federationRoot, sub: federationLeaf, exp: now + 60, jwks },
+        'entity-statement+jwt',
+      );
+      const leafConfiguration = await sign(
+        {
+          iss: federationLeaf,
+          sub: federationLeaf,
+          exp: now + 60,
+          jwks,
+          authority_hints: [federationRoot],
+          metadata: { openid_provider: { issuer: federationLeaf } },
+        },
+        'entity-statement+jwt',
+      );
+      const deniedConfiguration = await sign(
+        {
+          iss: federationLeaf,
+          sub: federationLeaf,
+          exp: now + 60,
+          jwks,
+          authority_hints: [origin + '/not-approved'],
+        },
+        'entity-statement+jwt',
+      );
       const child = fork(new URL('../fixtures/metadata-http-worker.js', import.meta.url), [], {
         execArgv: [],
         env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate },
@@ -139,10 +187,12 @@ test(
           }),
         ]);
         child.send({
-          origin: `https://127.0.0.1:${address.port}`,
+          origin,
           issuer,
           subject,
           trustMark,
+          leafConfiguration,
+          deniedConfiguration,
           anchor: {
             kid: 'root-public',
             issuer,
@@ -174,6 +224,18 @@ test(
         const checked = requests.find((request) => request.path === '/status')!;
         assert.equal(checked.method, 'POST');
         assert.equal(new URLSearchParams(checked.body).get('trust_mark'), trustMark);
+        assert.equal(
+          requests.filter((request) => request.path.startsWith('/federation-root/')).length,
+          2,
+        );
+        assert.equal(
+          requests.some((request) => request.path.startsWith('/not-approved/')),
+          false,
+        );
+        const federationFetch = requests.find((request) =>
+          request.path.startsWith('/federation-root/fetch?'),
+        )!;
+        assert.equal(new URL(federationFetch.path, origin).searchParams.get('sub'), federationLeaf);
       } finally {
         if (child.exitCode === null) {
           child.kill('SIGTERM');
