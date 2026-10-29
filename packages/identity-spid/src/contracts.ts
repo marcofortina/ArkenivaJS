@@ -100,4 +100,7 @@ export interface ItalianEidPluginSettings {
   readonly secretProvider: SecretProvider;
   readonly authority: TrustedSecurityAuthority;
   readonly policy: BoundedRuntimePolicy;
+  /** Separate external symmetric key references for protected one-use login state. */
+  readonly stateEncryptionKeyRefs?: readonly string[];
+  readonly stateMacKeyRefs?: readonly string[];
 }

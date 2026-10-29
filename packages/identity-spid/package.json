@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node ../../scripts/test.mjs unit",
+    "test:integration:postgres": "node --test dist-test/integration/transactions.integration.test.js",
     "lint": "eslint src test"
   },
   "dependencies": {
