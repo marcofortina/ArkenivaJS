@@ -145,8 +145,28 @@ export function capture(settings: MailPluginSettings): Captured {
   let getSecret: SecretProvider['get'];
   try {
     const provider = root.secretProvider as SecretProvider;
-    if (!provider || typeof provider.get !== 'function') throw failure('EK_MAIL_CONFIG');
-    getSecret = provider.get.bind(provider);
+    if (!provider || typeof provider !== 'object' || types.isProxy(provider))
+      throw failure('EK_MAIL_CONFIG');
+    let current: object | null = provider;
+    let callback: SecretProvider['get'] | undefined;
+    for (let depth = 0; current && depth < 32; depth++) {
+      if (types.isProxy(current)) throw failure('EK_MAIL_CONFIG');
+      const descriptor = Object.getOwnPropertyDescriptor(current, 'get');
+      if (descriptor) {
+        if (
+          !('value' in descriptor) ||
+          typeof descriptor.value !== 'function' ||
+          types.isProxy(descriptor.value)
+        )
+          throw failure('EK_MAIL_CONFIG');
+        callback = descriptor.value as SecretProvider['get'];
+        break;
+      }
+      current = Object.getPrototypeOf(current) as object | null;
+    }
+    if (!callback) throw failure('EK_MAIL_CONFIG');
+    const captured = callback;
+    getSecret = (...args) => Reflect.apply(captured, provider, args);
   } catch {
     throw failure('EK_MAIL_CONFIG');
   }
