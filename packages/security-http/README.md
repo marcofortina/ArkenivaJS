@@ -22,6 +22,11 @@ The [PostgreSQL cookie-session consumer](../../examples/postgres/http-security.m
 
 `SecurityHttpPluginSettings` requires `policy`, `csrfStore`, `csrfHmac`, `csrfKeyRef` and `authority`. The policy contains `contentSecurityPolicy`, `hstsMaxAgeSeconds`, `csrfEnabled` and `frameAncestors`. Providers are explicit application-owned dependencies; TypeScript objects, claimed tenant IDs and session identifiers do not prove authentication.
 
+Provider methods retain their captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy providers
+or callbacks, accessors and prototype traversal beyond 64 levels fail configuration
+validation; later method replacement does not alter captured ports.
+
 The captured policy is immutable. `getEffectivePolicy()` returns that snapshot; `installHeaders(policy)` atomically replaces validated header settings for subsequent responses. CSP uses explicit native directives, requires a nonempty `default-src`, and rejects wildcards, injection and unsafe evaluation. `frameAncestors` is a separate explicit policy, limited to `'none'`, `'self'` and exact HTTPS origins. No report-only fallback is installed. HSTS max-age is an integer 1–63,072,000 seconds and is never disabled automatically. `nosniff` and `Referrer-Policy: no-referrer` are always applied, including error responses. Frontend script/style policy must be chosen by the application.
 
 `allowedOrigins` contains up to 32 distinct canonical origins and is mandatory when CSRF is enabled. No origin is inferred from Host or forwarded headers, and wildcard credential origins are rejected. Production requires HTTPS origins; explicit insecure loopback origins and test-only providers are usable only in the core `test` environment.

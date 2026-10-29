@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError } from '@arkenivajs/core';
+import { types } from 'node:util';
 import type { ErrorCode } from '@arkenivajs/core';
 export const failure = (code: ErrorCode = 'EK_HTTP_SECURITY_POLICY', unknown = false) =>
   new KitError({
@@ -65,14 +66,20 @@ export function integer(input: unknown, maximum: number): number {
     throw failure();
   return input;
 }
-export function method<T>(input: unknown, key: string): T {
-  if (!input || typeof input !== 'object') throw failure();
+export function method<T extends (...args: never[]) => unknown>(input: unknown, key: string): T {
+  if (!input || typeof input !== 'object' || types.isProxy(input)) throw failure();
   let current: object | null = input;
   for (let depth = 0; current && depth < 64; depth++) {
+    if (types.isProxy(current)) throw failure();
     const value = Object.getOwnPropertyDescriptor(current, key);
     if (value) {
-      if (!('value' in value) || typeof value.value !== 'function') throw failure();
-      return value.value.bind(input) as T;
+      if (!('value' in value) || typeof value.value !== 'function' || types.isProxy(value.value))
+        throw failure();
+      const captured = value.value;
+      // Callable metadata cannot replace the configured function or its original receiver.
+      const invoke = (...args: Parameters<T>): ReturnType<T> =>
+        Reflect.apply(captured, input, args) as ReturnType<T>;
+      return invoke as T;
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
