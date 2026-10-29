@@ -31,6 +31,15 @@ jobs:
       - run: corepack enable && corepack install
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm verify
+      - name: Verify tenant dispatch, fixed upstreams, capabilities and private observations over real HTTP
+        run: pnpm --filter @arkenivajs/tenant-routing test:integration:http
+      - name: Verify unprivileged access to root-owned production registry fixtures
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s packages/tenant-routing/test/fixtures -p 'test_*.py'
+          python3 -B packages/tenant-routing/test/fixtures/file.py -- pnpm --filter @arkenivajs/tenant-routing test:integration:file
+        env:
+          ARKENIVA_TENANT_FILE_DISPOSABLE: '1'
       - name: Verify benchmark statistics and the synthetic identity fixture
         run: pnpm --filter @arkenivajs/benchmark-foundation test
       - name: Compile and execute examples against packed public artifacts
@@ -386,6 +395,8 @@ jobs:
       - name: Start an independently owned benchmark telemetry collector
         run: docker compose -p arkenivajs-benchmark-otel -f packages/telemetry/test/fixtures/compose.yaml up -d
       - run: pnpm coverage:postgres
+      - name: Verify immutable tenant SQL registry activation and existing-pool HTTP startup
+        run: pnpm --filter @arkenivajs/tenant-routing test:integration:postgres
       - name: Verify all four HTTP modes against real PostgreSQL and telemetry
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration
         env:

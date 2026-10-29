@@ -269,3 +269,20 @@ The [tenant quote example](../../examples/tenant-routing/README.md) exercises th
 command, actual signed identities and HTTPS, separate application processes,
 registry-only onboarding, implementation swaps, new operations and a controlled
 higher-generation rollback. It also runs against independently packed packages.
+
+## Integration gates
+
+`pnpm --filter @arkenivajs/tenant-routing test:integration:http` exercises real
+HTTP/HTTPS/HTTP2 routing, capability isolation, approved upstreams and observations.
+`test:integration:postgres` requires the existing explicitly disposable verified
+PostgreSQL fixture environment and tests immutable rows, atomic activation and
+normal pool startup. CI runs it against PostgreSQL 17/18 on all supported Nodes.
+
+Production file admission is tested as an unprivileged process on an explicitly
+disposable Linux VM/runner. `test/fixtures/file.py` prepares root-owned fixtures
+through passwordless sudo, launches `test:integration:file` without privileges,
+then removes only its nonce-marked deployment directory. Its four admission-guard
+tests run before allocation. The wrapper rejects execution without
+`ARKENIVA_TENANT_FILE_DISPOSABLE=1`; use it only on that disposable runner. It
+installs no packages and starts no daemon. Normal developer HTTP tests need no
+privileged operations or external service.
