@@ -12,6 +12,22 @@ declare const profile: FederationProfileV1;
 declare const registration: FederationOidcRegistration;
 const configured: FederationProfileV1 = { ...profile, oidcRegistration: registration };
 const saml: FederationSamlRegistration = { signingCertificateRef: 'approved-saml-certificate' };
+const sources: FederationSamlRegistration = {
+  ...saml,
+  registrySources: {
+    'https://service.example.test': {
+      metadataEndpoint: 'https://registry.example.test/sp',
+      statusEndpoint: 'https://registry.example.test/sp?output=json',
+    },
+  },
+};
+const invalidSource: FederationSamlRegistration = {
+  ...saml,
+  registrySources: {
+    // @ts-expect-error Both metadata and current-status locations must be explicit typed configuration.
+    'https://service.example.test': { metadataEndpoint: 'https://registry.example.test/sp' },
+  },
+};
 const samlProfile: FederationProfileV1 = { ...profile, protocol: 'saml2', samlRegistration: saml };
 const invalidCertificate: FederationSamlRegistration = {
   // @ts-expect-error Certificates are explicit external references, not inline configuration objects.
@@ -49,4 +65,6 @@ void [
   invalidNetwork,
   samlProfile,
   invalidCertificate,
+  sources,
+  invalidSource,
 ];
