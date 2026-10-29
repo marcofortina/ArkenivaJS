@@ -95,6 +95,12 @@ the authenticated wire exchange, mutation-triggered events, tenant isolation and
 iterator retirement through independently installed public package artifacts.
 Its explicitly local test provider does not establish distributed durability.
 
+The [PostgreSQL tenant example](../examples/graphql-postgres-tenants/README.md)
+uses existing SQL pools, row ownership checks and request-scoped native loaders.
+Its executable database fixture verifies two business queries for both 1 and
+100 customers, ordered per-customer pages and tenant isolation through public
+package archives. Decimal totals remain strings and cancellation reaches SQL.
+
 See the [package reference](../packages/graphql/README.md) for exact contracts
 and the isolated production integration command. Federation, remote SDL,
 automatic database exposure and GraphQL file uploads are outside the approved

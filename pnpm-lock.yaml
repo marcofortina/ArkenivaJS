@@ -412,6 +412,37 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
 
+  examples/graphql-postgres-tenants:
+    dependencies:
+      '@arkenivajs/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/database-postgres':
+        specifier: workspace:*
+        version: link:../../packages/database-postgres
+      '@arkenivajs/graphql':
+        specifier: workspace:*
+        version: link:../../packages/graphql
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+
   examples/grpc:
     dependencies:
       '@arkenivajs/core':

@@ -8,6 +8,20 @@
   "includeVersion": true,
   "hideGenerator": true,
   "treatWarningsAsErrors": true,
+  "highlightLanguages": [
+    "bash",
+    "console",
+    "css",
+    "html",
+    "javascript",
+    "json",
+    "jsonc",
+    "json5",
+    "yaml",
+    "tsx",
+    "typescript",
+    "sql"
+  ],
   "packageOptions": {
     "entryPoints": ["src/index.ts"],
     "tsconfig": "tsconfig.json",
