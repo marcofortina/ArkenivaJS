@@ -18,3 +18,4 @@
 - Preserve the timeout status during late upstream error formatting and report physically unfinished work with incomplete or unknown usage outcomes.
 - Bound IDE manifest and asset reads before allocation, reject links/nonregular files and validate aggregate bytes before loading another asset.
 - Preserve revocable server-owned execution bindings across native context copies; verify the pinned subscription engine with authenticated WSS clients while framework subscriptions remain disabled.
+- Share bounded operation-envelope checks across transports and preflight native subscription ASTs with runtime identity provenance, transport restrictions and variable-driven budgets.
