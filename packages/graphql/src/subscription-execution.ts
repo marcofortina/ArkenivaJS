@@ -60,6 +60,9 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
   hasFailure() {
     return this.stream?.hasFailure() ?? false;
   }
+  retirementFailed() {
+    return this.stream?.retirementFailed() ?? false;
+  }
 
   bind(context: object, scopes: OwnedContexts<Operation>) {
     if (this.closed) throw failure('EK_GQL_SUBSCRIPTION');

@@ -261,7 +261,7 @@ export class SubscriptionConnection {
       reservation.release?.();
       this.operations.delete(id);
       this.admission.retire(id);
-      if (reservation.execution?.hasFailure()) {
+      if (reservation.execution?.retirementFailed()) {
         this.failed = true;
         void this.close();
       }

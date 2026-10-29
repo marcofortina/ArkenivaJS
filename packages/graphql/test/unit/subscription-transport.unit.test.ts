@@ -163,6 +163,7 @@ async function runtime(
           headers?: Record<string, string>;
           suffix?: string;
           initialize?: boolean;
+          tenant?: string;
         } = {},
       ) {
         const socket = new WebSocket(
@@ -188,7 +189,7 @@ async function runtime(
           socket.send(
             JSON.stringify({
               type: 'connection_init',
-              payload: { authorization: await f.token() },
+              payload: { authorization: await f.token(options.tenant ?? 'tenant-a') },
             }),
           );
           assert.equal(JSON.parse(String((await ack)[0])).type, 'connection_ack');
@@ -424,6 +425,102 @@ test(
       assert.equal(r.active.size, 0);
       assert.equal(r.transport.stats().degraded, false);
     } finally {
+      await r.close();
+    }
+  },
+);
+
+test(
+  'A failed source read with confirmed retirement closes only its connection and preserves another tenant',
+  { timeout: 10000 },
+  async () => {
+    let returns = 0;
+    const r = await runtime({
+      source: async function* (_parent, _args, context) {
+        try {
+          yield context.auth!.tenantId;
+          if (context.auth!.tenantId === 'tenant-a')
+            throw new Error('Private tenant-local source read failure');
+          if (!context.signal.aborted)
+            await new Promise<void>((resolve) =>
+              context.signal.addEventListener('abort', () => resolve(), { once: true }),
+            );
+        } finally {
+          returns++;
+        }
+      },
+    });
+    try {
+      const a = await r.connect(),
+        closed = once(a, 'close'),
+        first = once(a, 'message');
+      start(a);
+      assert.equal(JSON.parse(String((await first)[0])).payload.data.notice, 'tenant-a');
+      await closed;
+      await until(() => r.transport.stats().connections === 0);
+      assert.equal(returns, 1);
+      assert.equal(r.transport.stats().degraded, false);
+      assert.equal(r.transport.stats().ready, true);
+      const b = await r.connect({ tenant: 'tenant-b' }),
+        next = once(b, 'message');
+      start(b);
+      assert.equal(JSON.parse(String((await next)[0])).payload.data.notice, 'tenant-b');
+      assert.equal(r.transport.stats().activeSubscriptions, 1);
+    } finally {
+      await r.close();
+    }
+  },
+);
+
+test(
+  'A real paused WSS consumer is terminated under its write bound without exhausting another tenant connection',
+  { timeout: 10000 },
+  async () => {
+    let retired = 0,
+      emitted = 0;
+    const payload = 'x'.repeat(524288);
+    const r = await runtime({
+      deadlineMs: 300,
+      source: async function* (_parent, _args, context) {
+        try {
+          if (context.auth!.tenantId === 'tenant-a') {
+            while (!context.signal.aborted) {
+              emitted++;
+              yield payload;
+            }
+          } else {
+            yield 'healthy-tenant-b';
+            if (!context.signal.aborted)
+              await new Promise<void>((resolve) =>
+                context.signal.addEventListener('abort', () => resolve(), { once: true }),
+              );
+          }
+        } finally {
+          retired++;
+        }
+      },
+    });
+    let paused: WebSocket | undefined;
+    try {
+      paused = await r.connect();
+      paused.pause();
+      start(paused);
+      await until(() => r.transport.stats().connections === 0);
+      assert.ok(emitted > 1);
+      assert.equal(retired, 1);
+      assert.equal(r.active.size, 0);
+      assert.equal(r.transport.stats().degraded, false);
+      paused.resume();
+      const healthy = await r.connect({ tenant: 'tenant-b' }),
+        received = once(healthy, 'message');
+      start(healthy);
+      assert.deepEqual(JSON.parse(String((await received)[0])), {
+        type: 'next',
+        id: 'one',
+        payload: { data: { notice: 'healthy-tenant-b' } },
+      });
+    } finally {
+      paused?.resume();
       await r.close();
     }
   },
