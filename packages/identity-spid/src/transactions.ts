@@ -73,7 +73,7 @@ function encode(input: SealedEnvelope) {
     tag: bytes(value.tag, 16, 16).toString('base64url'),
   });
 }
-function returnPath(input: unknown) {
+export function returnPath(input: unknown) {
   if (
     typeof input !== 'string' ||
     !input.startsWith('/') ||
