@@ -98,7 +98,9 @@ export function list(input: unknown, maximum = 64, allowEmpty = false): readonly
 export function method<T extends (...args: never[]) => unknown>(input: unknown, name: string): T {
   const value = property(input, name);
   if (typeof value !== 'function' || types.isProxy(value)) throw failure();
-  return Function.prototype.bind.call(value, input) as T;
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(value, input, args) as ReturnType<T>;
+  return invoke as T;
 }
 export function property(input: unknown, name: string): unknown {
   if (!input || typeof input !== 'object' || types.isProxy(input) || Array.isArray(input))

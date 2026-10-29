@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Capture federation provider functions without inspecting executable `name`,
+  `length` or `bind` properties; preserve the original receiver and method snapshot.
 - Capture explicit metadata/status sources for the SP and every configured SAML
   IdP, restricted to approved HTTPS destinations and without provider I/O or discovery.
 - Retrieve bounded SAML metadata through the existing exact-approved HTTPS transport,

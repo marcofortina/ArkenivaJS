@@ -11,6 +11,7 @@ import type { ItalianEidPluginSettings, FederationProfileV1 } from '../../dist/i
 import { SPID_CAPABILITY, spidPlugin } from '../../dist/index.js';
 import { capture } from '../../dist/settings.js';
 import { managed } from '../../dist/service.js';
+import { method } from '../../dist/validation.js';
 import { assuranceLevels, assuranceContext, acrValues } from '../../dist/assurance.js';
 import type { FederationAssurance, ItalianIdentitySystem } from '../../dist/index.js';
 import { registration } from '../fixtures/registration.js';
@@ -752,6 +753,62 @@ test('Captured provider prototype methods retain their receiver without reading 
   await assert.rejects(() => settings.secretProvider.get('signing-ref'));
   assert.equal(secrets.calls, 1);
   assert.equal(getters, 0);
+});
+
+test('Federation provider capture never inspects executable function metadata', async () => {
+  let hooks = 0;
+  const owner = {
+    calls: 0,
+    async get(reference: string) {
+      assert.equal(this, owner);
+      this.calls++;
+      return reference;
+    },
+  };
+  for (const name of ['bind', 'name', 'length'])
+    Object.defineProperty(owner.get, name, {
+      configurable: true,
+      get() {
+        hooks++;
+        throw new Error('Function metadata must remain unread');
+      },
+    });
+  const captured = method<typeof owner.get>(owner, 'get');
+  owner.get = async () => {
+    throw new Error('Late provider replacement must remain unused');
+  };
+  assert.equal(await captured('approved-reference'), 'approved-reference');
+  assert.equal(owner.calls, 1);
+  assert.equal(hooks, 0);
+});
+
+test('Public federation configuration captures callable providers without reading function metadata', async () => {
+  const f = fixture();
+  let hooks = 0;
+  class Secrets {
+    calls = 0;
+    async get(): Promise<never> {
+      this.calls++;
+      throw new Error('Unavailable captured test secret');
+    }
+  }
+  const provider = new Secrets();
+  for (const name of ['bind', 'name', 'length'])
+    Object.defineProperty(provider.get, name, {
+      configurable: true,
+      get() {
+        hooks++;
+        throw new Error('Function metadata must remain unread');
+      },
+    });
+  assert.equal(spidPlugin({ ...f.settings, secretProvider: provider }).id, 'spid');
+  const settings = capture({ ...f.settings, secretProvider: provider });
+  assert.equal(provider.calls, 0);
+  await assert.rejects(() => settings.secretProvider.get('signing-ref'), {
+    message: 'Unavailable captured test secret',
+  });
+  assert.equal(provider.calls, 1);
+  assert.equal(hooks, 0);
 });
 
 test('Actual application environment rejects captured test-only providers before any provider I/O', async () => {
