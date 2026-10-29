@@ -16,6 +16,7 @@ import { protectFields } from './fields.js';
 import { installLoaders } from './loaders.js';
 import { installMetadata, assertMetadata, ownMetadata, authorizeMetadata } from './metadata.js';
 import { Operation } from './operation.js';
+import { OwnedContexts } from './contexts.js';
 import { capture, failure, record } from './policy.js';
 import { compileSchema } from './schema.js';
 import { encodeResult } from './encoding.js';
@@ -117,7 +118,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         owner = context.require<AbortSignal>(APPLICATION_SIGNAL),
         ready = readiness.get(context.options);
       if (!ready) throw failure();
-      const scopes = new WeakMap<object, Operation>(),
+      const scopes = new OwnedContexts<Operation>(),
         active = new Set<Operation>();
       const counters = {
         operations: 0,

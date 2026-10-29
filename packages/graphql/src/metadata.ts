@@ -14,6 +14,7 @@ import type { CapturedSettings } from './policy.js';
 import type { Operation } from './operation.js';
 import { authorizedField } from './fields.js';
 import { failure } from './policy.js';
+import { OwnedContexts } from './contexts.js';
 
 interface MetadataRequest {
   readonly scope: Operation;
@@ -21,7 +22,7 @@ interface MetadataRequest {
   readonly authorizeIntrospection: () => void;
 }
 // Upstream metadata definitions are shared across schemas. Only owned request contexts dispatch policy.
-const requests = new WeakMap<object, MetadataRequest>();
+const requests = new OwnedContexts<MetadataRequest>();
 const bindings = new Map<GraphQLField<unknown, unknown>, GraphQLFieldResolver<unknown, unknown>>();
 
 export function installMetadata() {
@@ -44,7 +45,11 @@ export function installMetadata() {
       info,
     ) => {
       const owned = context && typeof context === 'object' ? requests.get(context) : undefined;
-      if (!owned) return original(parent, args, context, info);
+      if (!owned) {
+        if (context && typeof context === 'object' && requests.owns(context))
+          throw failure('EK_GQL_FORBIDDEN');
+        return original(parent, args, context, info);
+      }
       return authorizedField(owned.scope, owned.settings, parent, args, info, field.type, () => {
         if (field !== TypeNameMetaFieldDef) owned.authorizeIntrospection();
         return original(parent, args, context, info);
@@ -69,4 +74,9 @@ export function authorizeMetadata(context: object) {
   const request = requests.get(context);
   if (!request) throw failure('EK_GQL_FORBIDDEN');
   request.authorizeIntrospection();
+}
+
+/** Follow only a server-owned operation binding when the native subscription engine copies context. */
+export function bindMetadata(context: object, read: () => MetadataRequest | undefined) {
+  return requests.bind(context, read);
 }
