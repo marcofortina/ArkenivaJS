@@ -9,6 +9,7 @@ import { anchorKeys, verifyStatement } from '../../dist/statements.js';
 import { TrustMarkVerifier } from '../../dist/trust-marks.js';
 import { FederationResolver } from '../../dist/resolver.js';
 import { FederationRuntime } from '../../dist/runtime.js';
+import { FederationMembership } from '../../dist/membership.js';
 
 interface Input {
   origin: string;
@@ -18,6 +19,7 @@ interface Input {
   anchor: FederationTrustAnchor;
   leafConfiguration: string;
   deniedConfiguration: string;
+  membershipConfiguration: string;
 }
 process.once('message', (input: Input) => {
   void run(input).then(
@@ -153,6 +155,7 @@ async function run(input: Input) {
         approvedMetadataEndpoints: [
           federationRoot + '/.well-known/openid-federation',
           federationRoot + '/fetch',
+          federationRoot + '/status',
         ],
         maxBytes: 16384,
         maxChainDepth: 2,
@@ -178,6 +181,13 @@ async function run(input: Input) {
         () => runtime.run((call) => resolver.resolve(call, input.deniedConfiguration)),
         { code: 'EK_EID_FEDERATION' },
       );
+      const membership = new FederationMembership(profile, transport),
+        accepted = await runtime.run((call) =>
+          membership.verify(call, input.membershipConfiguration),
+        );
+      assert.equal(accepted.subject, federationLeaf);
+      assert.equal(membership.nodes(accepted).length, 2);
+      assert.ok(accepted.expiresAt <= Date.now() / 1000 + 60);
     } finally {
       await runtime.close();
       await transport.close();

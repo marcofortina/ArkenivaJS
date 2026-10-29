@@ -69,7 +69,7 @@ export class TrustMarkVerifier {
     maxAgeSeconds: number,
     options?: OperationOptions,
     track?: (task: Promise<unknown>) => void,
-  ): Promise<void> {
+  ): Promise<number> {
     const proof = this.owned(mark);
     const verified = await verifyFederationToken(
       token,
@@ -87,5 +87,10 @@ export class TrustMarkVerifier {
     this.owned(mark);
     if (verified.claims.trust_mark !== proof.token || verified.claims.status !== 'active')
       throw failure('EK_EID_FEDERATION');
+    return Math.min(
+      verified.expiresAt,
+      mark.expiresAt,
+      (verified.claims.iat as number) + maxAgeSeconds,
+    );
   }
 }
