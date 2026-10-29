@@ -21,3 +21,4 @@
 - Share bounded operation-envelope checks across transports and preflight native subscription ASTs with runtime identity provenance, transport restrictions and variable-driven budgets.
 - Filter standard WebSocket client frames before the native iterator receives them, with bounded text/control inputs, explicit authentication payload shape and safe closure on admission failure.
 - Reserve subscription operations and pending native frames before dispatch, require authenticated ACK ordering and retain capacity until physical retirement while ignoring benign completion races.
+- Retain physical source ownership through late acquisition, cancellation and pending reads; release native WSS streams exactly once and observe provider cleanup failures.
