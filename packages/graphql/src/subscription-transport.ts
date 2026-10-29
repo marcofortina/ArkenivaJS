@@ -21,6 +21,8 @@ import { assertMetadata } from './metadata.js';
 import { subscriptionError } from './subscription-output.js';
 import { observe, traceRequest } from './observation.js';
 import { traceSubscriptionScope } from './subscription-observation.js';
+import type { Observers } from './observation.js';
+import { SubscriptionUsage } from './subscription-usage.js';
 
 /** Shared native upgrade dispatch receives only privately admitted requests on this application's route. */
 export class SubscriptionTransport {
@@ -54,9 +56,11 @@ export class SubscriptionTransport {
     entered: (scope: Operation) => void,
     private readonly started: () => void = () => {},
     private readonly telemetry?: Telemetry,
+    meter?: Observers['meter'],
   ) {
     if (!settings.subscriptions || !settings.security.auth.required || server.server.listening)
       throw failure();
+    if (meter && typeof meter.withoutScope !== 'function') throw failure();
     const native = server.getDecorator<WebSocketServer>('websocketServer');
     const connection = (socket: WebSocket, request: IncomingMessage) => {
       const requestId = this.requests.get(request);
@@ -64,6 +68,7 @@ export class SubscriptionTransport {
       this.requests.delete(request);
       try {
         this.available();
+        let usage: SubscriptionUsage | undefined;
         const connection: SubscriptionConnection = new SubscriptionConnection(
           socket,
           schema,
@@ -82,8 +87,15 @@ export class SubscriptionTransport {
                   'graphql.result': result,
                 }),
               ),
-            scope: (scope) =>
-              traceSubscriptionScope(this.telemetry, this.parents.get(socket), scope),
+            authenticated: (principal) => {
+              usage = new SubscriptionUsage(meter, principal, requestId);
+            },
+            scope: (scope, phase) => {
+              const work = () => traceSubscriptionScope(this.telemetry, undefined, scope);
+              const enter = () => (usage ? usage.scope(scope, phase, work) : work());
+              const parent = this.parents.get(socket);
+              return parent ? parent.runInAsyncScope(enter) : enter();
+            },
           },
         );
         this.connections.add(connection);
@@ -96,6 +108,7 @@ export class SubscriptionTransport {
         void connection.completion.then(() => {
           if (connection.stats().failed) this.degraded = true;
           this.connections.delete(connection);
+          usage?.close();
           this.parents.get(socket)?.emitDestroy();
           this.parents.delete(socket);
           this.carriers.delete(socket);
