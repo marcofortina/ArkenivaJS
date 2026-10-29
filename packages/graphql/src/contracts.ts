@@ -126,6 +126,10 @@ export interface GraphqlSecuritySettings {
 
 /** The application-owned delivery port must verify tenant provenance and isolate namespaces. */
 export interface GraphqlSubscriptionPubSub {
+  /** Trusted deployment declaration; never derived from a subscription request or event payload. */
+  readonly distribution?: 'process' | 'shared';
+  /** Unclassified providers remain test-only; production requires an explicitly approved shared adapter. */
+  readonly securityLevel?: 'test-only' | 'production';
   subscribe(
     topic: string,
     tenant: VerifiedTenantContext,

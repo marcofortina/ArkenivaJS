@@ -89,20 +89,40 @@ function subscription(input: unknown): NonNullable<GraphqlPluginSettings['subscr
   if (maxConnections > 1000 || maxOperationsPerConnection > 50) throw failure();
   const provider = value.pubsub;
   if (!provider || typeof provider !== 'object' || types.isProxy(provider)) throw failure();
-  const method = (name: string) => {
+  const property = (name: string) => {
     let current: object | null = provider;
+    let depth = 0;
     while (current) {
+      if (++depth > 32) throw failure();
       if (types.isProxy(current)) throw failure();
       const descriptor = Object.getOwnPropertyDescriptor(current, name);
       if (descriptor) {
-        if (!('value' in descriptor) || typeof descriptor.value !== 'function') throw failure();
-        return descriptor.value.bind(provider);
+        if (!('value' in descriptor)) throw failure();
+        return descriptor.value as unknown;
       }
       current = Object.getPrototypeOf(current);
     }
-    throw failure();
+    return undefined;
   };
+  const method = (name: string) => {
+    const candidate = property(name);
+    if (typeof candidate !== 'function' || types.isProxy(candidate)) throw failure();
+    return Function.prototype.bind.call(candidate, provider);
+  };
+  const distribution = property('distribution'),
+    securityLevel = property('securityLevel'),
+    usage = property('usage');
+  if (
+    (distribution !== undefined && distribution !== 'process' && distribution !== 'shared') ||
+    (securityLevel !== undefined &&
+      securityLevel !== 'test-only' &&
+      securityLevel !== 'production') ||
+    (usage === 'test-only' && securityLevel === 'production')
+  )
+    throw failure();
   const pubsub = Object.freeze({
+    ...(distribution === undefined ? {} : { distribution: distribution as 'process' | 'shared' }),
+    securityLevel: (securityLevel ?? 'test-only') as 'test-only' | 'production',
     subscribe: method('subscribe'),
     publish: method('publish'),
     close: method('close'),

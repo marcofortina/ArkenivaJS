@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { createServer, request as httpRequest } from 'node:http';
-import { request as httpsRequest } from 'node:https';
+import type { RequestListener } from 'node:http';
+import { createServer as createSecureServer, request as httpsRequest } from 'node:https';
 import { Writable } from 'node:stream';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -73,6 +74,7 @@ export async function fixture(
     authorizeTenant?: (tenantId: string) => boolean;
     graphqlDependencies?: readonly string[];
     issuer?: string;
+    authority?: { readonly host: string; readonly tls: ServerTlsFiles };
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -83,19 +85,29 @@ export async function fixture(
       use: 'sig',
     };
   let issuer = '';
-  const authority = createServer((request, response) => {
+  const respond: RequestListener = (request, response) => {
     response.setHeader('content-type', 'application/json');
     response.end(
       JSON.stringify(
         request.url === '/keys' ? { keys: [jwk] } : { issuer, jwks_uri: issuer + '/keys' },
       ),
     );
-  });
-  await new Promise<void>((resolve) => authority.listen(0, '127.0.0.1', resolve));
+  };
+  const authority = options.authority
+    ? createSecureServer(
+        {
+          key: await readFile(options.authority.tls.privateKeyFile),
+          cert: await readFile(options.authority.tls.certificateFile),
+        },
+        respond,
+      )
+    : createServer(respond);
+  const authorityHost = options.authority?.host ?? '127.0.0.1';
+  await new Promise<void>((resolve) => authority.listen(0, authorityHost, resolve));
   const address = authority.address();
   if (!address || typeof address !== 'object')
     throw new Error('GraphQL authority address is unavailable');
-  issuer = 'http://127.0.0.1:' + address.port;
+  issuer = (options.authority ? 'https://' : 'http://') + authorityHost + ':' + address.port;
   let port = options.port ?? 0;
   if (options.port === undefined && options.environment && options.environment !== 'test') {
     const reserved = createServer();
@@ -156,7 +168,7 @@ export async function fixture(
         ...(authenticated
           ? [
               securityPlugin({
-                allowInsecureLoopback: true,
+                ...(options.environment === 'production' ? {} : { allowInsecureLoopback: true }),
                 ...(options.authorizeTenant
                   ? { authorizeTenant: (_identity, tenantId) => options.authorizeTenant!(tenantId) }
                   : {}),

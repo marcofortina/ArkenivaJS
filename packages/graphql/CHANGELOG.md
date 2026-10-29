@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Capture explicit shared/production PubSub deployment classification without getters or proxy execution; permit authenticated HTTPS production subscriptions only with a declared shared production provider, and explicit development process providers.
+- Verify production subscription startup rejection, real HTTPS identity discovery, cross-process mTLS NATS fan-out and recovery in a disposable-network CI fixture.
+
 - Observe each subscription request once through physical retirement, including preflight denials, derived complexity, detailed guarded-field timings and process-local rejection counts.
 
 - Export verified tenant subscription connection/source/event usage with isolated live scopes, explicit wire-byte coverage gaps and no repeated HTTP accounting.
