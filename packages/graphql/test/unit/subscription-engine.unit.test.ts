@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import Fastify from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import mercurius from 'mercurius';
 import type { MercuriusContext } from 'mercurius';
 import { createClient } from 'graphql-ws';
@@ -13,6 +14,8 @@ import WebSocket from 'ws';
 import { generateKeyPair, jwtVerify, SignJWT } from 'jose';
 import { tlsFiles } from '../fixture.js';
 import { OwnedContexts } from '../../dist/contexts.js';
+import { installSubscriptionIngress } from '../../dist/subscription-ingress.js';
+import { capture } from '../../dist/policy.js';
 
 /** Engine compatibility probes do not activate the framework's subscription transport. */
 function deferred<T>() {
@@ -31,7 +34,7 @@ interface Session {
   readonly tenant: string;
 }
 
-async function nativeFixture() {
+async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
   const tls = await tlsFiles();
   const pair = await generateKeyPair('ES256');
   const server = Fastify({
@@ -40,6 +43,28 @@ async function nativeFixture() {
       key: await readFile(tls.tls.privateKeyFile),
       cert: await readFile(tls.tls.certificateFile),
     },
+  });
+  const limits = capture({
+    schema: 'type Query { ping: Boolean }',
+    resolvers: {},
+    security: {
+      authorizeField: () => false,
+      limits:
+        options.maxDocumentBytes === undefined
+          ? {}
+          : { maxDocumentBytes: options.maxDocumentBytes },
+    },
+  }).security.limits;
+  server.addHook('onRoute', (options) => {
+    const route = options as typeof options & {
+      wsHandler?: (this: FastifyInstance, socket: WebSocket, request: FastifyRequest) => unknown;
+    };
+    const native = route.wsHandler;
+    if (!native) return;
+    route.wsHandler = function (socket, request) {
+      installSubscriptionIngress(socket, limits, () => undefined);
+      return native.call(this, socket, request);
+    };
   });
   const sessions = new OwnedContexts<Session>();
   const retiring = new WeakMap<Session, () => void>();
@@ -163,7 +188,7 @@ async function nativeFixture() {
       revoked,
       async client(
         tenant: string,
-        options: { invalid?: boolean; expired?: boolean; origin?: string } = {},
+        options: { invalid?: boolean; expired?: boolean; origin?: string; eager?: boolean } = {},
       ) {
         class TrustedSocket extends WebSocket {
           constructor(url: string, protocols?: string | string[]) {
@@ -183,7 +208,7 @@ async function nativeFixture() {
           .setIssuedAt()
           .setExpirationTime(options.expired ? 1 : '2m')
           .sign(signer.privateKey);
-        const connected = deferred<void>();
+        const connected = deferred<WebSocket>();
         const pong = deferred<void>();
         const closed = deferred<void>();
         void connected.promise.catch(() => undefined);
@@ -192,11 +217,13 @@ async function nativeFixture() {
           webSocketImpl: TrustedSocket,
           connectionParams: { authorization: token },
           retryAttempts: 0,
+          lazy: !options.eager,
+          onNonLazyError: connected.reject,
           keepAlive: 100,
           on: {
             connected(socket) {
               assert.equal((socket as WebSocket).protocol, 'graphql-transport-ws');
-              connected.resolve();
+              connected.resolve(socket as WebSocket);
             },
             pong: () => pong.resolve(),
             closed: () => closed.resolve(),
@@ -383,6 +410,83 @@ test(
       assert.deepEqual(received, [{ data: { notice: { id: 'before' } } }]);
     } finally {
       stop?.();
+      await fixture.close();
+    }
+  },
+);
+
+test(
+  'Real WSS ingress refuses hostile frames before native parsing, source allocation or connection payload merging',
+  { timeout: 10000 },
+  async () => {
+    const fixture = await nativeFixture({ maxDocumentBytes: 64 });
+    try {
+      const cases = [
+        {
+          frame: {
+            id: 'oversized-document',
+            type: 'subscribe',
+            payload: { query: 'subscription {' + ' '.repeat(65) + '[' },
+          },
+          code: 'EK_GQL_INPUT_LIMIT',
+        },
+        {
+          frame: {
+            id: 'oversized-variables',
+            type: 'subscribe',
+            payload: {
+              query: 'subscription { notice { id } }',
+              variables: { value: 'x'.repeat(65536) },
+            },
+          },
+          code: 'EK_GQL_INPUT_LIMIT',
+        },
+        {
+          frame: {
+            id: 'native-ast',
+            type: 'subscribe',
+            payload: { query: { kind: 'Document', definitions: [] } },
+          },
+          code: 'EK_GQL_SUBSCRIPTION',
+        },
+        {
+          frame: {
+            id: 'credentials-extension',
+            type: 'subscribe',
+            payload: { query: 'subscription { notice { id } }' },
+            extensions: [{ type: 'connectionInit', payload: { tenant: 'tenant-b' } }],
+          },
+          code: 'EK_GQL_SUBSCRIPTION',
+        },
+        {
+          frame: { type: 'connection_init', payload: { headers: { authorization: 'changed' } } },
+          code: 'EK_GQL_AUTH',
+        },
+        { frame: { type: 'connection_ack' }, code: 'EK_GQL_SUBSCRIPTION' },
+        {
+          frame: {
+            id: 'x'.repeat(257),
+            type: 'subscribe',
+            payload: { query: 'subscription { notice { id } }' },
+          },
+          code: 'EK_GQL_INPUT_LIMIT',
+        },
+        { frame: { type: 'ping' }, binary: true, code: 'EK_GQL_SUBSCRIPTION' },
+      ];
+      for (const candidate of cases) {
+        const connection = await fixture.client('tenant-a', { eager: true });
+        const socket = await connection.connected.promise;
+        const closed = new Promise<{ code: number; reason: string }>((resolve) =>
+          socket.once('close', (code, reason) => resolve({ code, reason: reason.toString() })),
+        );
+        socket.send(JSON.stringify(candidate.frame), { binary: candidate.binary ?? false });
+        const result = await closed;
+        assert.equal(result.code, candidate.code === 'EK_GQL_AUTH' ? 4401 : 4400);
+        assert.equal(result.reason, candidate.code);
+        assert.equal(fixture.parsingContexts.length, 0);
+        assert.equal(fixture.resolverContexts.length, 0);
+      }
+    } finally {
       await fixture.close();
     }
   },
