@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
@@ -98,13 +99,18 @@ function references(input: unknown): ReadonlySet<string> {
 function getMethod(
   provider: unknown,
 ): (reference: string, options?: OperationOptions) => Promise<SecretValue> {
-  if (!provider || typeof provider !== 'object') throw invalid();
+  if (!provider || typeof provider !== 'object' || types.isProxy(provider)) throw invalid();
   let current: object | null = provider;
-  while (current) {
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
     const field = Object.getOwnPropertyDescriptor(current, 'get');
     if (field) {
-      if (!('value' in field) || typeof field.value !== 'function') throw invalid();
-      return field.value.bind(provider) as (
+      if (!('value' in field) || typeof field.value !== 'function' || types.isProxy(field.value))
+        throw invalid();
+      const captured = field.value;
+      // Callable metadata cannot replace the external key provider or its original receiver.
+      return ((...args: [reference: string, options?: OperationOptions]) =>
+        Reflect.apply(captured, provider, args)) as (
         reference: string,
         options?: OperationOptions,
       ) => Promise<SecretValue>;
@@ -114,9 +120,10 @@ function getMethod(
   throw invalid();
 }
 function providerUsage(provider: unknown): 'production' | 'test-only' | undefined {
-  if (!provider || typeof provider !== 'object') throw invalid();
+  if (!provider || typeof provider !== 'object' || types.isProxy(provider)) throw invalid();
   let current: object | null = provider;
-  while (current) {
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
     const field = Object.getOwnPropertyDescriptor(current, 'usage');
     if (field) {
       if (!('value' in field) || !['production', 'test-only'].includes(field.value as string))
@@ -125,6 +132,7 @@ function providerUsage(provider: unknown): 'production' | 'test-only' | undefine
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
+  if (current) throw invalid();
   return undefined;
 }
 export function captureSettings(input: CryptoPluginSettings) {
