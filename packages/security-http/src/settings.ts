@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { BlockList, isIP } from 'node:net';
+import { types } from 'node:util';
 import type {
   SecurityHttpPluginSettings,
   SecurityTransactionalStore,
@@ -15,8 +16,10 @@ import { headerPolicy } from './headers.js';
 
 function classification(input: unknown, key: string): unknown {
   if (!input || typeof input !== 'object') return undefined;
+  if (types.isProxy(input)) throw failure();
   let current: object | null = input;
   for (let depth = 0; current && depth < 64; depth++) {
+    if (types.isProxy(current)) throw failure();
     const value = Object.getOwnPropertyDescriptor(current, key);
     if (value) {
       if (!('value' in value)) throw failure();
@@ -46,6 +49,7 @@ export function capture(input: SecurityHttpPluginSettings) {
     if (!['production', 'test-only'].includes(store.securityLevel as string)) throw failure();
     if (
       !value.csrfHmac ||
+      types.isProxy(value.csrfHmac) ||
       Object.getOwnPropertyDescriptor(value.csrfHmac, 'algorithm')?.value !== 'HMAC-SHA256'
     )
       throw failure();
