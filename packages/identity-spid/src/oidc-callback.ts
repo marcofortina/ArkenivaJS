@@ -25,12 +25,12 @@ import type { FederationCall } from './runtime.js';
 import type { Settings } from './settings.js';
 import type { FederationHttp } from './metadata-http.js';
 import type { FederationProtocolHttp } from './protocol-http.js';
-import { FederationMembership } from './membership.js';
+import { FederationMembership, delegatedKeys } from './membership.js';
 import { FederationTransactions } from './transactions.js';
 import { configurationEndpoint } from './resolver.js';
 import { loadFederationSigningKey } from './signing.js';
 import { loadFederationDecryptionKey } from './decryption.js';
-import { publicKeys } from './statements.js';
+import { publicKeys, verifyFederationToken } from './statements.js';
 import { failure, fields, list, method, text, url } from './validation.js';
 
 export interface VerifiedOidcResult {
@@ -134,11 +134,21 @@ export class FederationOidcCallback {
         throw failure('EK_EID_FEDERATION');
       const tokenEndpoint = url(metadata.token_endpoint),
         userInfoEndpoint = url(metadata.userinfo_endpoint),
-        jwksEndpoint = metadata.jwks_uri === undefined ? undefined : url(metadata.jwks_uri),
+        keySource =
+          metadata.jwks !== undefined
+            ? 'inline'
+            : metadata.signed_jwks_uri !== undefined
+              ? 'signed'
+              : 'remote',
+        jwksEndpoint =
+          keySource === 'inline'
+            ? undefined
+            : url(keySource === 'signed' ? metadata.signed_jwks_uri : metadata.jwks_uri),
         nativeFetch = this.transport.fetch(call, {
           tokenEndpoint,
           userInfoEndpoint,
           ...(jwksEndpoint ? { jwksEndpoint } : {}),
+          ...(keySource === 'signed' ? { jwksFormat: 'signed' } : {}),
         }),
         signer = await loadFederationSigningKey(
           call,
@@ -169,7 +179,7 @@ export class FederationOidcCallback {
           issuer,
           token_endpoint: tokenEndpoint,
           userinfo_endpoint: userInfoEndpoint,
-          ...(jwksEndpoint ? { jwks_uri: jwksEndpoint } : {}),
+          ...(jwksEndpoint && keySource === 'remote' ? { jwks_uri: jwksEndpoint } : {}),
           authorization_response_iss_parameter_supported: true,
         },
         this.profile.clientId!,
@@ -225,12 +235,42 @@ export class FederationOidcCallback {
           ),
         };
       };
-      if (metadata.jwks !== undefined)
+      let jwksExpiresAt = proof.expiresAt;
+      if (keySource === 'inline')
         setJwksCache(config, {
           jwks: await verificationJwks(metadata.jwks),
           uat: Math.floor(Date.now() / 1000),
         });
-      else if (!jwksEndpoint) throw failure('EK_EID_FEDERATION');
+      else if (keySource === 'signed') {
+        const response = await nativeFetch(jwksEndpoint!, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: { accept: 'application/jwk-set+jwt' },
+        });
+        if (response.status !== 200) throw failure('EK_EID_FEDERATION');
+        const token = await call.step(() => response.text()),
+          node = this.membership.nodes(proof).at(-1)!,
+          verified = await call.step((options) =>
+            verifyFederationToken(
+              token,
+              {
+                type: 'jwk-set+jwt',
+                issuer,
+                subject: issuer,
+                keys: delegatedKeys(node),
+                maxBytes: this.profile.metadata.maxBytes,
+                requiredClaims: ['sub', 'keys'],
+                track: call.track,
+              },
+              options,
+            ),
+          );
+        jwksExpiresAt = Math.min(jwksExpiresAt, verified.expiresAt);
+        setJwksCache(config, {
+          jwks: await verificationJwks({ keys: verified.claims.keys }),
+          uat: Math.floor(Date.now() / 1000),
+        });
+      }
       enableNonRepudiationChecks(config);
       enableDecryptingResponses(
         config,
@@ -247,6 +287,7 @@ export class FederationOidcCallback {
         signer.check();
         decryptor.check();
         this.membership.nodes(proof);
+        if (Date.now() / 1000 >= jwksExpiresAt) throw failure('EK_EID_FEDERATION');
         let options = init;
         if (address === tokenEndpoint && init.body instanceof URLSearchParams) {
           const body = new URLSearchParams(init.body);
@@ -255,7 +296,7 @@ export class FederationOidcCallback {
         }
         const response = await nativeFetch(address, options),
           bytes = await call.step(() => response.arrayBuffer());
-        if (address === jwksEndpoint && response.status === 200)
+        if (address === jwksEndpoint && keySource === 'remote' && response.status === 200)
           return Response.json(
             await verificationJwks(
               JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)),
@@ -385,6 +426,7 @@ export class FederationOidcCallback {
             access.payload.exp as number,
             userInfo.exp as number,
             proof.expiresAt,
+            jwksExpiresAt,
             signer.expiresAt / 1000,
             decryptor.expiresAt / 1000,
             Date.parse(transaction.expiresAt) / 1000,

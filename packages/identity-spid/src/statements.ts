@@ -36,7 +36,8 @@ export interface StatementVerification {
 }
 interface TokenVerification extends Omit<StatementVerification, 'subject'> {
   readonly subject?: string;
-  readonly type: 'entity-statement+jwt' | 'trust-mark+jwt' | 'trust-mark-status-response+jwt';
+  readonly type:
+    'entity-statement+jwt' | 'trust-mark+jwt' | 'trust-mark-status-response+jwt' | 'jwk-set+jwt';
   readonly requiredClaims: readonly string[];
   readonly maxAgeSeconds?: number;
 }
@@ -216,7 +217,13 @@ export async function verifyFederationToken(
         typ: expected.type,
         issuer: expected.issuer,
         ...(expected.subject === undefined ? {} : { subject: expected.subject }),
-        requiredClaims: [...new Set(['iss', 'iat', ...expected.requiredClaims])],
+        requiredClaims: [
+          ...new Set([
+            'iss',
+            ...(expected.type === 'jwk-set+jwt' ? [] : ['iat']),
+            ...expected.requiredClaims,
+          ]),
+        ],
         ...(expected.maxAgeSeconds === undefined
           ? {}
           : { maxTokenAge: integer(expected.maxAgeSeconds) }),
@@ -233,13 +240,14 @@ export async function verifyFederationToken(
     if (Object.hasOwn(claims, 'crit')) throw failure('EK_EID_FEDERATION');
     active();
     if (
-      !Number.isSafeInteger(issuedAt) ||
-      (issuedAt as number) < 0 ||
-      (issuedAt as number) > now ||
+      ((expected.type !== 'jwk-set+jwt' || issuedAt !== undefined) &&
+        (!Number.isSafeInteger(issuedAt) ||
+          (issuedAt as number) < 0 ||
+          (issuedAt as number) > now)) ||
       (expiresAt !== undefined &&
         (!Number.isSafeInteger(expiresAt) ||
           (expiresAt as number) <= now ||
-          (expiresAt as number) <= (issuedAt as number)))
+          (issuedAt !== undefined && (expiresAt as number) <= (issuedAt as number))))
     )
       throw failure('EK_EID_FEDERATION');
     const effectiveExpiry = Math.min(
