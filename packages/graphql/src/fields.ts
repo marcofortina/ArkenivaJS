@@ -15,6 +15,7 @@ import type { CapturedSettings } from './policy.js';
 import type { GraphqlFieldInfo } from './contracts.js';
 import { failure } from './policy.js';
 import type { Operation } from './operation.js';
+import type { SubscriptionExecution } from './subscription-execution.js';
 
 export function fieldInfo(info: GraphQLResolveInfo): GraphqlFieldInfo {
   return Object.freeze({
@@ -54,7 +55,7 @@ export async function authorizedField(
   parent: unknown,
   args: Record<string, unknown>,
   info: GraphQLResolveInfo,
-  output: GraphQLOutputType,
+  output: GraphQLOutputType | undefined,
   execute: () => unknown | Promise<unknown>,
 ) {
   const began = scope?.observation?.startField();
@@ -84,9 +85,12 @@ export async function authorizedField(
     if (!authorized) throw failure('EK_GQL_FORBIDDEN');
     const value = await scope.run(execute);
     scope.check();
-    const result = await scope.run(() =>
-      collection(value, output, scope.limits.maxCollectionItems, () => scope.check()),
-    );
+    const result =
+      output === undefined
+        ? value
+        : await scope.run(() =>
+            collection(value, output, scope.limits.maxCollectionItems, () => scope.check()),
+          );
     scope.resolvedFields++;
     return result;
   } catch (error) {
@@ -109,12 +113,23 @@ export function protectFields(
   schema: GraphQLSchema,
   settings: CapturedSettings,
   scopes: Pick<WeakMap<object, Operation>, 'get'>,
+  subscriptions?: Pick<WeakMap<object, SubscriptionExecution>, 'get'>,
 ) {
   for (const type of Object.values(schema.getTypeMap())) {
     if (!isObjectType(type) || type.name.startsWith('__')) continue;
     for (const [name, field] of Object.entries(type.getFields())) {
       const configured = settings.resolvers[type.name]?.[name];
-      const resolve = typeof configured === 'function' ? configured : undefined;
+      const resolve = typeof configured === 'function' ? configured : configured?.resolve;
+      if (type === schema.getSubscriptionType()) {
+        field.subscribe = (parent, args: Record<string, unknown>, context: object, info) => {
+          const execution = subscriptions?.get(context);
+          if (!execution || !configured || typeof configured === 'function') {
+            const safe = failure('EK_GQL_FORBIDDEN');
+            throw new GraphQLError(safe.message, { extensions: { code: safe.code } });
+          }
+          return execution.openSource(parent, args, info, configured.subscribe);
+        };
+      }
       const native = field.resolve ?? defaultFieldResolver;
       field.resolve = (parent, args: Record<string, unknown>, context: object, info) => {
         const scope = scopes.get(context);
