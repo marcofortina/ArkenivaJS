@@ -1684,6 +1684,9 @@ importers:
       '@arkenivajs/security-crypto':
         specifier: workspace:*
         version: link:../security-crypto
+      '@xmldom/xmldom':
+        specifier: 0.8.15
+        version: 0.8.15
       jose:
         specifier: 6.2.13
         version: 6.2.13
@@ -1693,6 +1696,9 @@ importers:
       validator:
         specifier: 13.15.35
         version: 13.15.35
+      xml-crypto:
+        specifier: 6.4.0
+        version: 6.4.0
     devDependencies:
       '@arkenivajs/logging':
         specifier: workspace:*
