@@ -10,6 +10,7 @@ import { TrustMarkVerifier } from '../../dist/trust-marks.js';
 import { FederationResolver } from '../../dist/resolver.js';
 import { FederationRuntime } from '../../dist/runtime.js';
 import { FederationMembership } from '../../dist/membership.js';
+import { verifySamlMetadataSignature } from '../../dist/saml-metadata-signature.js';
 
 interface Input {
   origin: string;
@@ -20,6 +21,7 @@ interface Input {
   leafConfiguration: string;
   deniedConfiguration: string;
   membershipConfiguration: string;
+  samlMetadata: string;
 }
 process.once('message', (input: Input) => {
   void run(input).then(
@@ -49,6 +51,17 @@ async function run(input: Input) {
     '/oversized',
     '/slow',
     '/cancel',
+    '/saml/metadata',
+    '/saml/application-xml',
+    '/saml/text-xml',
+    '/saml/withdrawn',
+    '/saml/empty',
+    '/saml/utf8',
+    '/saml/oversized',
+    '/saml/tampered',
+    '/saml/slow',
+    '/saml/cancel',
+    '/saml/cache',
   ];
   const metadata = {
     approvedMetadataEndpoints: paths.map((path) => input.origin + path),
@@ -57,6 +70,80 @@ async function run(input: Input) {
   const policy = { maxConcurrent: 2, timeoutMs: 1000, maxInputBytes: 4096, maxOutputBytes: 4096 };
   const source = new FederationHttp(metadata, policy, 'test');
   try {
+    const samlProfile: FederationProfileV1 = {
+      schemaVersion: '1.0.0',
+      profileId: 'native-saml-transport',
+      system: 'spid',
+      protocol: 'saml2',
+      entityId: input.origin + '/application',
+      redirectUri: input.origin + '/application/acs',
+      signingKeyRef: 'signing-ref',
+      expectedIssuers: [input.subject],
+      allowedAssurance: ['spid-l2'],
+      subjectClaim: 'NameID',
+      tenantMappingId: 'approved-accounts',
+      identityMappingVersion: '1',
+      sessionTtlSeconds: 300,
+      metadata: {
+        ...metadata,
+        trustAnchors: [input.anchor],
+        refreshIntervalSeconds: 60,
+        maxChainDepth: 2,
+        revocation: 'mandatory',
+        stalePolicy: 'reject',
+      },
+    };
+    for (const path of ['/saml/metadata', '/saml/application-xml', '/saml/text-xml']) {
+      const xml = await source.samlMetadata(input.origin + path);
+      assert.equal(xml, input.samlMetadata);
+      const evidence = verifySamlMetadataSignature(xml, samlProfile, 'idp');
+      assert.equal(evidence.issuer, input.subject);
+      assert.equal('trusted' in evidence, false);
+    }
+    for (const path of [
+      '/saml/withdrawn',
+      '/saml/empty',
+      '/saml/utf8',
+      '/saml/oversized',
+      '/redirect',
+      '/wrong-type',
+      '/missing-type',
+      '/statement',
+    ])
+      await assert.rejects(() => source.samlMetadata(input.origin + path), {
+        code: 'EK_EID_FEDERATION',
+      });
+    const tampered = await source.samlMetadata(input.origin + '/saml/tampered');
+    assert.throws(() => verifySamlMetadataSignature(tampered, samlProfile, 'idp'), {
+      code: 'EK_EID_FEDERATION',
+    });
+    assert.equal(await source.samlMetadata(input.origin + '/saml/cache'), input.samlMetadata);
+    await assert.rejects(() => source.samlMetadata(input.origin + '/saml/cache'), {
+      code: 'EK_EID_FEDERATION',
+    });
+    for (const path of ['/not-approved', '/saml/metadata?unapproved=yes'])
+      await assert.rejects(() => source.samlMetadata(input.origin + path), {
+        code: 'EK_EID_FEDERATION',
+      });
+    await assert.rejects(
+      () => source.samlMetadata(input.origin + '/saml/slow', { timeoutMs: 40 }),
+      { code: 'EK_TIMEOUT' },
+    );
+    await assert.rejects(
+      () => source.samlMetadata(input.origin + '/saml/cancel', { signal: AbortSignal.abort() }),
+      { code: 'EK_ABORTED' },
+    );
+    const shared = new FederationHttp(metadata, { ...policy, maxConcurrent: 1 }, 'test');
+    try {
+      const active = shared.samlMetadata(input.origin + '/saml/slow');
+      await assert.rejects(() => shared.statement(input.origin + '/statement'), {
+        code: 'EK_BACKEND_UNAVAILABLE',
+      });
+      assert.equal(await active, input.samlMetadata);
+      assert.equal(shared.stats().active, 0);
+    } finally {
+      await shared.close();
+    }
     const keys = anchorKeys([input.anchor], input.issuer);
     const encoded = await source.statement(input.origin + '/statement');
     assert.equal(
@@ -230,6 +317,9 @@ async function run(input: Input) {
       await transport.close();
     }
     await source.close();
+    await assert.rejects(() => source.samlMetadata(input.origin + '/saml/metadata'), {
+      code: 'EK_RESOURCE_CLOSED',
+    });
     await assert.rejects(() => source.statement(input.origin + '/statement'), {
       code: 'EK_RESOURCE_CLOSED',
     });
