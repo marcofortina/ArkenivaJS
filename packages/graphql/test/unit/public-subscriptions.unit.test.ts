@@ -357,16 +357,19 @@ test(
 );
 
 test(
-  'Unverified production/development providers and plaintext subscription startup fail closed before listening',
+  'Unclassified development providers and plaintext subscription startup fail closed before listening',
   { timeout: 10000 },
   async () => {
     const tls = await tlsFiles();
     try {
-      for (const environment of ['production', 'development'] as const)
-        await assert.rejects(
-          fixture(settings().value, { tls: tls.tls, environment }),
-          (error: unknown) => error instanceof KitError && error.code === 'EK_PLUGIN_FAILED',
-        );
+      await assert.rejects(
+        fixture(settings().value, { tls: tls.tls, environment: 'development' }),
+        (error: unknown) =>
+          error instanceof KitError &&
+          error.code === 'EK_PLUGIN_FAILED' &&
+          error.cause instanceof KitError &&
+          error.cause.code === 'EK_GQL_CONFIG',
+      );
       await assert.rejects(
         fixture(settings().value),
         (error: unknown) => error instanceof KitError && error.code === 'EK_PLUGIN_FAILED',

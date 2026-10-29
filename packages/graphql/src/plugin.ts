@@ -103,13 +103,17 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
       if (settings.security.developerIDE && context.options.service.environment === 'production')
         throw failure();
       const auth = context.require<AuthService | undefined>(AUTHORITY);
-      // Production activation requires an independently verified shared-provider policy.
+      const environment = context.options.service.environment;
+      // Classification is captured trusted deployment policy; wire data cannot select a backend.
       if (
         settings.subscriptions &&
-        (context.options.service.environment !== 'test' ||
-          context.options.http.protocol !== 'https' ||
+        (context.options.http.protocol !== 'https' ||
           !auth ||
-          !settings.security.auth.required)
+          !settings.security.auth.required ||
+          (environment !== 'test' && settings.subscriptions.pubsub.distribution === undefined) ||
+          (environment === 'production' &&
+            (settings.subscriptions.pubsub.distribution !== 'shared' ||
+              settings.subscriptions.pubsub.securityLevel !== 'production')))
       )
         throw failure();
       const observers = context.require<Observers>(OBSERVERS);

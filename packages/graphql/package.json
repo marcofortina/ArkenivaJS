@@ -26,6 +26,7 @@
     "test:unit": "node ../../scripts/test.mjs unit",
     "test:browser": "node ../../scripts/test.mjs browser",
     "test:integration:nats": "node --test dist-test/integration/nats*.integration.test.js",
+    "test:integration:production": "python3 -B test/fixtures/run-production.py",
     "lint": "eslint src test browser scripts"
   },
   "dependencies": {

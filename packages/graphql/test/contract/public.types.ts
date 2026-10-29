@@ -6,6 +6,7 @@ import type {
   GraphqlAuthenticationPolicy,
   GraphqlFieldInfo,
   GraphqlService,
+  GraphqlSubscriptionPubSub,
 } from '../../dist/index.js';
 import { GRAPHQL_CAPABILITY } from '../../dist/index.js';
 
@@ -47,3 +48,14 @@ void batched;
 void unguarded;
 void capability;
 void schema;
+
+declare const pubsub: GraphqlSubscriptionPubSub;
+const distribution: 'process' | 'shared' | undefined = pubsub.distribution;
+const securityLevel: 'test-only' | 'production' | undefined = pubsub.securityLevel;
+// @ts-expect-error Deployment classification is immutable through the public contract.
+pubsub.distribution = 'process';
+// @ts-expect-error Only the closed production classification is supported.
+const unsupported: GraphqlSubscriptionPubSub = { ...pubsub, securityLevel: 'verified' };
+void distribution;
+void securityLevel;
+void unsupported;

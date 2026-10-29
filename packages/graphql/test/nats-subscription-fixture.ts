@@ -11,6 +11,7 @@ import type { AuthService, MessageBus } from '@arkenivajs/core';
 import { messagingPlugin } from '@arkenivajs/messaging';
 import { fixture, tlsFiles } from './fixture.js';
 import { NatsPubSubFixture } from './nats-pubsub.js';
+import { productionAuthority } from './production-fixture.js';
 
 /** Protocol controls are not application deliveries; every other native frame remains visible. */
 export function onSubscriptionFrame(socket: WebSocket, receive: (frame: RawData) => void) {
@@ -59,6 +60,7 @@ export async function natsSubscriptionFixture(
 ) {
   assert.equal(process.env.ARKENIVA_NATS_DISPOSABLE, '1');
   assert.ok(process.env.ARKENIVA_NATS_URL);
+  const production = process.env.ARKENIVA_GRAPHQL_PRODUCTION_FIXTURE === '1';
   const tls = await tlsFiles(),
     adapter = new NatsPubSubFixture(namespace);
   const failures: string[] = [],
@@ -90,7 +92,9 @@ export async function natsSubscriptionFixture(
         },
         subscriptions: {
           enabled: true,
-          pubsub: adapter.port,
+          pubsub: production
+            ? { ...adapter.port, distribution: 'shared', securityLevel: 'production' }
+            : adapter.port,
           maxConnections: 2,
           maxOperationsPerConnection: 2,
           maxQueuedEventsPerConnection: 4,
@@ -100,6 +104,7 @@ export async function natsSubscriptionFixture(
       },
       {
         tls: tls.tls,
+        ...(production ? { environment: 'production', authority: productionAuthority() } : {}),
         ...(issuer ? { issuer } : {}),
         plugins: [
           messagingPlugin({

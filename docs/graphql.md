@@ -73,8 +73,25 @@ and an unsendable result (`EK_GQL_RESPONSE_LIMIT`). Log normalized metadata,
 never raw documents, variable values, credentials or backend exception causes.
 Administrative capability lookup does not register routes after startup.
 
-See the [package reference](../packages/graphql/README.md) for exact contracts.
-Subscriptions remain rejected until their independent protocol, shared-broker,
-revalidation and backpressure gates pass. Federation, remote SDL, automatic
-database exposure and GraphQL file uploads are outside the approved public
-scope. Functional example success does not complete benchmark or release gates.
+Subscriptions use authenticated `graphql-transport-ws` on the same HTTPS
+listener. Their provider must independently verify tenant provenance and isolate
+event namespaces. Production requires explicit `distribution: 'shared'` and
+`securityLevel: 'production'` declarations on that trusted application-owned
+provider. Undeclared providers remain test-only; development requires an explicit
+distribution. These deployment declarations never replace authentication or
+verification of the real shared broker. Never add production labels to memory
+fixtures or derive them from client input.
+
+Configure finite connection, operation and event queue caps, explicit browser
+origins and periodic identity revalidation. Failed revalidation closes the
+connection. Client tenant hints cannot select a namespace. Return each iterator
+on cancellation and close the application's provider after application shutdown.
+Transport health does not certify broker connectivity; inspect its owning
+plugin separately. Delivery is best effort without separately configured backend
+durability, and an uncertain publication must not be replayed automatically.
+
+See the [package reference](../packages/graphql/README.md) for exact contracts
+and the isolated production integration command. Federation, remote SDL,
+automatic database exposure and GraphQL file uploads are outside the approved
+public scope. Functional example success does not complete benchmark or release
+gates.
