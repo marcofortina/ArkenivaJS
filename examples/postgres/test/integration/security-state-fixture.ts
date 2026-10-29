@@ -10,6 +10,29 @@ import {
   createPostgresSecurityStateTables,
 } from '../../dist/security-state-store.js';
 
+/** A separate application owns a distinct native pool while borrowing only the already-created schema. */
+export async function independentSecurityStatePeer(schema: string) {
+  assert.equal(process.env.ARKENIVA_POSTGRES_DISPOSABLE, '1');
+  assert.ok(process.env.DATABASE_URL, 'DATABASE_URL is required');
+  assert.match(schema, /^security_[a-f0-9]{24}$/u);
+  const app = await createApplication({
+    service: { name: 'security-state-peer', version: '1.0.0', environment: 'test' },
+    plugins: [postgresPlugin()],
+    databases: { main: { driver: 'postgresql', connectionStringEnv: 'DATABASE_URL', poolMax: 4 } },
+  });
+  try {
+    await app.start();
+    return {
+      app,
+      store: createPostgresSecurityStateStore(app.sql, 'main', schema),
+      close: () => app.stop(),
+    };
+  } catch (error) {
+    await app.stop();
+    throw error;
+  }
+}
+
 /** All tables live in a fresh owned schema on the explicit disposable verified-TLS fixture. */
 export async function securityStateFixture() {
   assert.equal(process.env.ARKENIVA_POSTGRES_DISPOSABLE, '1');

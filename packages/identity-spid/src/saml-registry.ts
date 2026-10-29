@@ -21,6 +21,7 @@ export class FederationSamlRegistry {
     { native: Evidence; expiresAt: number; issuer: string; generation: symbol | undefined }
   >();
   readonly #invalidations = new Map<string, symbol>();
+  readonly #bytes = new WeakMap<FederationCall, number>();
   constructor(
     profile: FederationProfileV1,
     http: Pick<FederationHttp, 'samlMetadata' | 'samlRegistryStatus'>,
@@ -31,6 +32,13 @@ export class FederationSamlRegistry {
     this.signatures = new FederationSamlSignatures(this.profile);
     this.metadata = method<FederationHttp['samlMetadata']>(http, 'samlMetadata');
     this.status = method<FederationHttp['samlRegistryStatus']>(http, 'samlRegistryStatus');
+  }
+  private consume(call: FederationCall, document: string): string {
+    if (typeof document !== 'string') throw failure('EK_EID_FEDERATION');
+    const bytes = (this.#bytes.get(call) ?? 0) + Buffer.byteLength(document);
+    this.#bytes.set(call, bytes);
+    if (bytes > Math.min(this.profile.metadata.maxBytes, 65536)) throw failure('EK_EID_FEDERATION');
+    return document;
   }
   async verify(call: FederationCall, entity: string, role: 'idp' | 'sp'): Promise<Evidence> {
     call.check();
@@ -47,8 +55,14 @@ export class FederationSamlRegistry {
       throw failure('EK_EID_FEDERATION');
     const generation = this.#invalidations.get(issuer);
     try {
-      const xml = await call.step((options) => this.metadata(source.metadataEndpoint, options)),
-        status = await call.step((options) => this.status(source.statusEndpoint, options)),
+      const xml = this.consume(
+          call,
+          await call.step((options) => this.metadata(source.metadataEndpoint, options)),
+        ),
+        status = this.consume(
+          call,
+          await call.step((options) => this.status(source.statusEndpoint, options)),
+        ),
         native = await this.signatures.verifyRegistry(call, xml, status, role);
       if (native.issuer !== issuer || this.#invalidations.get(issuer) !== generation)
         throw failure('EK_EID_FEDERATION');

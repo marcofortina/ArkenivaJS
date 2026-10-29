@@ -1684,6 +1684,9 @@ importers:
       '@arkenivajs/security-crypto':
         specifier: workspace:*
         version: link:../security-crypto
+      '@arkenivajs/security-saml':
+        specifier: workspace:*
+        version: link:../security-saml
       '@xmldom/xmldom':
         specifier: 0.8.15
         version: 0.8.15

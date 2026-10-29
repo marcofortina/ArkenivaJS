@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Preserve canonical origin-only HTTPS EntityIDs exactly in SPID Redirect and POST
+  signatures while validating their URL form independently of endpoint settings.
 - Capture trusted provider functions without executing custom bind/name/length
   properties, while preserving their original receiver and implementation.
 - Expose trusted adapter composition through the support entry, retaining native

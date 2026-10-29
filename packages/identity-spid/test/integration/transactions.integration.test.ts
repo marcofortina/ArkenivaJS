@@ -4,7 +4,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { securityStateFixture } from '../../../../examples/postgres/dist-test/integration/security-state-fixture.js';
+import {
+  securityStateFixture,
+  independentSecurityStatePeer,
+} from '../../../../examples/postgres/dist-test/integration/security-state-fixture.js';
 import { transactionFixture } from '../fixtures/transactions.js';
 import { capture } from '../../dist/settings.js';
 import { FederationTransactions } from '../../dist/transactions.js';
@@ -14,6 +17,7 @@ test(
   { timeout: 30000 },
   async () => {
     const backend = await securityStateFixture(),
+      peer = await independentSecurityStatePeer(backend.schema),
       f = await transactionFixture({
         store: backend.store,
         securityLevel: 'test-only',
@@ -21,7 +25,7 @@ test(
       });
     try {
       const profile = { ...f.profile, protocol: 'saml2' as const },
-        instances = [backend.store, backend.peer].map(
+        instances = [backend.store, peer.store].map(
           (store) =>
             new FederationTransactions(
               capture(
@@ -79,6 +83,7 @@ test(
       assert.equal(count.rows[0]!.count, 1);
     } finally {
       await f.close();
+      await peer.close();
       await backend.close();
     }
   },

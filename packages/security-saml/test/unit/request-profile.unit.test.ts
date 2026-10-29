@@ -29,6 +29,53 @@ const responseContext = (n: number) => (xml: string) =>
     .replace('urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport', level(n));
 
 for (const binding of ['redirect', 'post'] as const)
+  test(`Origin-only SPID identifiers remain exact in native signed ${binding} requests`, async () => {
+    const f = await fixture(binding);
+    try {
+      const entityId = new URL(f.settings.entityId).origin,
+        certificate = await readFile(join(f.directory, 'sp.pem'), 'utf8'),
+        service = createSamlService({
+          ...f.settings,
+          entityId,
+          expectedAudience: entityId,
+          requestedAuthnContext: context(2),
+          authenticationRequestProfile: { kind: 'spid' },
+        }),
+        login = await service.beginLogin({ returnPath: '/' });
+      let xml: string;
+      if (login.binding === 'post') {
+        xml = Buffer.from(login.fields.SAMLRequest, 'base64').toString();
+        assert.ok(getVerifiedXml(xml, parse(xml).documentElement, [certificate]));
+      } else {
+        const target = new URL(login.redirectUrl),
+          signed = ['SAMLRequest', 'RelayState', 'SigAlg']
+            .map((name) =>
+              target.search
+                .slice(1)
+                .split('&')
+                .find((part) => part.startsWith(name + '='))!,
+            )
+            .join('&');
+        assert.equal(
+          createVerify('RSA-SHA256')
+            .update(signed)
+            .verify(certificate, Buffer.from(target.searchParams.get('Signature')!, 'base64')),
+          true,
+        );
+        xml = inflateRawSync(
+          Buffer.from(target.searchParams.get('SAMLRequest')!, 'base64'),
+        ).toString();
+      }
+      const issuer = one(parse(xml).documentElement, NS.assertion, 'Issuer');
+      assert.equal(content(issuer), entityId);
+      assert.equal(issuer.getAttribute('NameQualifier'), entityId);
+      assert.equal(entityId.endsWith('/'), false);
+    } finally {
+      await f.close();
+    }
+  });
+
+for (const binding of ['redirect', 'post'] as const)
   test(
     `Native signed ${binding} SPID request formatting binds all three levels before SDK signing`,
     { timeout: 30000 },
