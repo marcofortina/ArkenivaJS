@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Capture provider methods without evaluating callable metadata; reject proxy
+  callbacks and unbounded prototype traversal before reset authorization or persistence.
 - Add bounded native Argon2id hashing, verification, rehash checks and
   distributed attempt budgets.
 - Add one-use reset credentials with mandatory atomic application persistence

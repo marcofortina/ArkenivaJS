@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
@@ -16,9 +17,10 @@ import type {
 import { data, failure, integer, invalid, text, passwordPolicy } from './validation.js';
 
 function property(input: unknown, name: string): unknown {
-  if (!input || typeof input !== 'object') throw invalid();
+  if (!input || typeof input !== 'object' || types.isProxy(input)) throw invalid();
   let current: object | null = input;
-  while (current) {
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
     const field = Object.getOwnPropertyDescriptor(current, name);
     if (field) {
       if (!('value' in field)) throw invalid();
@@ -26,12 +28,16 @@ function property(input: unknown, name: string): unknown {
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
+  if (current) throw invalid();
   return undefined;
 }
-function method<T>(input: unknown, name: string): T {
+function method<T extends (...args: never[]) => unknown>(input: unknown, name: string): T {
   const value = property(input, name);
-  if (typeof value !== 'function') throw invalid();
-  return value.bind(input) as T;
+  if (typeof value !== 'function' || types.isProxy(value)) throw invalid();
+  // Callable metadata cannot replace the configured function or its original receiver.
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(value, input, args) as ReturnType<T>;
+  return invoke as T;
 }
 /** Bind every required method once; request objects cannot replace application providers. */
 export function captureSettings(input: PasswordPluginSettings) {
