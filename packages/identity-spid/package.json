@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/http": "workspace:*",
     "@arkenivajs/security-apikey": "workspace:*",
     "@arkenivajs/security-crypto": "workspace:*",
     "jose": "6.2.13"
