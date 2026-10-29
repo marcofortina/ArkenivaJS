@@ -136,7 +136,7 @@ export function inspectTrustMark(token: string, maxBytes: number) {
   });
 }
 /** Parse only public federation JWKS; private/symmetric material never becomes a verification key. */
-function publicKeys(input: unknown, expiresAt: number): readonly StatementKey[] {
+export function publicKeys(input: unknown, expiresAt: number): readonly StatementKey[] {
   const jwks = fields(input, ['keys']);
   const result = list(jwks.keys, 32).map((item) => {
     const jwk = fields(item, [
