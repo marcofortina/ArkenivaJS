@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Capture configured provider callbacks without executable function metadata,
+  preserving their original receiver and the existing startup and authorization policy.
 - Enforce real HTTP, root-owned file and PostgreSQL registry integrations in the existing main-only CI matrices with owned disposable filesystem cleanup.
 - Provide the installed offline registry validator with bounded private-file checks, strict deployment options and sanitized exit codes.
 - Add opt-in schema-validated supplementary routing event batches with fixed queue bounds, physical exporter ownership, explicit quality/drop reporting and a separate public schema module.

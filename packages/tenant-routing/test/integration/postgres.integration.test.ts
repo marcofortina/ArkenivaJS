@@ -92,9 +92,19 @@ test(
       await first.sql.execute('control', {
         text: `INSERT INTO ${prefix}_active VALUES ('active', 1, 'blue', CURRENT_TIMESTAMP)`,
       });
+      let metadataEffects = 0;
+      for (const sql of [first.sql, second.sql])
+        for (const key of ['bind', 'name', 'length'])
+          Object.defineProperty(sql.transaction, key, {
+            get() {
+              metadataEffects++;
+              throw new Error('SQL callback metadata must not execute');
+            },
+          });
       const provider = tenantRegistrySqlProvider({ ...settings, sql: first.sql }),
         other = tenantRegistrySqlProvider({ ...settings, sql: second.sql });
       const original = await provider.loadSnapshot();
+      assert.equal(metadataEffects, 0);
       assert.equal(original.revision, 'blue');
       assert.equal(original.activationGeneration, 1);
       let applicationOwner: Application | undefined,
