@@ -11,6 +11,7 @@ import { FederationResolver } from '../../dist/resolver.js';
 import { FederationRuntime } from '../../dist/runtime.js';
 import { FederationMembership } from '../../dist/membership.js';
 import { verifySamlMetadataSignature } from '../../dist/saml-metadata-signature.js';
+import { FederationSamlSignatures } from '../../dist/saml-signatures.js';
 
 interface Input {
   origin: string;
@@ -161,12 +162,22 @@ async function run(input: Input) {
         stalePolicy: 'reject',
       },
     };
-    for (const path of ['/saml/metadata', '/saml/application-xml', '/saml/text-xml']) {
-      const xml = await source.samlMetadata(input.origin + path);
-      assert.equal(xml, input.samlMetadata);
-      const evidence = verifySamlMetadataSignature(xml, samlProfile, 'idp');
-      assert.equal(evidence.issuer, input.subject);
-      assert.equal('trusted' in evidence, false);
+    const signatures = new FederationSamlSignatures(samlProfile),
+      signatureRuntime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 5000 });
+    try {
+      for (const path of ['/saml/metadata', '/saml/application-xml', '/saml/text-xml']) {
+        const evidence = await signatureRuntime.run(async (call) => {
+          const xml = await call.step((options) =>
+            source.samlMetadata(input.origin + path, options),
+          );
+          assert.equal(xml, input.samlMetadata);
+          return signatures.verify(call, xml, 'idp');
+        });
+        assert.equal(signatures.result(evidence).issuer, input.subject);
+        assert.equal('trusted' in evidence, false);
+      }
+    } finally {
+      await signatureRuntime.close();
     }
     for (const path of [
       '/saml/withdrawn',

@@ -10,6 +10,10 @@ participation or accreditation, and configuring them does not enable the SAML ru
 The internal metadata transport can retrieve both XML and registry JSON from these
 exact approved locations, with the same byte, concurrency and deadline bounds.
 It neither interprets a JSON response as membership nor falls back to cached status.
+The internal XML verifier runs in a memory-bounded native worker. Cancellation and
+deadlines retain admission until the thread actually terminates; signature results
+are immutable, owner-bound and expiry-checked before reuse. These results remain
+separate from current registry participation and official conformance.
 
 Optional SPID OIDC federation plugin using the existing HTTP, Crypto and security services, JOSE and OpenID Client. It verifies both relying-party and provider participation before returning a login or canonical identity. SAML profiles currently fail with `EK_UNSUPPORTED_CAPABILITY`; SAML integration remains incomplete. Local technical tests do not establish official interoperability, accreditation or production certification.
 

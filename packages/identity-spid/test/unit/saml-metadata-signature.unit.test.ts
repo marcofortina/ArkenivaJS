@@ -10,7 +10,12 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SignedXml } from 'xml-crypto';
+import { Worker } from 'node:worker_threads';
+import { once } from 'node:events';
+import { setImmediate } from 'node:timers/promises';
 import { verifySamlMetadataSignature } from '../../dist/saml-metadata-signature.js';
+import { FederationSamlSignatures } from '../../dist/saml-signatures.js';
+import { FederationCall, FederationRuntime } from '../../dist/runtime.js';
 import type { FederationProfileV1 } from '../../dist/index.js';
 
 const md = 'urn:oasis:names:tc:SAML:2.0:metadata',
@@ -92,6 +97,355 @@ function signed(
   });
   return signer.getSignedXml();
 }
+
+test('The actual metadata worker entry returns native signature results and fixed failure messages', async () => {
+  for (const accepted of [true, false]) {
+    const worker = new Worker(new URL('../../dist/saml-signature-worker.js', import.meta.url), {
+      workerData: {
+        xml: signed(accepted ? {} : { key: foreign.privateKey }),
+        profile: profile(),
+        role: 'idp',
+      },
+      env: {
+        NODE_ENV: 'production',
+        ...(process.env.NODE_V8_COVERAGE ? { NODE_V8_COVERAGE: process.env.NODE_V8_COVERAGE } : {}),
+      },
+      stdout: true,
+      stderr: true,
+    });
+    worker.stdout.resume();
+    worker.stderr.resume();
+    try {
+      const result = once(worker, 'message'),
+        exited = once(worker, 'exit');
+      const [value] = await result;
+      if (accepted) {
+        assert.equal(value.ok, true);
+        assert.equal(value.result.issuer, profile().expectedIssuers[0]);
+        assert.equal(value.result.verifiedXml.includes('SignatureValue'), false);
+      } else assert.deepEqual(value, { ok: false });
+      assert.equal((await exited)[0], 0);
+    } finally {
+      await worker.terminate();
+    }
+  }
+});
+
+test('Owned native metadata workers verify real signatures and reject copied, foreign or expired evidence', async (context) => {
+  const configuration = profile(),
+    verifier = new FederationSamlSignatures(configuration),
+    foreignOwner = new FederationSamlSignatures(configuration),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 });
+  try {
+    const idp = await runtime.run((call) => verifier.verify(call, signed(), 'idp')),
+      sp = await runtime.run((call) => verifier.verify(call, signed({ role: 'sp' }), 'sp')),
+      noExpiry = await runtime.run((call) =>
+        verifier.verify(call, signed({ expiry: null }), 'idp'),
+      );
+    assert.equal(verifier.result(idp), idp);
+    assert.equal(verifier.result(sp).issuer, configuration.entityId);
+    assert.equal(verifier.result(noExpiry).validUntil, undefined);
+    assert.ok(Object.isFrozen(idp));
+    assert.equal('trusted' in idp, false);
+    let traps = 0;
+    for (const candidate of [
+      null,
+      {},
+      { ...idp },
+      new Proxy(idp, {
+        get() {
+          traps++;
+          throw new Error('Evidence getters must remain unread');
+        },
+      }),
+    ])
+      assert.throws(() => verifier.result(candidate), { code: 'EK_EID_FEDERATION' });
+    assert.equal(traps, 0);
+    const forged = { ...idp };
+    Object.defineProperty(verifier, 'owned', { value: new WeakSet([forged]) });
+    assert.throws(() => verifier.result(forged), { code: 'EK_EID_FEDERATION' });
+    assert.throws(() => foreignOwner.result(idp), { code: 'EK_EID_FEDERATION' });
+    let now = Date.now();
+    context.mock.method(Date, 'now', () => now);
+    now = Date.parse(idp.validUntil!);
+    assert.throws(() => verifier.result(idp), { code: 'EK_EID_FEDERATION' });
+    assert.equal(verifier.result(noExpiry), noExpiry);
+    now = Date.parse(noExpiry.trustAnchorExpiresAt);
+    assert.throws(() => verifier.result(noExpiry), { code: 'EK_EID_FEDERATION' });
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Native metadata verification rejects malformed inputs before creating workers and preserves readiness', async (context) => {
+  const verifier = new FederationSamlSignatures(profile()),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 });
+  let workers = 0,
+    hooks = 0;
+  const once = Worker.prototype.once;
+  context.mock.method(
+    Worker.prototype,
+    'once',
+    function (this: Worker, ...args: Parameters<Worker['once']>) {
+      workers++;
+      return Reflect.apply(once, this, args);
+    },
+  );
+  try {
+    for (const xml of [
+      undefined,
+      null,
+      {},
+      '',
+      '\ud800',
+      'x'.repeat(65537),
+      {
+        toString() {
+          hooks++;
+          return signed();
+        },
+      },
+    ])
+      await assert.rejects(
+        () => runtime.run((call) => verifier.verify(call, xml as string, 'idp')),
+        {
+          code: 'EK_EID_FEDERATION',
+        },
+      );
+    for (const role of [
+      'foreign',
+      {
+        [Symbol.toPrimitive]() {
+          hooks++;
+          return 'idp';
+        },
+      },
+    ])
+      await assert.rejects(
+        () => runtime.run((call) => verifier.verify(call, signed(), role as never)),
+        {
+          code: 'EK_EID_PROFILE',
+        },
+      );
+    assert.equal(workers, 0);
+    assert.equal(hooks, 0);
+    const stopped = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 1000 }, () => false);
+    try {
+      await assert.rejects(() => stopped.run((call) => verifier.verify(call, signed(), 'idp')), {
+        code: 'EK_LIFECYCLE_STATE',
+      });
+      assert.equal(workers, 0);
+    } finally {
+      await stopped.close();
+    }
+    const oidc: Record<string, unknown> = {
+      ...profile(),
+      protocol: 'oidc-federation',
+      clientId: profile().entityId,
+    };
+    delete oidc.samlRegistration;
+    assert.throws(() => new FederationSamlSignatures(oidc as unknown as FederationProfileV1), {
+      code: 'EK_EID_PROFILE',
+    });
+    assert.throws(
+      () => new FederationSamlSignatures({ ...profile(), protocol: 'oidc-federation' }),
+      {
+        code: 'EK_EID_PROFILE',
+      },
+    );
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Native worker signature failures never return evidence or raw protocol diagnostics', async () => {
+  const verifier = new FederationSamlSignatures(profile()),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 });
+  try {
+    for (const xml of [
+      signed({ key: foreign.privateKey }),
+      signed().replace('protocolSupportEnumeration=', 'altered="true" protocolSupportEnumeration='),
+      '<!DOCTYPE x><x/>',
+    ])
+      await assert.rejects(
+        () => runtime.run((call) => verifier.verify(call, xml, 'idp')),
+        (error: unknown) => {
+          assert.equal((error as { code: string }).code, 'EK_EID_FEDERATION');
+          assert.equal((error as Error).message, 'The federation trust policy was not satisfied');
+          return true;
+        },
+      );
+    assert.equal(runtime.stats().active, 0);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Cancellation at the native step boundary and during listener installation cannot start unowned work', async (context) => {
+  const verifier = new FederationSamlSignatures(profile()),
+    call = new FederationCall(10000, [], () => {});
+  const injected = context.mock.method(
+    call,
+    'step',
+    async <T>(work: (options: { signal: AbortSignal; timeoutMs: number }) => Promise<T>) =>
+      work({ signal: AbortSignal.abort(), timeoutMs: 10000 }),
+  );
+  try {
+    await assert.rejects(() => verifier.verify(call, signed(), 'idp'), { code: 'EK_ABORTED' });
+  } finally {
+    injected.mock.restore();
+    call.finish();
+  }
+  const runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 }),
+    stop = new AbortController(),
+    once = Worker.prototype.once;
+  let aborted = 0;
+  context.mock.method(
+    Worker.prototype,
+    'once',
+    function (this: Worker, event: string, listener: (...args: never[]) => void) {
+      const result = Reflect.apply(once, this, [event, listener]);
+      if (event === 'message') {
+        aborted++;
+        stop.abort();
+      }
+      return result;
+    },
+  );
+  try {
+    await assert.rejects(
+      () =>
+        runtime.run((active) => verifier.verify(active, signed(), 'idp'), { signal: stop.signal }),
+      {
+        code: 'EK_ABORTED',
+      },
+    );
+    await runtime.close();
+    assert.equal(runtime.stats().active, 0);
+    assert.equal(aborted, 1);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Aborted native verification retains shared capacity until actual worker termination settles', async (context) => {
+  const verifier = new FederationSamlSignatures(profile()),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 }),
+    stop = new AbortController(),
+    terminate = Worker.prototype.terminate;
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    terminating = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+  context.mock.method(Worker.prototype, 'terminate', async function (this: Worker) {
+    entered();
+    await held;
+    return Reflect.apply(terminate, this, []);
+  });
+  try {
+    const pending = runtime.run((call) => verifier.verify(call, signed(), 'idp'), {
+      signal: stop.signal,
+    });
+    const rejected = assert.rejects(pending, { code: 'EK_ABORTED' });
+    await setImmediate();
+    stop.abort();
+    await rejected;
+    await terminating;
+    assert.equal(runtime.stats().active, 1);
+    await assert.rejects(() => runtime.run(async () => 'not-admitted'), {
+      code: 'EK_BACKEND_UNAVAILABLE',
+    });
+    const closed = runtime.close();
+    assert.equal(runtime.stats().active, 1);
+    release();
+    await closed;
+    assert.equal(runtime.stats().active, 0);
+  } finally {
+    release();
+    await runtime.close();
+  }
+});
+
+test('Native worker deadlines terminate physical verification and reject expired results after cleanup', async (context) => {
+  const verifier = new FederationSamlSignatures(profile()),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 });
+  try {
+    await assert.rejects(
+      () => runtime.run((call) => verifier.verify(call, signed(), 'idp'), { timeoutMs: 1 }),
+      {
+        code: 'EK_TIMEOUT',
+      },
+    );
+    await runtime.close();
+    assert.equal(runtime.stats().active, 0);
+    const next = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 }),
+      terminate = Worker.prototype.terminate,
+      configuration = profile(),
+      expiry = Date.now() + 60000,
+      xml = signed({ expiry: new Date(expiry).toISOString() });
+    let now = Date.now();
+    context.mock.method(Date, 'now', () => now);
+    context.mock.method(Worker.prototype, 'terminate', async function (this: Worker) {
+      const result = await Reflect.apply(terminate, this, []);
+      now = expiry;
+      return result;
+    });
+    try {
+      await assert.rejects(
+        () =>
+          next.run((call) => new FederationSamlSignatures(configuration).verify(call, xml, 'idp')),
+        {
+          code: 'EK_EID_FEDERATION',
+        },
+      );
+    } finally {
+      await next.close();
+    }
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Native worker errors, premature exit and cleanup failure fail closed without leaking native causes', async (context) => {
+  const verifier = new FederationSamlSignatures(profile()),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 }),
+    once = Worker.prototype.once;
+  let mode: 'error' | 'exit' = 'error';
+  const injected = context.mock.method(
+    Worker.prototype,
+    'once',
+    function (this: Worker, event: string, listener: (...args: never[]) => void) {
+      const result = Reflect.apply(once, this, [event, listener]);
+      if (event === 'message')
+        queueMicrotask(() =>
+          this.emit(mode, mode === 'error' ? new Error('Private native diagnostic') : 1),
+        );
+      return result;
+    },
+  );
+  try {
+    for (mode of ['error', 'exit'] as const)
+      await assert.rejects(() => runtime.run((call) => verifier.verify(call, signed(), 'idp')), {
+        code: 'EK_EID_FEDERATION',
+        message: 'The federation trust policy was not satisfied',
+      });
+    injected.mock.restore();
+    const terminate = Worker.prototype.terminate;
+    context.mock.method(Worker.prototype, 'terminate', async function (this: Worker) {
+      await Reflect.apply(terminate, this, []);
+      throw new Error('Private cleanup diagnostic');
+    });
+    await assert.rejects(() => runtime.run((call) => verifier.verify(call, signed(), 'idp')), {
+      code: 'EK_BACKEND_UNAVAILABLE',
+      message: 'The federation operation capacity is unavailable',
+    });
+  } finally {
+    await runtime.close();
+  }
+});
 
 test('Native SAML metadata signatures bind issuer, role and verified reference bytes without granting current membership', () => {
   for (const role of ['idp', 'sp'] as const) {
