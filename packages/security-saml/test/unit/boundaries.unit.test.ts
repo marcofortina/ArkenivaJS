@@ -4,8 +4,66 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSamlService } from '../../dist/index.js';
+import { method } from '../../dist/validation.js';
 import { parse, NS, one, content, strongSignatures } from '../../dist/xml.js';
 import { fixture } from '../fixture.js';
+
+test('Provider method capture preserves its receiver without executing function metadata', () => {
+  let effects = 0;
+  const provider = {
+    value: 7,
+    read(delta: number) {
+      return this.value + delta;
+    },
+  };
+  for (const field of ['bind', 'name', 'length'])
+    Object.defineProperty(provider.read, field, {
+      get() {
+        effects++;
+        throw new Error('Executable function metadata');
+      },
+    });
+  const captured = method<(delta: number) => number>(provider, 'read');
+  provider.read = () => -1;
+  assert.equal(captured(3), 10);
+  assert.equal(effects, 0);
+});
+
+test(
+  'Native SAML secret resolution uses the original captured provider without inspecting callable metadata',
+  { timeout: 15000 },
+  async () => {
+    const f = await fixture();
+    let effects = 0,
+      reads = 0;
+    const original = f.settings.secretProvider.get;
+    const provider = {
+      async get(reference: string, options?: import('@arkenivajs/core').OperationOptions) {
+        assert.equal(this, provider);
+        reads++;
+        return original(reference, options);
+      },
+    };
+    for (const field of ['bind', 'name', 'length'])
+      Object.defineProperty(provider.get, field, {
+        get() {
+          effects++;
+          throw new Error('Executable native provider metadata');
+        },
+      });
+    try {
+      const service = createSamlService({ ...f.settings, secretProvider: provider });
+      provider.get = async () => {
+        throw new Error('Late replacement must not run');
+      };
+      assert.ok((await service.createMetadata()).includes('EntityDescriptor'));
+      assert.equal(reads, 2);
+      assert.equal(effects, 0);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test('Native XML guard rejects oversized, deeply nested, ambiguous and executable content', () => {
   for (const xml of [

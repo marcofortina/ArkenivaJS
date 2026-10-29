@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Capture trusted provider functions without executing custom bind/name/length
+  properties, while preserving their original receiver and implementation.
 - Expose trusted adapter composition through the support entry, retaining native
   readiness/owner cancellation and a physical drain beyond bounded close deadlines.
 - Add an explicit signed SPID authentication-request profile with transient NameID,
