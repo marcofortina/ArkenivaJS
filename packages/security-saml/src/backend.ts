@@ -19,6 +19,10 @@ export async function native(input: NativeRequest, signal: AbortSignal): Promise
   worker.stderr.resume();
   return new Promise<NativeResult>((resolve, reject) => {
     let settled = false;
+    let exited!: () => void;
+    const physicalExit = new Promise<void>((resolveExit) => {
+      exited = resolveExit;
+    });
     const finish = async (result?: NativeResult, error?: unknown) => {
       if (settled) return;
       settled = true;
@@ -26,6 +30,8 @@ export async function native(input: NativeRequest, signal: AbortSignal): Promise
       try {
         await worker.terminate();
       } catch {
+        // Failed cancellation does not prove that the operating-system thread has stopped.
+        await physicalExit;
         reject(failure('EK_BACKEND_UNAVAILABLE'));
         return;
       }
@@ -48,6 +54,7 @@ export async function native(input: NativeRequest, signal: AbortSignal): Promise
       void finish(undefined, failure('EK_SAML_ASSERTION'));
     });
     worker.once('exit', () => {
+      exited();
       if (!settled) void finish(undefined, failure('EK_SAML_ASSERTION'));
     });
     signal.addEventListener('abort', abort, { once: true });
