@@ -24,6 +24,7 @@ import { membershipFixture, op, sa, pairs, statement } from './membership.js';
 import { transactionFixture } from './transactions.js';
 import { registration } from './registration.js';
 import { checkMapping } from './mapping-checks.js';
+import { runPublicOidc } from './public-oidc-worker.js';
 
 type Mode =
   | 'valid'
@@ -42,22 +43,33 @@ type Mode =
   | 'info-subject'
   | 'wrong-id-encryption'
   | 'wrong-info-encryption';
-process.once('message', (input: { certificate: string; privateKey: string; mapping?: boolean }) => {
-  void run(input).then(
-    () => {
-      process.send?.({ ok: true });
-      process.disconnect();
-    },
-    (error: unknown) => {
-      process.send?.({
-        ok: false,
-        message: error instanceof Error ? error.message : 'OIDC callback fixture failed',
-      });
-      process.disconnect();
-    },
-  );
-});
-async function run(files: { certificate: string; privateKey: string; mapping?: boolean }) {
+process.once(
+  'message',
+  (input: { certificate: string; privateKey: string; mapping?: boolean; public?: boolean }) => {
+    void (input.public ? runPublicOidc(input) : run(input)).then(
+      (result) => {
+        process.send?.({
+          ok: true,
+          mode: result && result.publicFlow ? 'public' : input.mapping ? 'mapping' : 'callback',
+        });
+        process.disconnect();
+      },
+      (error: unknown) => {
+        process.send?.({
+          ok: false,
+          message: error instanceof Error ? error.message : 'OIDC callback fixture failed',
+        });
+        process.disconnect();
+      },
+    );
+  },
+);
+async function run(files: {
+  certificate: string;
+  privateKey: string;
+  mapping?: boolean;
+  public?: boolean;
+}) {
   const f = await transactionFixture(),
     canonical = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }),
     rp = generateKeyPairSync('rsa', { modulusLength: 2048 }),

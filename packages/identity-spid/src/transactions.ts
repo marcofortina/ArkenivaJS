@@ -171,6 +171,13 @@ export class FederationTransactions {
       ]),
     );
   }
+  /** Probe only an unpredictable absent record without creating state or claiming a ceremony. */
+  async probe(call: FederationCall): Promise<void> {
+    const value = await this.storage(call, (options) =>
+      this.settings.stateStore.store.read(this.namespace, randomBytes(32).toString('hex'), options),
+    );
+    if (value !== null) throw failure('EK_EID_FEDERATION');
+  }
   async create(
     call: FederationCall,
     input: {

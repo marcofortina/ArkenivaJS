@@ -4,8 +4,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
+import { COMPONENTS, createApplication, KitError } from '@arkenivajs/core';
+import type { Plugin } from '@arkenivajs/core';
+import { CRYPTO_CAPABILITY } from '@arkenivajs/security-crypto';
 import type { ItalianEidPluginSettings, FederationProfileV1 } from '../../dist/index.js';
-import { SPID_CAPABILITY } from '../../dist/index.js';
+import { SPID_CAPABILITY, spidPlugin } from '../../dist/index.js';
 import { capture } from '../../dist/settings.js';
 
 const publicKeyPem = generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -295,4 +298,78 @@ test('Captured provider prototype methods retain their receiver without reading 
   await assert.rejects(() => settings.secretProvider.get('signing-ref'));
   assert.equal(secrets.calls, 1);
   assert.equal(getters, 0);
+});
+
+test('Actual application environment rejects captured test-only providers before any provider I/O', async () => {
+  for (const environment of ['production', 'development'] as const) {
+    for (const target of ['store', 'secrets', 'authority', 'mapper'] as const) {
+      const f = fixture(),
+        marker = { usage: 'test-only' },
+        input: ItalianEidPluginSettings = {
+          ...f.settings,
+          ...(target === 'store'
+            ? {
+                stateStore: {
+                  ...f.settings.stateStore,
+                  store: { ...f.settings.stateStore.store, ...marker },
+                },
+              }
+            : target === 'secrets'
+              ? { secretProvider: { ...f.settings.secretProvider, ...marker } }
+              : target === 'authority'
+                ? { authority: { ...f.settings.authority, ...marker } }
+                : {
+                    identityMappers: {
+                      'approved-accounts': {
+                        ...f.settings.identityMappers['approved-accounts']!,
+                        ...marker,
+                      },
+                    },
+                  }),
+        },
+        plugin = spidPlugin(input),
+        dependency = (id: string, capability: symbol): Plugin => ({
+          id,
+          version: '1.0.0',
+          capabilities: new Set(),
+          init(context) {
+            // Deliberately inert dependencies prove that the environment guard runs before service construction.
+            context.provide(capability, Object.freeze({}));
+          },
+          close() {},
+        });
+      const labelled =
+        target === 'store'
+          ? input.stateStore.store
+          : target === 'secrets'
+            ? input.secretProvider
+            : target === 'authority'
+              ? input.authority
+              : input.identityMappers['approved-accounts']!;
+      Reflect.set(labelled, 'usage', 'production');
+      const app = await createApplication({
+        service: { name: 'spid-environment-guard', version: '1.0.0', environment },
+        plugins: [
+          dependency('security', COMPONENTS.auth),
+          dependency('crypto', CRYPTO_CAPABILITY),
+          plugin,
+        ],
+      });
+      try {
+        await assert.rejects(
+          () => app.start(),
+          (error: unknown) => {
+            assert.ok(error instanceof KitError);
+            assert.equal(error.code, 'EK_PLUGIN_FAILED');
+            assert.ok(error.cause instanceof KitError);
+            assert.equal(error.cause.code, 'EK_EID_PROFILE');
+            return true;
+          },
+        );
+        assert.equal(f.calls(), 0);
+      } finally {
+        await app.stop();
+      }
+    }
+  }
 });

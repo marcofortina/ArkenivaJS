@@ -1574,6 +1574,9 @@ importers:
         specifier: 13.15.35
         version: 13.15.35
     devDependencies:
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../security

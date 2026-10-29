@@ -17,6 +17,12 @@ test(
       operationTimeoutMs: 5000,
     });
     try {
+      await f.runtime.run((call) => f.first.probe(call));
+      await f.runtime.run((call) => f.second.probe(call));
+      const empty = await backend.app.sql.query<{ count: number }>('main', {
+        text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_records`,
+      });
+      assert.equal(empty.rows[0]!.count, 0);
       const created = await f.runtime.run((call) => f.first.create(call, f.input)),
         rows = await backend.app.sql.query<{ body: string }>('main', {
           text: `SELECT body FROM ${backend.schema}.security_records`,

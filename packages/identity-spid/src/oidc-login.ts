@@ -54,6 +54,7 @@ export class FederationOidcLogin {
       returnPath: string;
       tenantHint?: string;
     },
+    expectedSigningKid?: string,
   ): Promise<FederatedLogin> {
     try {
       call.check();
@@ -126,14 +127,18 @@ export class FederationOidcLogin {
           this.profile.profileId,
           registration.signingAlgorithm,
         ),
-        config = new Configuration(
-          { issuer, authorization_endpoint: authorization },
-          this.profile.clientId!,
-          {
-            token_endpoint_auth_signing_alg: signer.algorithm,
-          },
-          PrivateKeyJwt({ key: signer.key, kid: signer.kid }),
-        ),
+        config = (() => {
+          if (expectedSigningKid !== undefined && signer.kid !== expectedSigningKid)
+            throw failure('EK_EID_FEDERATION');
+          return new Configuration(
+            { issuer, authorization_endpoint: authorization },
+            this.profile.clientId!,
+            {
+              token_endpoint_auth_signing_alg: signer.algorithm,
+            },
+            PrivateKeyJwt({ key: signer.key, kid: signer.kid }),
+          );
+        })(),
         transaction = await this.transactions.create(call, {
           issuer,
           assurance,

@@ -208,9 +208,13 @@ export function capture(
   )
     throw failure();
   const store = storage.store;
+  let testOnly = storage.securityLevel === 'test-only';
   for (const provider of [store, value.secretProvider, value.authority, ...Object.values(mappers)])
     for (const flag of ['usage', 'securityLevel'])
-      if (property(provider, flag) === 'test-only' && environment !== 'test') throw failure();
+      if (property(provider, flag) === 'test-only') {
+        testOnly = true;
+        if (environment !== 'test') throw failure();
+      }
   type Store = ItalianEidPluginSettings['stateStore']['store'];
   const capturedStore: Store = Object.freeze({
     read: method<Store['read']>(store, 'read'),
@@ -254,6 +258,7 @@ export function capture(
         : { maxOutputBytes: integer(policy.maxOutputBytes) }),
     }),
     environment,
+    testOnly,
   });
 }
 export type Settings = ReturnType<typeof capture>;

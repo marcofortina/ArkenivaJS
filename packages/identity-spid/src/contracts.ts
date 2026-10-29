@@ -112,8 +112,10 @@ export interface TrustResult {
   readonly reasons: readonly string[];
 }
 export interface ItalianFederationService {
+  /** Bind operations to one configured immutable profile; selection grants no identity or tenant authority. */
+  forProfile(profileId: string): ItalianFederationService;
   beginAuthentication(
-    context: Readonly<{ returnPath: string; tenantId?: string }>,
+    context: Readonly<{ returnPath: string; tenantId?: string; issuer?: string }>,
     assurance: FederationAssurance,
     options?: OperationOptions,
   ): Promise<FederatedLogin>;
