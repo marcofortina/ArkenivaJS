@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import { generate } from 'otplib';
 import { parse } from '@otplib/uri';
 import { KitError } from '@arkenivajs/core';
+import { inspect } from 'node:util';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { newTotpSecret, totpProvisioningUri, verifyTotpStep } from '../../dist/totp-driver.js';
 
 // Public RFC 6238 SHA1 test material, never an application credential.
@@ -103,4 +106,56 @@ test('CSPRNG seeds provision with standard defaults and encoded issuer/account l
     () => totpProvisioningUri(issuer, account, first + '\n'),
     hasCode('EK_MFA_STORAGE'),
   );
+});
+
+test('A native entropy-source failure cannot produce a seed or expose provider diagnostics', (context) => {
+  const marker = 'synthetic-entropy-source-failure';
+  context.mock.method(globalThis.crypto, 'getRandomValues', () => {
+    throw new Error(marker);
+  });
+  assert.throws(
+    () => newTotpSecret(),
+    (error) => {
+      assert.equal(inspect(error).includes(marker), false);
+      return hasCode('EK_MFA_STORAGE')(error);
+    },
+  );
+});
+
+test('Native provisioning encoding failures remain safe and cannot return a partial secret-bearing URI', () => {
+  const seed = newTotpSecret();
+  for (const [issuer, account] of [
+    ['\ud800', 'synthetic-account'],
+    ['Synthetic Company', '\udfff'],
+  ])
+    assert.throws(
+      () => totpProvisioningUri(issuer!, account!, seed),
+      (error) => {
+        assert.equal(inspect(error).includes(seed), false);
+        assert.equal(inspect(error).includes('URIError'), false);
+        return hasCode('EK_MFA_STORAGE')(error);
+      },
+    );
+});
+
+test('An upstream HMAC execution failure cannot become a valid OTP or expose backend diagnostics', async (context) => {
+  // Resolve the exact pinned default backend through otplib, without selecting another algorithm.
+  const require = createRequire(import.meta.url),
+    backend = createRequire(require.resolve('otplib')),
+    { NobleCryptoPlugin } = (await import(
+      pathToFileURL(backend.resolve('@otplib/plugin-crypto-noble').replace(/\.cjs$/u, '.js')).href
+    )) as {
+      NobleCryptoPlugin: { prototype: { hmac(...args: unknown[]): unknown } };
+    },
+    marker = 'synthetic-hmac-backend-failure';
+  let calls = 0;
+  context.mock.method(NobleCryptoPlugin.prototype, 'hmac', () => {
+    calls++;
+    throw new Error(marker);
+  });
+  await assert.rejects(verifyTotpStep(rfcSeed, '005924', 1234567890000, 0), (error) => {
+    assert.equal(inspect(error).includes(marker), false);
+    return hasCode('EK_MFA_STORAGE')(error);
+  });
+  assert.ok(calls > 0, 'The pinned upstream verifier must attempt its own HMAC operation');
 });

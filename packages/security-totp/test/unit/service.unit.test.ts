@@ -13,10 +13,59 @@ import { createTotpService } from '../../dist/index.js';
 import { runtimeFixture } from '../support/runtime-fixture.js';
 import { generate } from 'otplib';
 import { inspect } from 'node:util';
+import crypto from 'node:crypto';
+import { syncBuiltinESMExports } from 'node:module';
 import type { TotpFactorRecord, TotpPendingEnrollment } from '../../dist/index.js';
 
 const hasCode = (code: string) => (error: unknown) =>
   error instanceof KitError && error.code === code;
+
+test('An opaque-handle entropy failure cannot persist an enrollment or expose native diagnostics', async (context) => {
+  const f = runtimeFixture();
+  f.strong.add(f.subject);
+  let writes = 0;
+  const service = createTotpService({
+    ...f.options,
+    rateLimitStore: {
+      usage: 'test-only',
+      async checkAndRecord() {
+        return { allowed: true };
+      },
+    },
+    secretProtector: {
+      ...f.options.secretProtector,
+      async seal() {
+        return {
+          keyId: 'synthetic',
+          ciphertext: 'synthetic',
+          nonce: 'synthetic',
+          tag: 'synthetic',
+        };
+      },
+    },
+    stateStore: {
+      ...f.options.stateStore,
+      async putPending() {
+        writes++;
+      },
+    },
+  });
+  const marker = 'synthetic-handle-entropy-failure';
+  const entropy = context.mock.method(crypto, 'randomBytes', () => {
+    throw new Error(marker);
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(service.beginEnrollment(f.subject), (error) => {
+      assert.equal(inspect(error).includes(marker), false);
+      return hasCode('EK_MFA_STORAGE')(error);
+    });
+    assert.equal(writes, 0);
+  } finally {
+    entropy.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
 test('Every public factor operation rejects unowned objects and cancellation before storage access', async () => {
   const f = runtimeFixture();
   let calls = 0;
