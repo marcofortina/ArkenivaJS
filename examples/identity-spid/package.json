@@ -18,7 +18,8 @@
   },
   "devDependencies": {
     "jose": "6.2.13",
-    "openid-client": "6.8.8"
+    "openid-client": "6.8.8",
+    "xml-crypto": "6.4.0"
   },
   "license": "AGPL-3.0-or-later"
 }

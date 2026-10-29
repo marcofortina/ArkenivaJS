@@ -163,7 +163,7 @@ export class FederationSamlLogin {
             saml.transactionId !== transaction.samlRequestId ||
             saml.authnContext !== assuranceContext('spid', transaction.assurance) ||
             saml.nameIDFormat !== 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient' ||
-            (saml.nameQualifier !== undefined && saml.nameQualifier !== issuer) ||
+            saml.nameQualifier !== issuer ||
             (saml.spNameQualifier !== undefined &&
               saml.spNameQualifier !== this.profile.entityId) ||
             !Number.isSafeInteger(expiresAt) ||
@@ -229,5 +229,35 @@ export class FederationSamlLogin {
     if (!check) throw failure('EK_EID_FEDERATION');
     check();
     return input;
+  }
+  async metadata(call: FederationCall): Promise<string> {
+    const rp = await this.registry.verify(call, this.profile.entityId, 'sp'),
+      idp = await this.registry.verify(call, this.profile.expectedIssuers[0]!, 'idp');
+    const registered = await withFederationSaml(
+      call,
+      this.settings,
+      this.profile,
+      this.registry,
+      rp,
+      idp,
+      this.profile.allowedAssurance[0]!,
+      async (service) => {
+        await call.step(() => service.createMetadata());
+        const document = this.registry.document(rp);
+        if (
+          Buffer.byteLength(document) >
+          Math.min(this.profile.metadata.maxBytes, this.settings.policy.maxOutputBytes ?? Infinity)
+        )
+          throw failure('EK_EID_FEDERATION');
+        return document;
+      },
+    );
+    call.check();
+    this.registry.result(idp);
+    this.registry.result(rp);
+    return registered;
+  }
+  async verifyTrust(call: FederationCall, document: string): Promise<void> {
+    await this.registry.verifyDocument(call, document);
   }
 }

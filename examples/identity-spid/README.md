@@ -1,4 +1,4 @@
-# SPID OIDC application and browser transaction example
+# SPID SAML/OIDC application and browser transaction examples
 
 Run `pnpm --filter @arkenivajs/example-identity-spid build` and `pnpm --filter @arkenivajs/example-identity-spid test` from the workspace root. `node scripts/check-packed-examples.mjs --example identity-spid` additionally installs actual package archives into an independent consumer and compiles and executes this example there.
 
@@ -14,4 +14,32 @@ The returned identity is the approved canonical account and verified tenant. It 
 
 The fixture's in-memory store, ephemeral CA, keys, federation and canonical accounts are test-only. Production and development reject test-only providers. Deployments require a durable shared transactional provider, secure external key management, actual administrative RP registration and accreditation, approved organization/metadata endpoints, current federation pins and mandatory revocation. The configured federation resolve endpoint is a deployment prerequisite; this example does not host one. TLS trust is scoped to the isolated child process and all HTTPS exchanges validate certificates and hostnames. Temporary credentials, collectors and listeners are closed after each test.
 
-SAML integration, official interoperability, release acceptance and deferred performance/duration campaigns are separate gates. See the package's [SPID OIDC guide](../../packages/identity-spid/README.md).
+Official interoperability, browser certification, release acceptance and deferred performance/duration campaigns remain separate gates. See the [SPID package guide](../../packages/identity-spid/README.md).
+
+## SAML Redirect and POST ACS
+
+`src/saml-browser-flow.ts` supplies separate `beginSamlBrowserLogin` and
+`consumeSamlBrowserLogin` handlers for a selected SAML profile. The Redirect sets
+`__Host-spid-saml-flow` with `Secure`, `HttpOnly`, `Path=/`, `SameSite=None` and a
+maximum five-minute lifetime, bounded by the actual login expiry. This policy
+permits the IdP's cross-site POST; keep the distinct OIDC GET cookie unchanged.
+
+At the application's exact configured HTTPS ACS, set `clearSamlBrowserCookie`
+before verification so all error responses clear it too. Bound incoming form bytes
+while reading the request and pass `{ method, url, contentType, body }` together with
+the fixed configured ACS and selected approved issuer to `consumeSamlBrowserLogin`.
+The example requires POST, URL-encoded form data, unique SAMLResponse/RelayState
+fields and a valid host cookie. It rejects extra fields, including a submitted
+transaction ID, duplicate cookies, wrong destinations and malformed encoding before
+calling the service. The service independently compares the cookie transaction's
+encrypted native request ID to signed correlation; swapping two browsers' cookie
+and response never authenticates either as the other account. No local session is
+created by this handler.
+
+The standalone HTTPS driver uses independent ephemeral SP/IdP signing keys, pinned
+root-signed metadata, fresh registry state, real signed Redirect/POST messages and
+actual AuthService tenant provenance. It exercises readiness, health failure, replay,
+browser swaps, IdP withdrawal, downgrade, cross-tenant mapping, authority/storage
+denial and private logs through public package imports. The same driver compiles
+and executes against installed package archives. It is a protocol HTTP test driver;
+it does not claim official IdP accreditation or a browser engine conformance result.

@@ -1,44 +1,43 @@
 # @arkenivajs/identity-spid
 
-For SAML preparation, `samlRegistration.registrySources` can explicitly associate
-the RP entity and every configured IdP entity with `metadataEndpoint` and
-`statusEndpoint`. Every URL must already appear in `metadata.approvedMetadataEndpoints`.
-When supplied, the map must be complete and contain no foreign entities or ambiguous
-cross-entity destinations. It is captured immutably without network or secret access.
-Locations provide routing policy only: they do not prove a signature, active registry
-participation or accreditation, and configuring them does not enable the SAML runtime.
-The internal metadata transport can retrieve both XML and registry JSON from these
-exact approved locations, with the same byte, concurrency and deadline bounds.
-It neither interprets a JSON response as membership nor falls back to cached status.
-The internal XML verifier runs in a memory-bounded native worker. Cancellation and
-deadlines retain admission until the thread actually terminates; signature results
-are immutable, owner-bound and expiry-checked before reuse. These results remain
-separate from current registry participation and official conformance.
-The internal registry verifier fetches XML and JSON afresh, requires explicit active
-state for the exact entity and binds the status origin to the configured authority
-that actually verified the XML signature. Both documents must contain the same
-current RSA signing certificates. RP metadata must register the configured POST ACS.
-Evidence expires at the earliest document, root, certificate or refresh boundary;
-a failed refresh retires earlier evidence and prevents earlier concurrent work from
-restoring it. These technical checks do not enable the public SAML authentication
-flow or establish official interoperability.
-The protected eID transaction binds the native request ID inside its encrypted
-single-use payload. The native SAML replay record retains its public protocol ID
-and a fixed safe return path; private application paths and tenant hints stay in
-the encrypted eID payload. The signed RelayState is preserved exactly. OIDC
-transactions reject the SAML correlation field.
-Internal Redirect initiation reuses the native SAML adapter and checks each loaded
-SP certificate against current RP registration, including rotation between reads.
-Internal POST acceptance consumes the encrypted transaction before native assertion
-verification and requires the exact native RelayState, selected issuer and requested
-assurance. Fresh RP and IdP checks surround native verification and subsequent
-canonical mapping. Only this protocol owner's live evidence can enter the same
-AuthService tenant and authority checks used by OIDC; reconstructed objects confer
-no authority. Private return paths and tenant hints come only from protected state.
-The public service continues to reject SAML profiles until browser POST ACS binding
-and public service composition are integrated and verified.
+Optional SPID SAML 2.0 and OIDC federation plugin using the existing native SAML,
+HTTP, Crypto and security services, JOSE and OpenID Client. Both profiles verify
+current relying-party and provider participation before returning a login or
+canonical identity. Local technical tests do not establish official interoperability,
+accreditation or production certification.
 
-Optional SPID OIDC federation plugin using the existing HTTP, Crypto and security services, JOSE and OpenID Client. It verifies both relying-party and provider participation before returning a login or canonical identity. SAML profiles currently fail with `EK_UNSUPPORTED_CAPABILITY`; SAML integration remains incomplete. Local technical tests do not establish official interoperability, accreditation or production certification.
+For SAML, configure `samlRegistration.signingCertificateRef` separately from private
+signing and state-key references. `samlRegistration.registrySources` must associate
+the RP and every configured IdP with exact `metadataEndpoint` and `statusEndpoint`
+URLs already listed in `metadata.approvedMetadataEndpoints`. Unknown fields,
+executable values, incomplete catalogs and OIDC/CIE use of this registration fail.
+Capture reads no secret material. Bootstrap verifies live registration and a matching
+external SP key/certificate before readiness; no listener is installed by this plugin.
+
+The bounded native XML worker verifies the exact configured role/entity and root
+signature. Fresh approved HTTPS XML and registry JSON must agree on current RSA
+signing certificates and explicitly active membership; the status origin must match
+the authority that verified the XML. RP metadata must register the configured POST
+ACS. Evidence expires at the earliest document, root, certificate or refresh boundary.
+Failed refresh retires earlier evidence, including concurrent verification; no cached
+status fallback or arbitrary discovery can grant participation. Unsupported signature
+representations fail closed. Official registry-format interoperability remains an
+independent conformance gate.
+
+SAML Redirect initiation reuses the signed native request and checks every external
+SP certificate read against current registration, including rotation between reads.
+Its native request ID stays inside encrypted single-use eID state, while the generic
+SAML replay record retains only public protocol correlation and a fixed safe return
+path. Signed RelayState is preserved exactly. Private application return paths and
+tenant hints remain in the encrypted payload.
+
+POST acceptance consumes that protected state before native response/assertion
+verification, with exact issuer, requested SPID class, transient NameID qualifiers,
+request, audience, destination and replay checks. Only this protocol owner's live
+evidence can enter canonical AuthService tenant mapping and explicit authorization.
+Manually reconstructed objects confer no authority. An alternate `subjectClaim`
+requires exactly one verified attribute; asserted tenant attributes grant no local
+membership. Generic SAML assurance is never promoted to MFA.
 
 The documented `@arkenivajs/identity-spid/support` entry exports
 `createItalianFederationPlugin(system, capability, settings)` for trusted adapter
@@ -48,14 +47,6 @@ composing CIE. Application code should use the owning package's `spidPlugin` or
 `ciePlugin`; never select the support factory's system, capability or settings
 from a request. The native configuration, cryptographic and lifecycle logic is
 shared; activated profiles, authority actions and state remain independent.
-
-The reserved SPID SAML registration group contains an explicit
-`samlRegistration.signingCertificateRef`, resolved through the existing external
-secret provider. It is separate from private signing and state-key references;
-capture never reads certificate material. Unknown fields, executable values and
-OIDC/CIE use are rejected. This is configuration support only: SAML activation
-still fails with `EK_UNSUPPORTED_CAPABILITY` before authentication dependencies
-are used. It does not substitute for verified AgID metadata or enable SAML login.
 
 ## Explicit application composition
 
@@ -101,6 +92,22 @@ Both RP and OP chains must reach a current pinned anchor using superior-delegate
 Inline protocol JWKS takes precedence over explicitly approved signed or JSON remote sets. Signed sets require the current delegated federation signing key and exact issuer, subject and token type. Keys must be public, sufficiently strong and compatible with approved algorithms. Metadata and protocol requests use bounded native HTTPS with exact destinations, no redirects or automatic exchange retries. Production and development reject private-network destinations.
 
 ## Public operations
+
+The bullets below describe OIDC wire inputs. For a SAML profile, initiation returns
+the same typed Redirect result. `consumeAuthentication` instead accepts the strict
+object `{ transactionId, issuer, relayState, samlResponse }`: obtain `transactionId`
+from the application's own Secure, HttpOnly browser cookie and pass the posted
+RelayState and encoded SAMLResponse separately. Never obtain the expected transaction
+from a submitted form field or infer it from XML. `issuer` selects only an already
+configured issuer and must match the encrypted transaction. The same canonical
+mapping and `spid.consume_authentication` authority follow native verification.
+
+SAML `metadata()` returns the exact original currently registered RP XML, retaining
+its verified root signature after checking the local SP key/certificate.
+`verifyFederationTrust(xml)` requires valid native root verification and authenticated
+reference bytes matching freshly registered current metadata for that entity and
+role. A signature without current participation is insufficient. Use the
+[POST ACS example](../../examples/identity-spid/README.md) for browser correlation.
 
 - `forProfile(profileId)` returns a cached immutable view of one configured profile. The root service remains usable directly when exactly one profile exists. Multiple profiles require explicit selection; unknown or ambiguous selections fail closed.
 - `beginAuthentication({ returnPath, tenantId?, issuer? }, assurance, options?)` checks the trusted `spid.begin_authentication` authority, current RP/OP membership and requested assurance, then creates protected single-use state and a signed PKCE authorization request. No existing authenticated session is required to begin a ceremony; the trusted authority explicitly decides whether to permit it. Multiple approved issuers require explicit selection. An issuer selector cannot supply new endpoints or metadata. `tenantId` is only an untrusted hint.

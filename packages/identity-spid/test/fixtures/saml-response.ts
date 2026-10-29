@@ -30,7 +30,7 @@ export function samlResponse(
     subject?: string;
     context?: string;
     nameIDFormat?: string;
-    nameQualifier?: string;
+    nameQualifier?: string | null;
     spNameQualifier?: string;
     expiresAt?: string;
     signedAssertion?: boolean;
@@ -74,7 +74,7 @@ export function samlResponse(
       fiscalNumber: ['synthetic-account'],
       tenant_id: ['untrusted-tenant'],
     };
-  let assertion = `<saml:Assertion xmlns:saml="${assertionNamespace}" ID="_${randomUUID().replaceAll('-', '')}" Version="2.0" IssueInstant="${now}"><saml:Issuer>${escape(issuer)}</saml:Issuer><saml:Subject><saml:NameID Format="${escape(changes.nameIDFormat ?? 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient')}" NameQualifier="${escape(changes.nameQualifier ?? issuer)}" SPNameQualifier="${escape(changes.spNameQualifier ?? audience)}">${escape(changes.subject ?? 'synthetic-transient-subject')}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${escape(correlation)}" Recipient="${escape(recipient)}" NotOnOrAfter="${expires}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${before}" NotOnOrAfter="${expires}"><saml:AudienceRestriction><saml:Audience>${escape(audience)}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="${now}" SessionIndex="synthetic-session" SessionNotOnOrAfter="${expires}"><saml:AuthnContext><saml:AuthnContextClassRef>${escape(changes.context ?? 'https://www.spid.gov.it/SpidL2')}</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement>${Object.entries(
+  let assertion = `<saml:Assertion xmlns:saml="${assertionNamespace}" ID="_${randomUUID().replaceAll('-', '')}" Version="2.0" IssueInstant="${now}"><saml:Issuer>${escape(issuer)}</saml:Issuer><saml:Subject><saml:NameID Format="${escape(changes.nameIDFormat ?? 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient')}"${changes.nameQualifier === null ? '' : ` NameQualifier="${escape(changes.nameQualifier ?? issuer)}"`} SPNameQualifier="${escape(changes.spNameQualifier ?? audience)}">${escape(changes.subject ?? 'synthetic-transient-subject')}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${escape(correlation)}" Recipient="${escape(recipient)}" NotOnOrAfter="${expires}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${before}" NotOnOrAfter="${expires}"><saml:AudienceRestriction><saml:Audience>${escape(audience)}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="${now}" SessionIndex="synthetic-session" SessionNotOnOrAfter="${expires}"><saml:AuthnContext><saml:AuthnContextClassRef>${escape(changes.context ?? 'https://www.spid.gov.it/SpidL2')}</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement>${Object.entries(
     attributes,
   )
     .map(

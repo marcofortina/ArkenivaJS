@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 export async function runOidcWorker(
   mapping: boolean | 'public' = false,
   telemetryMode: 'standard' | 'detailed' = 'detailed',
+  worker: URL = new URL('./worker.js', import.meta.url),
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-eid-callback-')),
     certificate = join(directory, 'certificate.pem'),
@@ -41,7 +42,7 @@ export async function runOidcWorker(
       { timeout: 10000 },
     );
     await Promise.all([chmod(privateKey, 0o600), chmod(certificate, 0o600)]);
-    const child = fork(new URL('./worker.js', import.meta.url), [], {
+    const child = fork(worker, [], {
       execArgv: [],
       env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate },
       stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
