@@ -6,14 +6,21 @@ import { mock } from 'node:test';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { createServer } from 'node:https';
 import { readFile } from 'node:fs/promises';
-import { SignJWT, CompactEncrypt, exportJWK, calculateJwkThumbprint, jwtVerify } from 'jose';
+import {
+  SignJWT,
+  CompactEncrypt,
+  exportJWK,
+  calculateJwkThumbprint,
+  jwtVerify,
+  decodeJwt,
+} from 'jose';
 import { calculatePKCECodeChallenge } from 'openid-client';
 import { FederationOidcCallback } from '../../dist/oidc-callback.js';
 import { FederationOidcLogin } from '../../dist/oidc-login.js';
 import { FederationProtocolHttp } from '../../dist/protocol-http.js';
 import { capture } from '../../dist/settings.js';
 import { configurationEndpoint } from '../../dist/resolver.js';
-import { membershipFixture, op } from './membership.js';
+import { membershipFixture, op, sa, pairs, statement } from './membership.js';
 import { transactionFixture } from './transactions.js';
 import { registration } from './registration.js';
 
@@ -67,7 +74,9 @@ async function run(files: { certificate: string; privateKey: string }) {
   let origin = '',
     tokenRequests = 0,
     userInfoRequests = 0,
-    serverFailure: Error | undefined;
+    serverFailure: Error | undefined,
+    jwksRequests = 0,
+    jwksFault = 'none';
   const encrypt = (value: string, purpose: 'id' | 'userinfo' = 'userinfo') =>
       new CompactEncrypt(new TextEncoder().encode(value))
         .setProtectedHeader({
@@ -83,6 +92,39 @@ async function run(files: { certificate: string; privateKey: string }) {
         void (async () => {
           let body = '';
           for await (const chunk of request) body += String(chunk);
+          if (request.url === '/jwks' || request.url === '/signed-jwks') {
+            jwksRequests++;
+            assert.equal(request.headers.authorization, undefined);
+            assert.equal(request.headers.cookie, undefined);
+            const keys = [{ ...providerJwk, ...(jwksFault === 'private' ? { d: 'inert' } : {}) }];
+            if (request.url === '/jwks') {
+              response.setHeader('content-type', 'application/jwk-set+json');
+              response.end(JSON.stringify({ keys }));
+              return;
+            }
+            const now = Math.floor(Date.now() / 1000),
+              token = await new SignJWT({
+                iss: jwksFault === 'issuer' ? 'https://foreign.example.test' : op,
+                sub: op,
+                keys,
+                ...(jwksFault === 'no-time'
+                  ? {}
+                  : {
+                      iat: jwksFault === 'future' ? now + 100 : now,
+                      exp: jwksFault === 'expired' ? now - 1 : now + 120,
+                    }),
+                ...(jwksFault === 'critical' ? { crit: ['unrecognized'] } : {}),
+              })
+                .setProtectedHeader({
+                  typ: jwksFault === 'type' ? 'JWT' : 'jwk-set+jwt',
+                  alg: 'ES256',
+                  kid: 'public-2',
+                })
+                .sign(pairs[jwksFault === 'signature' ? 4 : 2]!.privateKey);
+            response.setHeader('content-type', 'application/jwk-set+jwt');
+            response.end(token);
+            return;
+          }
           if (request.url === '/token') {
             tokenRequests++;
             const form = new URLSearchParams(body),
@@ -245,7 +287,12 @@ async function run(files: { certificate: string; privateKey: string }) {
           encryption: 'A128CBC-HS256' as const,
         },
         requestedClaims: ['name', 'family_name', 'email_verified', 'age'],
-        approvedProtocolEndpoints: [origin + '/token', origin + '/userinfo'],
+        approvedProtocolEndpoints: [
+          origin + '/token',
+          origin + '/userinfo',
+          origin + '/jwks',
+          origin + '/signed-jwks',
+        ],
       },
     },
     settings = capture({ ...f.settings, profiles: [profile] }, 'test'),
@@ -446,6 +493,67 @@ async function run(files: { certificate: string; privateKey: string }) {
     });
     liveStatus.status = 'active';
     assert.equal(tokenRequests, beforeRevoked);
+    const keySource = async (source: 'inline' | 'remote' | 'signed' | 'both') => {
+      const resolved = {
+        ...metadata,
+        ...(source === 'inline' || source === 'both' ? {} : { jwks: undefined }),
+        ...(source === 'remote'
+          ? { jwks_uri: origin + '/jwks' }
+          : source === 'signed'
+            ? { signed_jwks_uri: origin + '/signed-jwks' }
+            : source === 'both'
+              ? { jwks_uri: 'https://unapproved.example.test/keys' }
+              : {}),
+      };
+      graph.records.set(
+        configurationEndpoint(op),
+        await statement(op, op, 2, 2, {
+          ...decodeJwt<Record<string, unknown>>(graph.leafConfiguration),
+          authority_hints: [sa],
+          metadata: { openid_provider: resolved },
+        }),
+      );
+    };
+    for (const source of ['remote', 'signed', 'both'] as const) {
+      await keySource(source);
+      jwksFault = 'none';
+      const before = jwksRequests,
+        target = await begin('valid'),
+        result = await f.runtime.run((call) => callback.consume(call, target.href));
+      assert.equal(callback.result(result).subject, 'upstream-subject');
+      assert.equal(jwksRequests, before + (source === 'both' ? 0 : 1));
+    }
+    await keySource('signed');
+    jwksFault = 'no-time';
+    const optionalTimes = await begin('valid'),
+      bounded = await f.runtime.run((call) => callback.consume(call, optionalTimes.href));
+    assert.ok(Date.parse(bounded.expiresAt) <= Date.now() + 30000);
+    for (const fault of [
+      'signature',
+      'issuer',
+      'type',
+      'expired',
+      'future',
+      'critical',
+      'private',
+    ]) {
+      jwksFault = fault;
+      const target = await begin('valid'),
+        before = tokenRequests;
+      await assert.rejects(() => f.runtime.run((call) => callback.consume(call, target.href)), {
+        code: 'EK_EID_FEDERATION',
+      });
+      assert.equal(tokenRequests, before, 'Invalid signed keys cannot reach the token endpoint');
+    }
+    await keySource('remote');
+    jwksFault = 'private';
+    const privateRemote = await begin('valid');
+    await assert.rejects(
+      () => f.runtime.run((call) => callback.consume(call, privateRemote.href)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    await keySource('inline');
+    jwksFault = 'none';
     const late = await begin('valid');
     let release!: () => void, entered!: () => void;
     const pending = new Promise<void>((resolve) => {

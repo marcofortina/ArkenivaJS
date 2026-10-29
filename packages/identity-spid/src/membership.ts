@@ -31,7 +31,7 @@ function italianRole(type: string): Role | undefined {
   // Italian identifiers place the role first; profile and extension suffixes are optional.
   return parts[1] as Role;
 }
-function keys(node: ChainNode): readonly StatementKey[] {
+export function delegatedKeys(node: ChainNode): readonly StatementKey[] {
   const result: StatementKey[] = [];
   for (const delegated of node.keys) {
     const published = node.configuration.keys.find(
@@ -216,7 +216,7 @@ export class FederationMembership {
                       issuer: inspected.issuer,
                       subject,
                       type,
-                      keys: keys(signer),
+                      keys: delegatedKeys(signer),
                       maxBytes: policy.maxBytes,
                       track: call.track,
                     },

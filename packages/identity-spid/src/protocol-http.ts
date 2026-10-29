@@ -15,6 +15,7 @@ export interface OidcProtocolEndpoints {
   readonly tokenEndpoint: string;
   readonly userInfoEndpoint: string;
   readonly jwksEndpoint?: string;
+  readonly jwksFormat?: 'json' | 'signed';
 }
 /** Adapt only approved SDK protocol requests to the existing bounded native-TLS HTTP client. */
 export class FederationProtocolHttp {
@@ -47,10 +48,21 @@ export class FederationProtocolHttp {
     });
   }
   fetch(call: FederationCall, input: OidcProtocolEndpoints) {
-    const value = fields(input, ['tokenEndpoint', 'userInfoEndpoint', 'jwksEndpoint']),
+    const value = fields(input, [
+        'tokenEndpoint',
+        'userInfoEndpoint',
+        'jwksEndpoint',
+        'jwksFormat',
+      ]),
       token = new URL(url(value.tokenEndpoint)).href,
       userInfo = new URL(url(value.userInfoEndpoint)).href,
       jwks = value.jwksEndpoint === undefined ? undefined : new URL(url(value.jwksEndpoint)).href;
+    if (
+      (value.jwksFormat !== undefined &&
+        !['json', 'signed'].includes(value.jwksFormat as string)) ||
+      (value.jwksFormat !== undefined && !jwks)
+    )
+      throw failure('EK_EID_FEDERATION');
     if (
       [token, userInfo, ...(jwks ? [jwks] : [])].some((endpoint) => !this.approved.has(endpoint)) ||
       jwks === userInfo
@@ -143,8 +155,10 @@ export class FederationProtocolHttp {
         if (
           !(role === 'userinfo'
             ? content === 'application/jwt'
-            : content === 'application/json' ||
-              (role === 'jwks' && content === 'application/jwk-set+json'))
+            : role === 'jwks' && value.jwksFormat === 'signed'
+              ? content === 'application/jwk-set+jwt'
+              : content === 'application/json' ||
+                (role === 'jwks' && content === 'application/jwk-set+json'))
         )
           throw failure('EK_EID_FEDERATION');
         const length = response.headers.get('content-length');
