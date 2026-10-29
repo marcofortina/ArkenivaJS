@@ -1,5 +1,7 @@
 # Changelog
 
+- Register the bounded GraphQL subscription connection, queue and event instruments with fixed result, queue and transport dimensions.
+
 - Add fixed GraphQL dimensions and explicit operation, duration, complexity, item and rejection units.
 
 - Add explicit inbound trace-scope isolation and fixed socket event labels with native payload and duration units.

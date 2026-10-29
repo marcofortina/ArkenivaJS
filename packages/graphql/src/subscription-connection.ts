@@ -16,9 +16,11 @@ import { SubscriptionEgress } from './subscription-egress.js';
 import { installSubscriptionIngress } from './subscription-ingress.js';
 import { sealSubscriptionResult } from './subscription-output.js';
 import { subscriptionTimer } from './subscription-timer.js';
+import { observe } from './observation.js';
 
 interface Reservation {
   stopping: boolean;
+  pendingEvent: boolean;
   execution?: SubscriptionExecution;
   release?: () => void;
 }
@@ -29,6 +31,7 @@ export class SubscriptionConnection {
   private resolveCompletion!: () => void;
   private readonly controller = new AbortController();
   private readonly admission: SubscriptionAdmission;
+  private readonly egress: SubscriptionEgress;
   private readonly operations = new Map<string, Reservation>();
   private readonly verifying = new Set<Operation>();
   private readonly initializer: () => void;
@@ -52,6 +55,7 @@ export class SubscriptionConnection {
     private readonly executions: OwnedContexts<SubscriptionExecution>,
     private readonly owner: AbortSignal,
     private readonly entered: (scope: Operation) => void = () => {},
+    private readonly signals: { changed?(): void; event?(result: 'deliver' | 'drop'): void } = {},
   ) {
     if (!settings.subscriptions || !settings.security.auth.required) throw failure();
     if (
@@ -76,12 +80,13 @@ export class SubscriptionConnection {
       this.wireClosed = true;
       this.termination?.();
       void this.close();
+      observe(() => this.signals.changed?.());
       this.finish();
     });
     socket.on('error', () => {
       void this.close();
     });
-    new SubscriptionEgress(
+    this.egress = new SubscriptionEgress(
       socket,
       {
         maxResultBytes: settings.security.limits.maxResultBytes,
@@ -89,6 +94,7 @@ export class SubscriptionConnection {
         timeoutMs: settings.security.limits.maxOperationMs,
       },
       (message) => this.sent(message),
+      () => this.signals.changed?.(),
     );
     installSubscriptionIngress(socket, settings.security.limits, (message) => this.accept(message));
     if (owner.aborted) void this.close();
@@ -102,7 +108,7 @@ export class SubscriptionConnection {
     const accepted = this.admission.accept(message);
     if (accepted === false) return false;
     if (message.type === MessageType.Subscribe)
-      this.operations.set(message.id, { stopping: false });
+      this.operations.set(message.id, { stopping: false, pendingEvent: false });
     else if (message.type === MessageType.Complete) {
       const reservation = this.operations.get(message.id);
       if (reservation) {
@@ -111,6 +117,7 @@ export class SubscriptionConnection {
         void reservation.execution?.close();
       }
     }
+    observe(() => this.signals.changed?.());
     return undefined;
   }
 
@@ -121,7 +128,13 @@ export class SubscriptionConnection {
       this.initializer();
       this.schedule();
     } else if (message.type === MessageType.Pong) this.admission.sentPong();
-    else if (message.type === MessageType.Ping && !this.heartbeat) {
+    else if (message.type === MessageType.Next) {
+      const reservation = this.operations.get(message.id);
+      if (reservation?.pendingEvent) {
+        reservation.pendingEvent = false;
+        observe(() => this.signals.event?.('deliver'));
+      }
+    } else if (message.type === MessageType.Ping && !this.heartbeat) {
       this.heartbeat = subscriptionTimer(this.settings.security.limits.maxOperationMs, () => {
         void this.close();
       });
@@ -130,6 +143,7 @@ export class SubscriptionConnection {
       // Native start errors do not retire their internal subscription context until wire closure.
       if (message.type === MessageType.Error) void this.close();
     }
+    observe(() => this.signals.changed?.());
   }
 
   private async verify(assertion: string) {
@@ -201,7 +215,9 @@ export class SubscriptionConnection {
   }
 
   parsed(id: string) {
-    return this.admission.parsed(id);
+    const document = this.admission.parsed(id);
+    observe(() => this.signals.changed?.());
+    return document;
   }
 
   async start(context: object, id: string) {
@@ -229,6 +245,9 @@ export class SubscriptionConnection {
       },
       this.controller.signal,
       this.entered,
+      () => {
+        reservation.pendingEvent = true;
+      },
     );
     reservation.execution = execution;
     execution.bind(context, this.scopes);
@@ -265,11 +284,16 @@ export class SubscriptionConnection {
     const reservation = this.operations.get(id);
     if (!reservation) return;
     reservation.stopping = true;
+    if (reservation.pendingEvent) {
+      reservation.pendingEvent = false;
+      observe(() => this.signals.event?.('drop'));
+    }
     const release = () => {
       if (this.operations.get(id) !== reservation) return;
       reservation.release?.();
       this.operations.delete(id);
       this.admission.retire(id);
+      observe(() => this.signals.changed?.());
       if (reservation.execution?.retirementFailed()) {
         this.failed = true;
         void this.close();
@@ -281,7 +305,13 @@ export class SubscriptionConnection {
   }
 
   stats() {
-    return Object.freeze({ ...this.admission.stats(), closed: this.closed, failed: this.failed });
+    return Object.freeze({
+      ...this.admission.stats(),
+      pendingWrites: this.egress.stats().pendingWrites,
+      wireOpen: !this.wireClosed,
+      closed: this.closed,
+      failed: this.failed,
+    });
   }
 
   close(): Promise<void> {
@@ -307,6 +337,7 @@ export class SubscriptionConnection {
       this.socket.close(4400, 'EK_GQL_SUBSCRIPTION');
     }
     this.finish();
+    observe(() => this.signals.changed?.());
     return this.completion;
   }
 
