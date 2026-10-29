@@ -11,6 +11,11 @@ Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 ## Trusted deployment configuration
 
+The secret method retains its captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy providers
+or callbacks, accessors and prototype traversal beyond 64 levels fail configuration
+validation; later method replacement does not alter the captured provider.
+
 Settings require `url`, `baseDn`, `groupSearchBaseDn`, `userFilterTemplate`, `serviceBindDnRef`, `serviceBindPasswordRef` and external `secretProvider`. Optional `tlsTrustBundleRef` resolves a PEM CA bundle; otherwise native system trust applies. Secret values require bounded UTF-8 bytes, an immutable version and an unexpired optional expiry. Provider-owned buffers remain untouched; temporary owned byte copies are erased. JavaScript strings and native IPC serialization cannot provide a guarantee of physical memory erasure. Passwords never enter process arguments, environment, files, logs or telemetry.
 
 Only `ldaps://host:port` or `ldap://host:port` with `requireStartTls:true` is permitted. URL credentials, paths, queries and fragments are rejected. TLS requires certificate and hostname verification and at least TLS 1.2. No plaintext bind, downgrade, automatic reconnect, rebind or referral following occurs. An interrupted connection requires a new public operation. The configured endpoint is a trusted application deployment decision, never a user-supplied URL.
