@@ -46,6 +46,11 @@ Success must approve the entire policy, including scopes, expiry and networks,
 and return the same account/tenant binding after checking server-owned state.
 Missing, inconsistent or unavailable authority fails closed.
 
+Provider methods are captured once with their original receiver. Custom function
+`bind`, `name` and `length` properties are never evaluated. Proxy providers and
+callables, accessors and prototype traversal beyond 32 levels fail configuration
+validation; replacing provider methods after construction has no effect.
+
 Management authentication comes from trusted request/session context, including
 recent step-up and management rate limits where required. A subject object is
 only a target hint: cloning it or fabricating a tenant brand authenticates
