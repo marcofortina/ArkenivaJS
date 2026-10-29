@@ -8,6 +8,55 @@ import { capture } from '../../dist/settings.js';
 import { FederationTransactions } from '../../dist/transactions.js';
 import type { ItalianEidPluginSettings } from '../../dist/index.js';
 
+test('Readiness probes use independent absent records without creating or claiming authentication state', async () => {
+  const f = await transactionFixture(),
+    ids: string[] = [];
+  try {
+    const settings = {
+      ...f.settings,
+      stateStore: {
+        ...f.settings.stateStore,
+        store: {
+          ...f.settings.stateStore.store,
+          async read(namespace: string, id: string) {
+            ids.push(id);
+            assert.match(id, /^[a-f0-9]{64}$/u);
+            return f.settings.stateStore.store.read(namespace, id);
+          },
+        },
+      },
+    };
+    const instance = f.instance(settings);
+    await f.runtime.run((call) => instance.probe(call));
+    await f.runtime.run((call) => instance.probe(call));
+    assert.equal(ids.length, 2);
+    assert.notEqual(ids[0], ids[1]);
+    assert.equal(f.rows.size, 0);
+    assert.equal(f.claims.size, 0);
+    f.state.storage = false;
+    await assert.rejects(() => f.runtime.run((call) => instance.probe(call)), {
+      code: 'EK_EID_FEDERATION',
+    });
+    const malformed = f.instance({
+      ...settings,
+      stateStore: {
+        ...settings.stateStore,
+        store: {
+          ...settings.stateStore.store,
+          async read() {
+            return { version: 'unexpected' };
+          },
+        },
+      },
+    });
+    await assert.rejects(() => f.runtime.run((call) => malformed.probe(call)), {
+      code: 'EK_EID_FEDERATION',
+    });
+  } finally {
+    await f.close();
+  }
+});
+
 test('Actual framework cryptography protects nonce and PKCE state before shared persistence', async () => {
   const f = await transactionFixture();
   try {

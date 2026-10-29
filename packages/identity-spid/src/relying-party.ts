@@ -45,6 +45,10 @@ export class FederationRelyingParty {
   private readonly profile;
   private readonly membership;
   readonly #owned = new WeakMap<RelyingPartyEvidence, () => void>();
+  readonly #registration = new WeakMap<
+    RelyingPartyEvidence,
+    { metadata: string; signingKid: string; decryptionKid: string }
+  >();
   constructor(
     private readonly settings: Settings,
     profileId: string,
@@ -89,6 +93,18 @@ export class FederationRelyingParty {
         });
       check();
       call.check();
+      const publicKeys = list(fields(original.jwks, ['keys']).keys, 32).map((key) => fields(key));
+      const signing = publicKeys.find((key) => key.use === 'sig'),
+        decryption = publicKeys.find((key) => key.use === 'enc');
+      if (!signing || !decryption) throw failure('EK_EID_FEDERATION');
+      this.#registration.set(
+        result,
+        Object.freeze({
+          metadata: configuration,
+          signingKid: text(signing.kid),
+          decryptionKid: text(decryption.kid),
+        }),
+      );
       this.#owned.set(result, check);
       return result;
     } catch (error) {
@@ -101,6 +117,12 @@ export class FederationRelyingParty {
         throw error;
       throw failure('EK_EID_FEDERATION');
     }
+  }
+  registration(input: RelyingPartyEvidence) {
+    this.check(input);
+    const value = this.#registration.get(input);
+    if (!value) throw failure('EK_EID_FEDERATION');
+    return value;
   }
   check(input: RelyingPartyEvidence) {
     const check = this.#owned.get(input);

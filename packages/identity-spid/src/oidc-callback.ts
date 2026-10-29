@@ -74,7 +74,11 @@ export class FederationOidcCallback {
     this.transactions = new FederationTransactions(settings, profileId, crypto);
     this.read = method<FederationHttp['statement']>(http, 'statement');
   }
-  async consume(call: FederationCall, input: unknown): Promise<VerifiedOidcResult> {
+  async consume(
+    call: FederationCall,
+    input: unknown,
+    expectedKeys?: Readonly<{ signingKid: string; decryptionKid: string }>,
+  ): Promise<VerifiedOidcResult> {
     try {
       call.check();
       const maximum = Math.min(
@@ -161,6 +165,12 @@ export class FederationOidcCallback {
           if (!list(metadata[name]).includes(value)) throw failure('EK_EID_FEDERATION');
         };
       if (signer.kid === decryptor.publicJwk.kid) throw failure('EK_EID_FEDERATION');
+      if (
+        expectedKeys &&
+        (signer.kid !== expectedKeys.signingKid ||
+          decryptor.publicJwk.kid !== expectedKeys.decryptionKid)
+      )
+        throw failure('EK_EID_FEDERATION');
       supported('token_endpoint_auth_methods_supported', 'private_key_jwt');
       supported('token_endpoint_auth_signing_alg_values_supported', signer.algorithm);
       supported('id_token_signing_alg_values_supported', registration.idTokenSigningAlgorithm);
