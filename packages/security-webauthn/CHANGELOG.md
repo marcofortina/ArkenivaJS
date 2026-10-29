@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject fabricated, proxied or shadowed cancellation signals before ceremony work
+  and normalize invalid operation inputs to the existing MFA policy error.
 - Capture provider methods without invoking custom function metadata and reject
   Proxy configuration, provider prototypes and callable wrappers before reflection.
 - Test concurrent credential key/handle/backup changes and newer committed

@@ -8,7 +8,7 @@ import type {
   MfaSubjectContext,
   OperationOptions,
 } from '@arkenivajs/core';
-import { within } from '@arkenivajs/core/support';
+import { captureAbortSignal, within } from '@arkenivajs/core/support';
 import type { TotpServiceOptions, TotpPolicyAction, TotpRecoveryProofInput } from './contracts.js';
 
 export const policyError = () =>
@@ -246,12 +246,20 @@ export function createTotpRuntime(input: TotpServiceOptions) {
       operation: OperationOptions | undefined,
       work: (call: TotpCall) => Promise<T>,
     ): Promise<T> {
-      const timeoutMs = operation?.timeoutMs ?? 30000;
+      const requested = data(operation === undefined ? {} : operation, ['signal', 'timeoutMs']);
+      const timeoutMs = (requested.timeoutMs === undefined ? 30000 : requested.timeoutMs) as number;
       if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw policyError();
+      let source: AbortSignal | undefined;
+      if (requested.signal !== undefined) {
+        try {
+          source = captureAbortSignal(requested.signal);
+        } catch {
+          throw policyError();
+        }
+      }
       const controller = new AbortController(),
-        signal = operation?.signal
-          ? AbortSignal.any([controller.signal, operation.signal])
-          : controller.signal;
+        signal =
+          source === undefined ? controller.signal : AbortSignal.any([controller.signal, source]);
       const deadline = performance.now() + timeoutMs;
       let finished = false;
       const check = () => {

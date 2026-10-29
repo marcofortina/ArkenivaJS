@@ -82,6 +82,10 @@ be a finite nonnegative integer epoch millisecond value. Request arguments canno
 select clock, environment or providers. Provider operations obey deadlines and
 cancellation; late results cannot initiate subsequent work.
 
+Operation options contain only data properties `timeoutMs` and `signal`. Cancellation
+requires a genuine native `AbortSignal` without shadowed lifecycle hooks; accessors,
+Proxy wrappers and structural lookalikes fail with `EK_MFA_POLICY` before provider work.
+
 ## Service operations and persistence
 
 | Method                                                    | Behavior                                                                                                                                                            |

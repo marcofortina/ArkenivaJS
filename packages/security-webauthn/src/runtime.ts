@@ -10,7 +10,7 @@ import type {
   MfaSubjectContext,
   OperationOptions,
 } from '@arkenivajs/core';
-import { copyData, within } from '@arkenivajs/core/support';
+import { captureAbortSignal, copyData, within } from '@arkenivajs/core/support';
 import type { WebAuthnServiceOptions, WebAuthnPolicyAction } from './contracts.js';
 import { createWebAuthnDriver } from './webauthn-driver.js';
 
@@ -254,13 +254,17 @@ function captureRuntime(input: WebAuthnServiceOptions) {
         (timeoutMs as number) > 120000
       )
         throw policyError();
-      if (requested.signal !== undefined && !(requested.signal instanceof AbortSignal))
-        throw policyError();
+      let source: AbortSignal | undefined;
+      if (requested.signal !== undefined) {
+        try {
+          source = captureAbortSignal(requested.signal);
+        } catch {
+          throw policyError();
+        }
+      }
       const controller = new AbortController(),
         signal =
-          requested.signal === undefined
-            ? controller.signal
-            : AbortSignal.any([controller.signal, requested.signal as AbortSignal]);
+          source === undefined ? controller.signal : AbortSignal.any([controller.signal, source]);
       const captured = Object.freeze({ signal, timeoutMs: timeoutMs as number });
       const deadline = performance.now() + captured.timeoutMs;
       let finished = false;

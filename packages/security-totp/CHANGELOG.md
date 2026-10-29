@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject executable operation options and fabricated or shadowed cancellation signals
+  before authority/storage work, using the shared native signal capture guard.
 - Capture provider methods without invoking custom function metadata and reject
   Proxy configuration, provider prototypes and callable wrappers before reflection.
 - Add explicit runtime subject/management authorization, versioned external HMAC-SHA256 keys and environment/test-clock contracts with fail-closed guards.
