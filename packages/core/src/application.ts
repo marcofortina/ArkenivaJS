@@ -386,14 +386,22 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
       values.set(key, { owner: plugin.id, value });
     }
   }
+  const expireShutdown = () =>
+    controller.abort(new KitError({ code: 'EK_TIMEOUT', message: 'Shutdown deadline reached' }));
+  const shutdownRemaining = (deadline: number) => {
+    const remaining = Math.ceil(deadline - performance.now());
+    if (remaining <= 0) expireShutdown();
+    return remaining;
+  };
   const cleanup = async (deadline: number): Promise<unknown[]> => {
     const errors: unknown[] = [];
     for (const { plugin, context } of started.splice(0).reverse()) {
       try {
-        const remaining = Math.ceil(deadline - performance.now());
+        shutdownRemaining(deadline);
         // Start cleanup while this hook's owned and dependent capabilities still exist.
         const closing = Promise.resolve(plugin.close(context));
         void closing.catch(() => undefined);
+        const remaining = shutdownRemaining(deadline);
         if (remaining <= 0) {
           // Invoke every close hook, but do not extend a shared expired deadline.
           errors.push(new KitError({ code: 'EK_TIMEOUT', message: 'Shutdown deadline exhausted' }));
@@ -621,13 +629,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
       else state = 'DRAINING';
       stopping = (async () => {
         let startupTimeout: unknown;
-        const timer = setTimeout(
-          () =>
-            controller.abort(
-              new KitError({ code: 'EK_TIMEOUT', message: 'Shutdown deadline reached' }),
-            ),
-          Math.min(timeoutMs, 2_147_483_647),
-        );
+        const timer = setTimeout(expireShutdown, Math.min(timeoutMs, 2_147_483_647));
         try {
           // Cancellation of startup is expected here; start callers still see its rejection.
           if (starting) {
@@ -646,9 +648,10 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
             const drain = plugin[DRAIN_PLUGIN];
             if (!drain) continue;
             try {
-              const remaining = Math.ceil(deadline - performance.now());
+              shutdownRemaining(deadline);
               const draining = Promise.resolve(drain(context));
               void draining.catch(() => undefined);
+              const remaining = shutdownRemaining(deadline);
               if (remaining <= 0) {
                 errors.push(
                   new KitError({
@@ -676,6 +679,8 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
               details: { cleanupFailureCount: errors.length },
             });
         } finally {
+          // A synchronous hook can exhaust the deadline before its timer gets an event-loop turn.
+          shutdownRemaining(deadline);
           clearTimeout(timer);
         }
       })();
