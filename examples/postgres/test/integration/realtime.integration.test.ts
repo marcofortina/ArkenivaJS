@@ -13,11 +13,12 @@ import { loggingPlugin } from '@arkenivajs/logging';
 import { createAuthService } from '@arkenivajs/security';
 import { postgresPlugin } from '@arkenivajs/database-postgres';
 import { realtimePlugin } from '@arkenivajs/realtime';
+import type { SseSource } from '@arkenivajs/realtime';
 import { createRealtimeTables, PostgresRealtimeSource } from '../../dist/realtime-source.js';
 import { securityStateFixture } from './security-state-fixture.js';
 import { startMfaIssuer } from './mfa-issuer.js';
 
-async function listener(auth: AuthService, source: PostgresRealtimeSource) {
+async function listener(auth: AuthService, source: SseSource) {
   const reservation = createServer();
   await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve));
   const address = reservation.address();
@@ -71,6 +72,7 @@ function read(
   authorization: string,
   count: number,
   cursor?: string,
+  onComment?: () => void,
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const outgoing = get(
@@ -93,6 +95,7 @@ function read(
         };
         response.on('data', (chunk: Buffer) => {
           body += chunk.toString('utf8');
+          if (/(?:^|\n):[^\n]*\n\n/u.test(body)) onComment?.();
           if (
             count &&
             (body.match(/\nid: |^id: /g)?.length ?? 0) >= count &&
@@ -126,7 +129,8 @@ test(
       algorithms: ['RS256'],
       authorizeTenant: (_identity, tenant) => ['tenant-a', 'tenant-b'].includes(tenant),
     });
-    let active: Awaited<ReturnType<typeof listener>> | undefined;
+    let active: Awaited<ReturnType<typeof listener>> | undefined,
+      releaseReplay = () => {};
     const peer = await createApplication({
       service: { name: 'durable-sse-peer', version: '1.0.0', environment: 'test' },
       plugins: [postgresPlugin()],
@@ -160,11 +164,30 @@ test(
       assert.ok(!initial.body.includes(foreign));
       assert.ok(!initial.body.includes('foreign-private-event'));
       await active.app.stop();
-      active = await listener(auth, other);
-      const replay = await read(active.origin, authorization, 3, first);
+      const ready = new Promise<void>((resolve) => {
+        releaseReplay = resolve;
+      });
+      active = await listener(auth, {
+        kind: 'durable',
+        usage: 'test-only',
+        validateCursor: (context) => other.validateCursor(context),
+        async *subscribe(context) {
+          if (context.lastEventId === first) await ready;
+          yield* other.subscribe(context);
+        },
+      });
+      const replay = await read(active.origin, authorization, 3, first, releaseReplay);
       assert.equal(replay.status, 200);
       assert.ok(!replay.body.includes(first));
-      assert.ok(replay.body.startsWith('id: ' + second));
+      assert.ok(
+        replay.body.startsWith(':'),
+        'A native heartbeat must precede the deliberately held replay',
+      );
+      const eventIds = (body: string) =>
+        [...body.matchAll(/(?:^|\n)id: ([^\r\n]*)/gu)].map((match) => match[1]!);
+      assert.equal(eventIds(replay.body)[0], second);
+      assert.equal(eventIds(replay.body).length, 3);
+      assert.deepEqual(eventIds(replay.body), eventIds(initial.body).slice(1));
       assert.equal((await read(active.origin, otherAuthorization, 0, first)).status, 409);
       assert.equal((await read(active.origin, authorization, 0, randomUUID())).status, 409);
       await source.retainFrom(tenant, second);
@@ -209,6 +232,7 @@ test(
         source.append({ ...tenant } as typeof tenant, { type: 'order', data: 'forged' }),
       );
     } finally {
+      releaseReplay();
       await active?.app.stop();
       await peer.stop();
       await auth.close();
