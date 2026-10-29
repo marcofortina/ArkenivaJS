@@ -59,7 +59,8 @@ export interface ManagedHttpClient extends OutboundHttpClient {
   }>;
 }
 
-const privateNetworks = new BlockList();
+const privateIpv4Networks = new BlockList();
+const privateIpv6Networks = new BlockList();
 for (const [network, bits] of [
   ['0.0.0.0', 8],
   ['10.0.0.0', 8],
@@ -75,7 +76,7 @@ for (const [network, bits] of [
   ['203.0.113.0', 24],
   ['224.0.0.0', 3],
 ] as const)
-  privateNetworks.addSubnet(network, bits, 'ipv4');
+  privateIpv4Networks.addSubnet(network, bits, 'ipv4');
 for (const [network, bits] of [
   ['::', 96],
   ['::ffff:0:0', 96],
@@ -86,7 +87,7 @@ for (const [network, bits] of [
   ['2001::', 23],
   ['2002::', 16],
 ] as const)
-  privateNetworks.addSubnet(network, bits, 'ipv6');
+  privateIpv6Networks.addSubnet(network, bits, 'ipv6');
 const globalIpv6 = new BlockList();
 globalIpv6.addSubnet('2000::', 3, 'ipv6');
 const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', message });
@@ -96,7 +97,11 @@ const publicAddress = (address: string): boolean => {
   return (
     family !== 0 &&
     (family !== 6 || globalIpv6.check(address, 'ipv6')) &&
-    !privateNetworks.check(address, family === 4 ? 'ipv4' : 'ipv6')
+    // Node also matches IPv4 addresses against mapped IPv6 subnets; keep the families separate.
+    !(family === 4 ? privateIpv4Networks : privateIpv6Networks).check(
+      address,
+      family === 4 ? 'ipv4' : 'ipv6',
+    )
   );
 };
 
