@@ -9,6 +9,11 @@
 API and authentication providers. Every stream authenticates before admission;
 TypeScript tenant objects and tenant headers cannot grant identity.
 
+Source, cursor, identity authority and iterator methods retain their original
+receiver and callback. Capturing them does not evaluate callable `bind`, `name`
+or `length` properties. Later provider method replacement cannot change the
+captured callbacks; proxy providers, callbacks and prototype chains are rejected.
+
 Declare routes during startup, with named handler, source and policy catalogs:
 
 ```typescript
