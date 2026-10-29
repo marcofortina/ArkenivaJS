@@ -18,6 +18,7 @@ import { installSubscriptionIngress } from '../../dist/subscription-ingress.js';
 import { capture } from '../../dist/policy.js';
 import { SubscriptionStream } from '../../dist/subscription-stream.js';
 import { sealSubscriptionResult } from '../../dist/subscription-output.js';
+import { SubscriptionEgress } from '../../dist/subscription-egress.js';
 
 /** Engine compatibility probes do not activate the framework's subscription transport. */
 function deferred<T>() {
@@ -36,7 +37,9 @@ interface Session {
   readonly tenant: string;
 }
 
-async function nativeFixture(options: { maxDocumentBytes?: number; maxResultBytes?: number } = {}) {
+async function nativeFixture(
+  options: { maxDocumentBytes?: number; maxResultBytes?: number; startFailure?: boolean } = {},
+) {
   const tls = await tlsFiles();
   const pair = await generateKeyPair('ES256');
   const server = Fastify({
@@ -67,6 +70,15 @@ async function nativeFixture(options: { maxDocumentBytes?: number; maxResultByte
     if (!native) return;
     route.wsHandler = function (socket, request) {
       installSubscriptionIngress(socket, limits, () => undefined);
+      new SubscriptionEgress(
+        socket,
+        {
+          maxResultBytes: limits.maxResultBytes,
+          maxQueuedEvents: 8,
+          timeoutMs: 1000,
+        },
+        () => {},
+      );
       return native.call(this, socket, request);
     };
   });
@@ -173,6 +185,7 @@ async function nativeFixture(options: { maxDocumentBytes?: number; maxResultByte
       'preSubscriptionExecution',
       async (_s, _d, context) => {
         await revalidate(context);
+        if (options.startFailure) throw new Error('Private provider address and credential detail');
       },
     );
     server.graphql.addHook(
@@ -261,6 +274,27 @@ async function nativeFixture(options: { maxDocumentBytes?: number; maxResultByte
     throw error;
   }
 }
+
+test(
+  'Real native WSS start failures expose only a bounded safe protocol error',
+  { timeout: 10000 },
+  async () => {
+    const fixture = await nativeFixture({ startFailure: true });
+    try {
+      const connection = await fixture.client('tenant-a');
+      const values = connection.client.iterate({ query: 'subscription { notice { id } }' });
+      await assert.rejects(values.next(), (error: unknown) => {
+        assert.deepEqual(error, [
+          { message: 'GraphQL operation failed', extensions: { code: 'EK_GQL_SUBSCRIPTION' } },
+        ]);
+        return true;
+      });
+      assert.equal(fixture.resolverContexts.length, 0);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
 
 test(
   'Pinned Mercurius and graphql-ws interoperate over verified WSS with signed tenant routing and clean unsubscribe',
