@@ -122,3 +122,98 @@ test('Redis subscription options reject accessors, forged signals and invalid de
     code: 'EK_ABORTED',
   });
 });
+
+test('Redis subscriber drains ordered events and ignores late delivery after a normal close', async () => {
+  const sdk = native(),
+    messages: string[] = [];
+  const subscriber = new RedisSubscriber(
+    sdk.sdk,
+    async (message) => {
+      messages.push(message);
+    },
+    subscriptionOptions({
+      onFailure() {
+        assert.fail('Normal delivery must not fail');
+      },
+    }),
+  );
+  await subscriber.start('scope:ordered');
+  sdk.send('one');
+  sdk.send('two');
+  await setImmediate();
+  await setImmediate();
+  sdk.send('three');
+  await setImmediate();
+  await subscriber.close();
+  sdk.send('late');
+  assert.deepEqual(messages, ['one', 'two', 'three']);
+  await assert.rejects(subscriber.start('scope:closed'), { code: 'EK_ABORTED' });
+});
+
+test('Redis subscriber enforces count and byte queue limits while a physical callback remains pending', async () => {
+  for (const scenario of ['count', 'bytes'] as const) {
+    const sdk = native(),
+      failures: Error[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const subscriber = new RedisSubscriber(
+      sdk.sdk,
+      async () => {
+        await gate;
+      },
+      subscriptionOptions({
+        onFailure(error) {
+          failures.push(error);
+          throw new Error('Private callback diagnostic');
+        },
+      }),
+    );
+    await subscriber.start('scope:bounded');
+    sdk.send('active');
+    await setImmediate();
+    const message = scenario === 'count' ? 'x' : 'x'.repeat(1048576);
+    for (let index = 0; index < (scenario === 'count' ? 1025 : 4); index++) sdk.send(message);
+    await setImmediate();
+    assert.equal(sdk.client.isOpen, false);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]!.message.includes('Private'), false);
+    release();
+    await subscriber.close();
+  }
+});
+
+test('Redis subscriber observes a late native acquisition after cancellation without activating a listener', async () => {
+  const sdk = native(),
+    abort = new AbortController();
+  let release!: () => void,
+    subscribed = 0;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  sdk.client.connect = async () => {
+    sdk.client.isOpen = true;
+    await gate;
+  };
+  sdk.client.subscribe = async () => {
+    subscribed++;
+  };
+  const subscriber = new RedisSubscriber(
+    sdk.sdk,
+    async () => {},
+    subscriptionOptions({
+      signal: abort.signal,
+      onFailure() {
+        assert.fail('Cancellation must not invoke the failure callback');
+      },
+    }),
+  );
+  const starting = subscriber.start('scope:late');
+  abort.abort();
+  await assert.rejects(starting, { code: 'EK_BACKEND_UNAVAILABLE' });
+  release();
+  await subscriber.close();
+  assert.equal(subscribed, 0);
+  assert.equal(sdk.client.isOpen, false);
+});
