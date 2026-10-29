@@ -100,6 +100,7 @@ export async function authorizedField(
       ['EK_GQL_FORBIDDEN', 'EK_GQL_TIMEOUT', 'EK_GQL_COMPLEXITY'].includes(error.code)
         ? failure(error.code)
         : failure('EK_GQL_EXECUTION');
+    scope?.observation?.reject(safe);
     throw new GraphQLError(safe.message, { extensions: { code: safe.code } });
   } finally {
     scope?.observation?.field(

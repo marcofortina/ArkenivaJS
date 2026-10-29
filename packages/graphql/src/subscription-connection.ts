@@ -17,12 +17,14 @@ import { installSubscriptionIngress } from './subscription-ingress.js';
 import { sealSubscriptionResult } from './subscription-output.js';
 import { subscriptionTimer } from './subscription-timer.js';
 import { observe } from './observation.js';
+import type { Observation } from './observation.js';
 
 interface Reservation {
   stopping: boolean;
   pendingEvent: boolean;
   execution?: SubscriptionExecution;
   release?: () => void;
+  observation?: Observation;
 }
 
 /** One native connection retains authentication, starts, source handles and physical cleanup. */
@@ -60,6 +62,9 @@ export class SubscriptionConnection {
       event?(result: 'deliver' | 'drop'): void;
       authenticated?(principal: VerifiedTenantContext): void;
       scope?(scope: Operation, phase: 'source' | 'event'): Promise<void>;
+      observation?(): Observation;
+      operation?(): void;
+      rejected?(): void;
     } = {},
   ) {
     if (!settings.subscriptions || !settings.security.auth.required) throw failure();
@@ -110,11 +115,33 @@ export class SubscriptionConnection {
       this.heartbeat?.();
       this.heartbeat = undefined;
     }
-    const accepted = this.admission.accept(message);
+    let observation: Observation | undefined;
+    if (message.type === MessageType.Subscribe) {
+      observe(() => this.signals.operation?.());
+      observe(() => {
+        observation = this.signals.observation?.();
+      });
+    }
+    let accepted: false | undefined;
+    try {
+      accepted = this.admission.accept(message);
+    } catch (error) {
+      if (message.type === MessageType.Subscribe) {
+        observation?.reject(error);
+        observation?.finish(400);
+        observe(() => this.signals.rejected?.());
+      }
+      throw error;
+    }
     if (accepted === false) return false;
-    if (message.type === MessageType.Subscribe)
-      this.operations.set(message.id, { stopping: false, pendingEvent: false });
-    else if (message.type === MessageType.Complete) {
+    if (message.type === MessageType.Subscribe) {
+      observation?.budget('subscription', this.admission.complexity(message.id));
+      this.operations.set(message.id, {
+        stopping: false,
+        pendingEvent: false,
+        ...(observation ? { observation } : {}),
+      });
+    } else if (message.type === MessageType.Complete) {
       const reservation = this.operations.get(message.id);
       if (reservation) {
         reservation.stopping = true;
@@ -187,6 +214,9 @@ export class SubscriptionConnection {
         throw failure('EK_GQL_AUTH');
       return principal;
     } catch {
+      if (!this.closed && !this.owner.aborted)
+        for (const reservation of this.operations.values())
+          reservation.observation?.reject(failure('EK_GQL_AUTH'));
       void this.close();
       throw failure('EK_GQL_AUTH');
     } finally {
@@ -255,6 +285,7 @@ export class SubscriptionConnection {
         reservation.pendingEvent = true;
       },
       this.signals.scope,
+      reservation.observation,
     );
     reservation.execution = execution;
     execution.bind(context, this.scopes);
@@ -263,6 +294,7 @@ export class SubscriptionConnection {
       await execution.prepare();
       if (this.closed || reservation.stopping) throw failure('EK_GQL_SUBSCRIPTION');
     } catch (error) {
+      reservation.observation?.reject(error);
       this.retire(id);
       throw error;
     }
@@ -280,6 +312,7 @@ export class SubscriptionConnection {
       scope.check();
     } catch (error) {
       scope.failed = true;
+      scope.observation?.reject(error);
       throw error;
     }
   }
@@ -296,13 +329,18 @@ export class SubscriptionConnection {
     const reservation = this.operations.get(id);
     if (!reservation) return;
     reservation.stopping = true;
-    if (reservation.pendingEvent) {
+    const interrupted = reservation.pendingEvent;
+    if (interrupted) {
       reservation.pendingEvent = false;
       observe(() => this.signals.event?.('drop'));
     }
     const release = () => {
       if (this.operations.get(id) !== reservation) return;
       reservation.release?.();
+      reservation.observation?.finish(
+        interrupted && !reservation.observation.isRejected() ? 499 : 200,
+      );
+      if (reservation.observation?.isRejected()) observe(() => this.signals.rejected?.());
       this.operations.delete(id);
       this.admission.retire(id);
       observe(() => this.signals.changed?.());

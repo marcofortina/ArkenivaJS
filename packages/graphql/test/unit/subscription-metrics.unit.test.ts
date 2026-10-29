@@ -16,6 +16,8 @@ import { fixture, tlsFiles, send } from '../fixture.js';
 interface Point {
   asDouble?: number;
   asInt?: string;
+  count?: string;
+  sum?: number;
   attributes?: { key: string; value: { stringValue?: string } }[];
 }
 interface Metric {
@@ -23,6 +25,7 @@ interface Metric {
   unit: string;
   gauge?: { dataPoints: Point[] };
   sum?: { dataPoints: Point[] };
+  histogram?: { dataPoints: Point[] };
 }
 interface Envelope {
   resourceMetrics?: { scopeMetrics: { metrics: Metric[] }[] }[];
@@ -94,7 +97,7 @@ test(
       },
       {
         tls: tls.tls,
-        telemetry: { mode: 'standard', samplingRatio: 1 },
+        telemetry: { mode: 'detailed', samplingRatio: 1 },
         plugins: [
           telemetryPlugin({
             endpoint: `http://127.0.0.1:${address.port}`,
@@ -165,9 +168,18 @@ test(
       const closed = once(a, 'close');
       a.close();
       await closed;
+      const invalid = await connect('tenant-c');
+      const invalidClosed = once(invalid, 'close');
+      invalid.send(
+        JSON.stringify({ type: 'subscribe', id: 'invalid', payload: { query: '{broken' } }),
+      );
+      await invalidClosed;
+      assert.equal(emitted, 2, 'Preflight rejection cannot allocate an application source');
       for (let index = 0; index < 100 && f.service.stats().activeSubscriptions; index++)
         await delay(5);
       assert.equal(f.service.stats().activeSubscriptions, 0);
+      assert.equal(f.service.stats().operations, 3);
+      assert.equal(f.service.stats().rejected, 2);
       await f.app.telemetry.flush();
       const spans = envelopes.flatMap(
         (envelope) =>
@@ -176,21 +188,21 @@ test(
           ) ?? [],
       );
       const parents = spans.filter((span) => span.name === 'http.server.request');
-      assert.equal(parents.length, 2);
+      assert.equal(parents.length, 3);
       const children = spans.filter((span) => span.name === 'graphql.subscription');
       assert.equal(children.length, 4, 'One source and one delivery scope per subscription');
       const resolvers = spans.filter((span) => span.name === 'subscription.resolver');
       assert.equal(resolvers.length, 2);
-      for (const { trace, parent } of remote.values()) {
+      for (const [tenant, { trace, parent }] of remote) {
         const roots = parents.filter((span) => span.traceId === trace);
         assert.equal(roots.length, 1);
         assert.equal(roots[0]!.parentSpanId, parent);
         const events = children.filter((span) => span.traceId === trace);
-        assert.equal(events.length, 2);
+        assert.equal(events.length, tenant === 'tenant-c' ? 0 : 2);
         assert.ok(events.every((span) => span.parentSpanId === roots[0]!.spanId));
         const work = resolvers.filter((span) => span.traceId === trace);
-        assert.equal(work.length, 1);
-        assert.ok(events.some((span) => span.spanId === work[0]!.parentSpanId));
+        assert.equal(work.length, tenant === 'tenant-c' ? 0 : 1);
+        if (work.length) assert.ok(events.some((span) => span.spanId === work[0]!.parentSpanId));
       }
       const metrics = envelopes
         .flatMap((envelope) => envelope.resourceMetrics ?? [])
@@ -201,6 +213,39 @@ test(
           .filter((metric) => metric.name === name)
           .flatMap((metric) => metric.gauge?.dataPoints ?? metric.sum?.dataPoints ?? []);
       const value = (point: Point) => point.asDouble ?? Number(point.asInt);
+      assert.equal(
+        points('arkenivajs.graphql.requests').reduce((sum, point) => sum + value(point), 0),
+        3,
+      );
+      assert.equal(
+        points('arkenivajs.graphql.denied').reduce((sum, point) => sum + value(point), 0),
+        2,
+      );
+      const histograms = (name: string) =>
+        metrics
+          .filter((metric) => metric.name === name)
+          .flatMap((metric) => metric.histogram?.dataPoints ?? []);
+      assert.equal(
+        histograms('arkenivajs.graphql.operation.complexity').reduce(
+          (sum, point) => sum + Number(point.count),
+          0,
+        ),
+        2,
+      );
+      assert.equal(
+        histograms('arkenivajs.graphql.operation.duration').reduce(
+          (sum, point) => sum + Number(point.count),
+          0,
+        ),
+        3,
+      );
+      assert.equal(
+        histograms('arkenivajs.graphql.field.duration').reduce(
+          (sum, point) => sum + Number(point.count),
+          0,
+        ),
+        4,
+      );
       for (const [name, unit] of [
         ['active_subscriptions', '{connection}'],
         ['subscription.queued', '{event}'],
@@ -239,7 +284,7 @@ test(
       );
       assert.doesNotMatch(
         JSON.stringify(envelopes),
-        /tenant-a|tenant-b|NeverExportOperationName|never-export-event-payload|unrestricted-client-id|other-client-id|Bearer /,
+        /tenant-a|tenant-b|tenant-c|NeverExportOperationName|never-export-event-payload|unrestricted-client-id|other-client-id|Bearer |\{broken/,
       );
     } finally {
       for (const socket of sockets) socket.terminate();

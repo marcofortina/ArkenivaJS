@@ -44,6 +44,11 @@ export class SubscriptionAdmission {
     if (this.state !== 'authenticating' || this.token === undefined) throw failure('EK_GQL_AUTH');
     return this.token;
   }
+  complexity(id: string): number {
+    const operation = this.operations.get(id);
+    if (!operation) throw failure('EK_GQL_SUBSCRIPTION');
+    return operation.document.complexity;
+  }
   authenticate(context: GraphqlRequestContext) {
     if (this.state !== 'authenticating') throw failure('EK_GQL_SUBSCRIPTION');
     if (!context.identity || !context.auth) throw failure('EK_GQL_AUTH');

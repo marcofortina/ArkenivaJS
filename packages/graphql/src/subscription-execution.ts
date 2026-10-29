@@ -13,6 +13,7 @@ import { bindMetadata } from './metadata.js';
 import { authorizedField, fieldInfo } from './fields.js';
 import { SubscriptionStream } from './subscription-stream.js';
 import { observe } from './observation.js';
+import type { Observation } from './observation.js';
 
 /** One source owns independent start and per-delivery policy/deadline/cache scopes. */
 export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
@@ -41,6 +42,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
     private readonly entered?: (scope: Operation) => void,
     private readonly taken?: () => void,
     private readonly observed?: (scope: Operation, phase: 'source' | 'event') => Promise<void>,
+    private readonly observation?: Observation,
   ) {
     try {
       if (authority.tenantFrom(principal.identity) !== principal) throw failure('EK_GQL_AUTH');
@@ -90,7 +92,12 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
   }
   private async fresh(phase: 'source' | 'event'): Promise<Operation> {
     if (this.closed) throw failure('EK_GQL_SUBSCRIPTION');
-    const scope = new Operation(this.metadata, this.settings.security.limits, this.signal);
+    const scope = new Operation(
+      this.metadata,
+      this.settings.security.limits,
+      this.signal,
+      this.observation,
+    );
     this.scopes.add(scope);
     void scope.completion.then(() => this.scopes.delete(scope));
     try {
@@ -123,6 +130,11 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
       return scope;
     } catch (error) {
       scope.end();
+      this.observation?.reject(
+        error instanceof KitError && error.code === 'EK_GQL_BACKPRESSURE'
+          ? error
+          : failure(scope.controller.signal.aborted ? 'EK_GQL_TIMEOUT' : 'EK_GQL_AUTH'),
+      );
       if (error instanceof KitError && error.code === 'EK_GQL_BACKPRESSURE') throw error;
       throw failure(scope.controller.signal.aborted ? 'EK_GQL_TIMEOUT' : 'EK_GQL_AUTH');
     }
@@ -176,6 +188,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
     if (this.closed) return { done: true, value: undefined };
     if (this.reading) throw failure('EK_GQL_BACKPRESSURE');
     this.reading = true;
+    let sourceFailure = true;
     try {
       if (!this.stream) throw failure('EK_GQL_SUBSCRIPTION');
       if (this.event) {
@@ -185,6 +198,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
       }
       this.current = undefined;
       const result = await this.stream.next();
+      sourceFailure = false;
       if (this.closed || result.done) {
         void this.close();
         return { done: true, value: undefined };
@@ -200,6 +214,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
       this.current = event;
       return result;
     } catch {
+      if (sourceFailure) this.observation?.reject(failure('EK_GQL_EXECUTION'));
       void this.close();
       throw failure('EK_GQL_SUBSCRIPTION');
     } finally {
