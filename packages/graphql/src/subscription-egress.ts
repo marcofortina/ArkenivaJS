@@ -7,6 +7,7 @@ import type WebSocket from 'ws';
 import { failure } from './policy.js';
 import { subscriptionError } from './subscription-output.js';
 import { subscriptionTimer } from './subscription-timer.js';
+import { observe } from './observation.js';
 
 interface Bounds {
   readonly maxResultBytes: number;
@@ -25,6 +26,7 @@ export class SubscriptionEgress {
     private readonly socket: WebSocket,
     bounds: Bounds,
     private readonly sent: (message: Message) => void,
+    private readonly changed: () => void = () => {},
   ) {
     for (const value of [bounds.maxResultBytes, bounds.maxQueuedEvents, bounds.timeoutMs])
       if (!Number.isSafeInteger(value) || value < 1) throw failure();
@@ -100,6 +102,7 @@ export class SubscriptionEgress {
         settled = true;
         cancelTimer();
         this.writes.delete(finish);
+        observe(this.changed);
         if (error) {
           this.closed = true;
           socket.terminate();
@@ -120,6 +123,7 @@ export class SubscriptionEgress {
         finish(failure('EK_GQL_TIMEOUT')),
       );
       this.writes.add(finish);
+      observe(this.changed);
       try {
         native(encoded, finish);
       } catch {

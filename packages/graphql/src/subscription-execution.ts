@@ -12,6 +12,7 @@ import { OwnedContexts } from './contexts.js';
 import { bindMetadata } from './metadata.js';
 import { authorizedField, fieldInfo } from './fields.js';
 import { SubscriptionStream } from './subscription-stream.js';
+import { observe } from './observation.js';
 
 /** One source owns independent start and per-delivery policy/deadline/cache scopes. */
 export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
@@ -38,6 +39,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
     private readonly metadata: Omit<GraphqlRequestContext, 'signal' | 'identity' | 'auth'>,
     owner: AbortSignal,
     private readonly entered?: (scope: Operation) => void,
+    private readonly taken?: () => void,
   ) {
     try {
       if (authority.tenantFrom(principal.identity) !== principal) throw failure('EK_GQL_AUTH');
@@ -184,6 +186,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
         void this.close();
         return { done: true, value: undefined };
       }
+      observe(() => this.taken?.());
       const event = await this.fresh();
       if (this.closed) {
         event.abort();

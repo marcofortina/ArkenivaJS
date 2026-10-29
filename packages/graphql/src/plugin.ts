@@ -212,6 +212,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           () => {
             counters.operations++;
           },
+          observers.telemetry,
         );
       }
       server.register(async (child) => {

@@ -14,7 +14,8 @@ function wire(
 ) {
   const callbacks: ((error?: Error) => void)[] = [],
     encoded: string[] = [],
-    notices: Message[] = [];
+    notices: Message[] = [],
+    changes: number[] = [];
   let terminations = 0;
   const socket = Object.assign(new EventEmitter(), {
     bufferedAmount: 0,
@@ -26,12 +27,13 @@ function wire(
       terminations++;
     },
   });
-  const egress = new SubscriptionEgress(
+  const egress: SubscriptionEgress = new SubscriptionEgress(
     socket as unknown as WebSocket,
     { maxResultBytes: 1024, maxQueuedEvents: 2, timeoutMs: 1000, ...options },
     (message) => notices.push(message),
+    () => changes.push(egress.stats().pendingWrites),
   );
-  return { socket, callbacks, encoded, notices, egress, terminations: () => terminations };
+  return { socket, callbacks, encoded, notices, changes, egress, terminations: () => terminations };
 }
 
 test('Native writes retain bounded physical ownership until callbacks and notify admission exactly once', () => {
@@ -49,6 +51,7 @@ test('Native writes retain bounded physical ownership until callbacks and notify
   assert.equal(w.notices[0]?.type, 'connection_ack');
   assert.equal(notified, 1);
   assert.equal(w.terminations(), 0);
+  assert.deepEqual(w.changes, [1, 0]);
 });
 
 test('Native start errors are sanitized while successful payloads preserve the standard wire dialect', () => {
