@@ -68,6 +68,7 @@ export class TrustMarkVerifier {
     mark: VerifiedTrustMark,
     maxAgeSeconds: number,
     options?: OperationOptions,
+    track?: (task: Promise<unknown>) => void,
   ): Promise<void> {
     const proof = this.owned(mark);
     const verified = await verifyFederationToken(
@@ -79,6 +80,7 @@ export class TrustMarkVerifier {
         type: 'trust-mark-status-response+jwt',
         requiredClaims: ['trust_mark', 'status'],
         maxAgeSeconds: integer(maxAgeSeconds),
+        ...(track ? { track } : {}),
       },
       options,
     );

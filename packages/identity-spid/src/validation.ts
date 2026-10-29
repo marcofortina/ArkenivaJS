@@ -6,14 +6,22 @@ import { KitError } from '@arkenivajs/core';
 import type { ErrorCode } from '@arkenivajs/core';
 
 export function failure(code: ErrorCode = 'EK_EID_PROFILE'): KitError {
+  const lifecycle: Partial<Record<ErrorCode, string>> = {
+    EK_TIMEOUT: 'The federation operation exceeded its deadline',
+    EK_ABORTED: 'The federation operation was canceled',
+    EK_BACKEND_UNAVAILABLE: 'The federation operation capacity is unavailable',
+    EK_RESOURCE_CLOSED: 'The federation service is closed',
+    EK_LIFECYCLE_STATE: 'The federation application is not ready',
+  };
   return new KitError({
     code,
     message:
-      code === 'EK_EID_ASSURANCE'
+      lifecycle[code] ??
+      (code === 'EK_EID_ASSURANCE'
         ? 'The federation assurance policy was not satisfied'
         : code === 'EK_EID_FEDERATION'
           ? 'The federation trust policy was not satisfied'
-          : 'The federation profile is invalid or unavailable',
+          : 'The federation profile is invalid or unavailable'),
   });
 }
 /** Reject executable configuration before reading any declared data properties. */

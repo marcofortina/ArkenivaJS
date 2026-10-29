@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPair, exportJWK, exportSPKI, SignJWT } from 'jose';
 import { anchorKeys, verifyStatement } from '../../dist/statements.js';
+import { FederationRuntime } from '../../dist/runtime.js';
 
 const issuer = 'https://anchor.example.test',
   subject = 'https://idp.example.test';
@@ -202,5 +203,34 @@ test('JOSE verifies mandatory RSA-SHA512 and supported P-256 statements with the
       .setProtectedHeader({ alg: algorithm, typ: 'entity-statement+jwt', kid: 'root-public' })
       .sign(signing.privateKey);
     assert.equal((await verifyStatement(encoded, { ...expected, keys })).subject, subject);
+  }
+});
+
+test('Actual JOSE promise ownership joins the federation operation admission scope once', async () => {
+  const runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 1000 });
+  const encoded = await token();
+  let tracked = 0;
+  try {
+    const statement = await runtime.run((call) =>
+      call.step((options) =>
+        verifyStatement(
+          encoded,
+          {
+            ...expected,
+            track(task) {
+              assert.ok(task instanceof Promise);
+              tracked++;
+              call.track(task);
+            },
+          },
+          options,
+        ),
+      ),
+    );
+    assert.equal(statement.subject, subject);
+    assert.equal(tracked, 1);
+    assert.equal(runtime.stats().active, 0);
+  } finally {
+    await runtime.close();
   }
 });

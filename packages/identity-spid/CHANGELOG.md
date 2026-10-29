@@ -8,3 +8,4 @@
 - Retrieve approved HTTPS entity statements and signed trust-mark status documents through the existing bounded HTTP client, with exact paths, native TLS, safe errors and credential isolation.
 - Verify owned signed trust marks and fresh signed status bound to the exact mark, reject inactive or ambiguous evidence, and exercise the checks over actual HTTPS.
 - Apply metadata parameter policies only within existing entity types, preventing defaults from creating unrelated roles or bypassing type constraints.
+- Own federation provider and native work through physical settlement, with shared admission, one deadline, readiness enforcement and bounded shutdown.

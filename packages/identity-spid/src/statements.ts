@@ -32,6 +32,7 @@ export interface StatementVerification {
   readonly subject: string;
   readonly keys: readonly StatementKey[];
   readonly maxBytes: number;
+  readonly track?: (task: Promise<unknown>) => void;
 }
 interface TokenVerification extends Omit<StatementVerification, 'subject'> {
   readonly subject?: string;
@@ -171,21 +172,22 @@ export async function verifyFederationToken(
         throw failure('EK_EID_FEDERATION');
     };
     active();
-    const result = await within(
-      () =>
-        jwtVerify(token, keys[0]!.publicKey, {
-          algorithms,
-          typ: expected.type,
-          issuer: expected.issuer,
-          ...(expected.subject === undefined ? {} : { subject: expected.subject }),
-          requiredClaims: [...new Set(['iss', 'iat', ...expected.requiredClaims])],
-          ...(expected.maxAgeSeconds === undefined
-            ? {}
-            : { maxTokenAge: integer(expected.maxAgeSeconds) }),
-          clockTolerance: 0,
-        }),
-      options,
-    );
+    const result = await within(() => {
+      const actual = jwtVerify(token, keys[0]!.publicKey, {
+        algorithms,
+        typ: expected.type,
+        issuer: expected.issuer,
+        ...(expected.subject === undefined ? {} : { subject: expected.subject }),
+        requiredClaims: [...new Set(['iss', 'iat', ...expected.requiredClaims])],
+        ...(expected.maxAgeSeconds === undefined
+          ? {}
+          : { maxTokenAge: integer(expected.maxAgeSeconds) }),
+        clockTolerance: 0,
+      });
+      void actual.catch(() => undefined);
+      expected.track?.(actual);
+      return actual;
+    }, options);
     const claims = boundedClaims(result.payload),
       issuedAt = claims.iat,
       expiresAt = claims.exp,
