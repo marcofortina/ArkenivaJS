@@ -14,6 +14,11 @@ fields, preserving array order and excluding activation metadata. Loaded objects
 are copied and deeply frozen before use. Provider I/O and durable activation
 history checks belong to the provider layer.
 
+Configured registry, SQL, activation, credential, event and authentication methods
+retain their original callback and receiver without reading callable `bind`,
+`name` or `length` properties. Later method replacement cannot change captured
+callbacks. Existing descriptor, proxy and bounded prototype checks remain in force.
+
 `tenantRegistryFileProvider({ absolutePath, maxBytes })` defaults to `production`.
 It requires a regular root-owned file with mode 0600/0640 (or read-only
 equivalents), no hard links, no symbolic-link path components, and root-owned

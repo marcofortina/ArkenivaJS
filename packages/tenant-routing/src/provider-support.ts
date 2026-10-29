@@ -40,7 +40,8 @@ export function captureMethod<T extends (...args: never[]) => unknown>(
     if (field) {
       if (!('value' in field) || typeof field.value !== 'function' || types.isProxy(field.value))
         throw registryFailure();
-      return field.value.bind(input) as T;
+      const callback = field.value;
+      return ((...args: Parameters<T>): ReturnType<T> => Reflect.apply(callback, input, args)) as T;
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
