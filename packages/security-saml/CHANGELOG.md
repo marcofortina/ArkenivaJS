@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Retain bounded native-verified assertion profile facts for federation policy,
+  preserving generic SAML acceptance and authorized legacy logout snapshots.
 - Permit explicitly bounded SPID minimum comparison while preserving exact policy,
   native signing, generic assurance and durable request-policy isolation.
 - Retain the native verified assertion deadline and reject expiry during durable

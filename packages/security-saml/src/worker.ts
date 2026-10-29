@@ -78,6 +78,7 @@ function assertion(
   verifiedXml: string,
   responseId: string,
   responseExpiresAt: number,
+  responseIssuerFormat?: string,
 ): VerifiedAssertion {
   const root = parse(verifiedXml).documentElement,
     config = input.configuration,
@@ -190,6 +191,20 @@ function assertion(
       : {}),
     sessionExpiresAt: new Date(Math.min(sessionExpires, now + 28800000)).toISOString(),
     verificationExpiresAt: new Date(verificationExpiresAt).toISOString(),
+    profile: {
+      ...(one(root, NS.assertion, 'Issuer').hasAttribute('Format')
+        ? {
+            assertionIssuerFormat: text(
+              one(root, NS.assertion, 'Issuer').getAttribute('Format'),
+              2048,
+              true,
+            ),
+          }
+        : {}),
+      ...(responseIssuerFormat === undefined ? {} : { responseIssuerFormat }),
+      conditionsNotBeforePresent: before !== undefined,
+      advicePresent: children(root, NS.assertion, 'Advice').length !== 0,
+    },
   };
 }
 async function run(input: NativeRequest): Promise<NativeResult> {
@@ -346,7 +361,11 @@ async function run(input: NativeRequest): Promise<NativeResult> {
     const xml = base64(input.response),
       root = message(input, xml, 'Response', true),
       responseExpiresAt =
-        timestamp(root.getAttribute('IssueInstant'))! + 300000 + selected.clockSkewSeconds * 1000;
+        timestamp(root.getAttribute('IssueInstant'))! + 300000 + selected.clockSkewSeconds * 1000,
+      responseIssuer = one(root, NS.assertion, 'Issuer'),
+      responseIssuerFormat = responseIssuer.hasAttribute('Format')
+        ? text(responseIssuer.getAttribute('Format'), 2048, true)
+        : undefined;
     if (
       children(root, NS.assertion, 'Assertion').length !== 1 ||
       children(root, NS.assertion, 'EncryptedAssertion').length
@@ -358,6 +377,7 @@ async function run(input: NativeRequest): Promise<NativeResult> {
       one(root, NS.assertion, 'Assertion').toString(),
       id(root.getAttribute('ID')),
       responseExpiresAt,
+      responseIssuerFormat,
     );
     const result = await saml
       .validatePostResponseAsync({ SAMLResponse: input.response })
@@ -372,6 +392,7 @@ async function run(input: NativeRequest): Promise<NativeResult> {
         result.profile.getAssertionXml(),
         id(root.getAttribute('ID')),
         responseExpiresAt,
+        responseIssuerFormat,
       ),
     };
   }

@@ -151,6 +151,12 @@ export class FederationSamlLogin {
               ),
             ),
             saml = fields(identity.claims.saml),
+            protocol = fields(saml.profile, [
+              'assertionIssuerFormat',
+              'responseIssuerFormat',
+              'conditionsNotBeforePresent',
+              'advicePresent',
+            ]),
             levels = assuranceLevels('spid'),
             actualIndex = acrValues.indexOf(saml.authnContext as string),
             actualAssurance = levels[actualIndex],
@@ -167,6 +173,15 @@ export class FederationSamlLogin {
             actualIndex < levels.indexOf(transaction.assurance) ||
             actualAssurance === undefined ||
             !this.profile.allowedAssurance.includes(actualAssurance) ||
+            protocol.assertionIssuerFormat !== 'urn:oasis:names:tc:SAML:2.0:nameid-format:entity' ||
+            (protocol.responseIssuerFormat !== undefined &&
+              protocol.responseIssuerFormat !==
+                'urn:oasis:names:tc:SAML:2.0:nameid-format:entity') ||
+            protocol.conditionsNotBeforePresent !== true ||
+            protocol.advicePresent !== false ||
+            (actualAssurance === 'spid-l1'
+              ? identity.sessionIndex === undefined
+              : identity.sessionIndex !== undefined) ||
             saml.nameIDFormat !== 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient' ||
             saml.nameQualifier !== issuer ||
             (saml.spNameQualifier !== undefined &&

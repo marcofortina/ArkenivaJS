@@ -15,6 +15,41 @@ import { samlResponse } from '../fixtures/saml-response.js';
 
 after(closeRegistryFixture);
 
+test(
+  'A natively signed nonconforming SPID assertion persists no accepted identity and cannot retry PostgreSQL state',
+  { timeout: 20000 },
+  async () => {
+    const backend = await securityStateFixture(),
+      f = await samlLoginFixture({
+        store: backend.store,
+        securityLevel: 'test-only',
+        operationTimeoutMs: 5000,
+      });
+    try {
+      const login = await f.runtime.run((call) => f.login.begin(call, f.input));
+      await assert.rejects(
+        () =>
+          f.runtime.run((call) =>
+            f.login.consume(call, samlResponse(f, login, { assertionIssuerFormat: null })),
+          ),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      const native = await backend.app.sql.query<{ count: number }>('main', {
+        text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_records WHERE namespace LIKE :kind`,
+        bindings: { kind: '%:sessions' },
+      });
+      assert.equal(native.rows[0]!.count, 1);
+      await assert.rejects(
+        () => f.runtime.run((call) => f.login.consume(call, samlResponse(f, login))),
+        { code: 'EK_EID_FEDERATION' },
+      );
+    } finally {
+      await f.close();
+      await backend.close();
+    }
+  },
+);
+
 for (const level of [2, 3])
   test(
     `Actual signed SPID SAML level ${level} callback has one identity winner across independent PostgreSQL pools`,
