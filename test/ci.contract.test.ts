@@ -3,7 +3,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join, delimiter } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { parse } from 'yaml';
 test('Kafka integration uses actual pinned KRaft, TLS/SASL, native ABI builds and independent public consumers on every Node line', () => {
   const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')),
@@ -18,12 +21,50 @@ test('Kafka integration uses actual pinned KRaft, TLS/SASL, native ABI builds an
     step.run ? [step.run] : [],
   );
   for (const command of [
-    'pnpm rebuild @confluentinc/kafka-javascript',
     'pnpm --filter @arkenivajs/messaging-kafka test:integration',
     'pnpm --filter @arkenivajs/example-kafka test:integration',
     'pnpm test:packed:examples --integration kafka',
   ])
     assert.ok(commands.includes(command));
+  const buildIndex = job.steps.findIndex((step: { run?: string }) =>
+    step.run?.includes('pnpm rebuild @confluentinc/kafka-javascript'),
+  );
+  const reportsIndex = job.steps.findIndex((step: { run?: string }) =>
+    step.run?.includes('ARKENIVA_TEST_REPORT_DIRECTORY=%s/kafka-reports'),
+  );
+  assert.ok(reportsIndex >= 0 && buildIndex > reportsIndex);
+  const build = job.steps[buildIndex].run;
+  const directory = mkdtempSync(join(tmpdir(), 'arkenivajs-native-build-contract-'));
+  try {
+    const executable = join(directory, 'pnpm'),
+      log = join(directory, 'native-build.log');
+    writeFileSync(
+      executable,
+      '#!/bin/sh\n[ "$1" = rebuild ] && [ "$2" = @confluentinc/kafka-javascript ] && [ "$#" = 2 ] || exit 93\nprintf "Owned native build diagnostic\\n"\nexit "$ARKENIVA_TEST_BUILD_EXIT"\n',
+      { mode: 0o700 },
+    );
+    for (const status of [0, 7]) {
+      const result = spawnSync('bash', ['-c', build], {
+        timeout: 5000,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: directory + delimiter + (process.env.PATH ?? ''),
+          ARKENIVA_TEST_REPORT_DIRECTORY: directory,
+          ARKENIVA_TEST_BUILD_EXIT: String(status),
+        },
+      });
+      assert.ifError(result.error);
+      assert.equal(
+        result.status,
+        status,
+        'Retaining native logs must preserve the actual build exit status',
+      );
+      assert.equal(readFileSync(log, 'utf8'), 'Owned native build diagnostic\n');
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
   assert.ok(
     commands.some((command) =>
       command.includes(
