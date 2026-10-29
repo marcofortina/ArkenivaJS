@@ -98,7 +98,7 @@ function boundedClaims(input: unknown): Readonly<Record<string, unknown>> {
   return freezeData(fields(visit(input, 0)));
 }
 /** Unverified claims may guide bounded approved discovery, but never authorize identity or keys. */
-export function inspectConfiguration(token: string, maxBytes: number) {
+function inspectToken(token: string, type: string, maxBytes: number) {
   try {
     integer(maxBytes);
     if (
@@ -108,16 +108,32 @@ export function inspectConfiguration(token: string, maxBytes: number) {
     )
       throw failure('EK_EID_FEDERATION');
     const header = fields(decodeProtectedHeader(token), ['typ', 'alg', 'kid']);
-    if (header.typ !== 'entity-statement+jwt' || !algorithms.includes(header.alg as string))
+    if (header.typ !== type || !algorithms.includes(header.alg as string))
       throw failure('EK_EID_FEDERATION');
     text(header.kid);
-    const claims = boundedClaims(decodeJwt(token));
-    const entity = url(claims.iss);
-    if (claims.sub !== entity) throw failure('EK_EID_FEDERATION');
-    return Object.freeze({ entity, claims });
+    return boundedClaims(decodeJwt(token));
   } catch {
     throw failure('EK_EID_FEDERATION');
   }
+}
+export function inspectConfiguration(token: string, maxBytes: number) {
+  const claims = inspectToken(token, 'entity-statement+jwt', maxBytes),
+    entity = url(claims.iss);
+  if (claims.sub !== entity) throw failure('EK_EID_FEDERATION');
+  return Object.freeze({ entity, claims });
+}
+/** A mark's inspected issuer is a lookup hint, never proof of issuer authorization. */
+export function inspectTrustMark(token: string, maxBytes: number) {
+  const claims = inspectToken(token, 'trust-mark+jwt', maxBytes),
+    hasId = Object.hasOwn(claims, 'id'),
+    hasType = Object.hasOwn(claims, 'trust_mark_type');
+  if (hasId === hasType) throw failure('EK_EID_FEDERATION');
+  return Object.freeze({
+    issuer: url(claims.iss),
+    subject: url(claims.sub),
+    type: url(hasId ? claims.id : claims.trust_mark_type),
+    claims,
+  });
 }
 /** Parse only public federation JWKS; private/symmetric material never becomes a verification key. */
 function publicKeys(input: unknown, expiresAt: number): readonly StatementKey[] {
@@ -214,6 +230,7 @@ export async function verifyFederationToken(
       issuedAt = claims.iat,
       expiresAt = claims.exp,
       now = Date.now() / 1000;
+    if (Object.hasOwn(claims, 'crit')) throw failure('EK_EID_FEDERATION');
     active();
     if (
       !Number.isSafeInteger(issuedAt) ||

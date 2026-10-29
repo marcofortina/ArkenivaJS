@@ -74,7 +74,8 @@ test(
         body: string;
       }[] = [];
       let rootConfiguration = '',
-        delegation = '';
+        delegation = '',
+        federationStatus = '';
       const server = createServer(
         { key: await readFile(privateKey), cert: await readFile(certificate) },
         async (request, response) => {
@@ -91,6 +92,11 @@ test(
             body: Buffer.concat(chunks).toString(),
           });
           if (path.startsWith('/federation-root/')) {
+            if (path === '/federation-root/status') {
+              response.setHeader('content-type', 'application/trust-mark-status-response+jwt');
+              response.end(federationStatus);
+              return;
+            }
             response.setHeader('content-type', 'application/entity-statement+jwt');
             response.end(
               path.startsWith('/federation-root/fetch?') ? delegation : rootConfiguration,
@@ -134,6 +140,15 @@ test(
       const origin = `https://127.0.0.1:${address.port}`,
         federationRoot = origin + '/federation-root',
         federationLeaf = origin + '/federation-leaf';
+      const federationType = origin + '/openid_provider/public/',
+        federationMark = await sign(
+          { iss: federationRoot, sub: federationLeaf, exp: now + 60, id: federationType },
+          'trust-mark+jwt',
+        );
+      federationStatus = await sign(
+        { iss: federationRoot, trust_mark: federationMark, status: 'active' },
+        'trust-mark-status-response+jwt',
+      );
       rootConfiguration = await sign(
         {
           iss: federationRoot,
@@ -141,7 +156,13 @@ test(
           exp: now + 60,
           jwks,
           constraints: { max_path_length: 0 },
-          metadata: { federation_entity: { federation_fetch_endpoint: federationRoot + '/fetch' } },
+          trust_mark_issuers: { [federationType]: [federationRoot] },
+          metadata: {
+            federation_entity: {
+              federation_fetch_endpoint: federationRoot + '/fetch',
+              federation_trust_mark_status_endpoint: federationRoot + '/status',
+            },
+          },
         },
         'entity-statement+jwt',
       );
@@ -170,6 +191,18 @@ test(
         },
         'entity-statement+jwt',
       );
+      const membershipConfiguration = await sign(
+        {
+          iss: federationLeaf,
+          sub: federationLeaf,
+          exp: now + 60,
+          jwks,
+          authority_hints: [federationRoot],
+          metadata: { openid_provider: { issuer: federationLeaf } },
+          trust_marks: [{ id: federationType, trust_mark: federationMark }],
+        },
+        'entity-statement+jwt',
+      );
       const child = fork(new URL('../fixtures/metadata-http-worker.js', import.meta.url), [], {
         execArgv: [],
         env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate },
@@ -193,6 +226,7 @@ test(
           trustMark,
           leafConfiguration,
           deniedConfiguration,
+          membershipConfiguration,
           anchor: {
             kid: 'root-public',
             issuer,
@@ -226,7 +260,7 @@ test(
         assert.equal(new URLSearchParams(checked.body).get('trust_mark'), trustMark);
         assert.equal(
           requests.filter((request) => request.path.startsWith('/federation-root/')).length,
-          2,
+          5,
         );
         assert.equal(
           requests.some((request) => request.path.startsWith('/not-approved/')),
