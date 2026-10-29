@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Test concurrent credential key/handle/backup changes and newer committed
+  revisions around signature verification and evidence persistence.
 - Reject executable Proxy objects before browser JSON reflection, including
   nested objects and arrays, without invoking their traps.
 - Verify native RSA and Ed25519 registration, self-attestation, assertions and

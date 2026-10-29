@@ -612,6 +612,105 @@ test('Direct registration uses upstream verification and a backend-owned initial
   );
 });
 
+test('Credential key, account handle and backup eligibility cannot change between signature verification and counter mutation', async () => {
+  for (const change of ['publicKey', 'userHandle', 'backupEligible'] as const) {
+    const f = serviceFixture(),
+      { device } = await enroll(f);
+    let reads = 0,
+      mutations = 0;
+    const replacementKey = authenticator().publicKey;
+    const service = createWebAuthnService({
+      ...f.options,
+      stateStore: {
+        ...f.options.stateStore,
+        async getCredential(...args) {
+          const record = await f.options.stateStore.getCredential(...args);
+          assert.ok(record);
+          if (++reads !== 2) return record;
+          return {
+            ...record,
+            ...(change === 'publicKey' ? { publicKey: replacementKey } : {}),
+            ...(change === 'userHandle'
+              ? { userHandle: randomBytes(32).toString('base64url') }
+              : {}),
+            ...(change === 'backupEligible' ? { backupEligible: !record.backupEligible } : {}),
+          };
+        },
+        async advanceCounter(...args) {
+          mutations++;
+          return f.options.stateStore.advanceCounter(...args);
+        },
+      },
+    });
+    const ceremony = await service.beginAuthentication(f.subject);
+    await assert.rejects(
+      service.finishAuthentication(
+        f.subject,
+        ceremony.ceremonyId,
+        device.authentication(challenge(ceremony), { origin: 'https://example.test' }),
+      ),
+      hasCode('EK_MFA_CREDENTIAL_CONFLICT'),
+    );
+    assert.equal(reads, 2);
+    assert.equal(mutations, 0);
+    assert.equal(f.credentials.get(device.id)!.counter, 0);
+    assert.equal(f.evidence.size, 0);
+    assert.equal(f.challenges.has(ceremony.ceremonyId), false);
+  }
+});
+
+test('A newer committed revision after evidence persistence prevents returning success without replaying or rolling back writes', async () => {
+  const f = serviceFixture(),
+    { device } = await enroll(f);
+  let mutations = 0,
+    records = 0;
+  const service = createWebAuthnService({
+    ...f.options,
+    stateStore: {
+      ...f.options.stateStore,
+      async advanceCounter(...args) {
+        mutations++;
+        return f.options.stateStore.advanceCounter(...args);
+      },
+    },
+    evidenceStore: {
+      ...f.options.evidenceStore,
+      async recordOnce(...args) {
+        records++;
+        await f.options.evidenceStore.recordOnce(...args);
+        const current = f.credentials.get(device.id)!;
+        // Emulate another completed write after this operation's successful CAS.
+        f.credentials.set(device.id, {
+          ...current,
+          counter: current.counter + 1,
+          stateVersion: 'concurrently-committed-revision',
+        });
+      },
+    },
+  });
+  const ceremony = await service.beginAuthentication(f.subject),
+    response = device.authentication(challenge(ceremony), { origin: 'https://example.test' });
+  await assert.rejects(
+    service.finishAuthentication(f.subject, ceremony.ceremonyId, response),
+    hasCode('EK_MFA_CREDENTIAL_CONFLICT'),
+  );
+  assert.equal(mutations, 1);
+  assert.equal(records, 1);
+  assert.equal(f.credentials.get(device.id)!.counter, 2);
+  assert.equal(f.credentials.get(device.id)!.stateVersion, 'concurrently-committed-revision');
+  assert.equal(
+    f.evidence.size,
+    1,
+    'Persistence is not reported as rolled back after a later conflict',
+  );
+  await assert.rejects(
+    service.finishAuthentication(f.subject, ceremony.ceremonyId, response),
+    hasCode('EK_MFA_CHALLENGE_EXPIRED'),
+  );
+  assert.equal(mutations, 1);
+  assert.equal(records, 1);
+});
+
 test('Primary-session revocation during signature verification prevents the final credential update', async () => {
   const f = serviceFixture(),
     { device } = await enroll(f);
