@@ -13,6 +13,67 @@ import { securityStateFixture } from './security-state-fixture.js';
 import { startMfaIssuer } from './mfa-issuer.js';
 import { fixture } from './saml-fixture.js';
 
+test(
+  'Actual PostgreSQL expiry after a signed SAML session write returns no identity and cannot be replayed',
+  { timeout: 20000 },
+  async (context) => {
+    const backend = await securityStateFixture(),
+      f = await fixture('redirect', backend.store);
+    let cutoff = 0,
+      writes = 0;
+    const service = createSamlService({
+      ...f.settings,
+      clockSkewSeconds: 0,
+      replayStore: {
+        ...backend.store,
+        async compareAndSet(...args) {
+          const result = await backend.store.compareAndSet(...args);
+          if (args[0].endsWith(':sessions') && result.committed) {
+            writes++;
+            context.mock.method(Date, 'now', () => cutoff + 1);
+          }
+          return result;
+        },
+      },
+    });
+    try {
+      const login = await service.beginLogin({ returnPath: '/' }),
+        response = f.response(login.requestId, { expiresOffsetMs: 60000 }),
+        xml = Buffer.from(response, 'base64').toString(),
+        match = /<saml:Conditions[^>]*NotOnOrAfter="([^"]+)"/u.exec(xml);
+      assert.ok(match);
+      cutoff = Date.parse(match[1]!);
+      await assert.rejects(
+        () =>
+          service.consumeResponse(
+            { inResponseTo: login.requestId, relayState: login.requestId },
+            response,
+          ),
+        { code: 'EK_SAML_ASSERTION' },
+      );
+      assert.equal(writes, 1);
+      context.mock.restoreAll();
+      const records = await backend.app.sql.query<{ count: number }>('main', {
+        text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_records WHERE namespace LIKE :kind`,
+        bindings: { kind: '%:sessions' },
+      });
+      assert.equal(records.rows[0]!.count, 1);
+      await assert.rejects(
+        () =>
+          service.consumeResponse(
+            { inResponseTo: login.requestId, relayState: login.requestId },
+            response,
+          ),
+        { code: 'EK_SAML_REPLAY' },
+      );
+    } finally {
+      context.mock.restoreAll();
+      await f.close();
+      await backend.close();
+    }
+  },
+);
+
 for (const requestProfile of [false, true])
   for (const binding of ['redirect', 'post'] as const)
     test(

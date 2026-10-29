@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Retain the native verified assertion deadline and reject expiry during durable
+  persistence, preserving separately authorized logout after assertion expiration.
 - Preserve canonical origin-only HTTPS EntityIDs exactly in SPID Redirect and POST
   signatures while validating their URL form independently of endpoint settings.
 - Capture trusted provider functions without executing custom bind/name/length

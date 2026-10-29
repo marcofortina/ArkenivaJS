@@ -46,6 +46,7 @@ export interface VerifiedAssertion {
   readonly spNameQualifier?: string;
   readonly sessionIndex?: string;
   readonly sessionExpiresAt: string;
+  readonly verificationExpiresAt: string;
 }
 export type NativeResult =
   | Readonly<{ kind: 'redirect'; url: string; createdAt: string }>

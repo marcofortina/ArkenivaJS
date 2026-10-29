@@ -77,6 +77,7 @@ function assertion(
   input: NativeRequest,
   verifiedXml: string,
   responseId: string,
+  responseExpiresAt: number,
 ): VerifiedAssertion {
   const root = parse(verifiedXml).documentElement,
     config = input.configuration,
@@ -101,8 +102,8 @@ function assertion(
     data.getAttribute('Recipient') !== config.acsUrl
   )
     throw failure('EK_SAML_ASSERTION');
-  if (timestamp(data.getAttribute('NotOnOrAfter'))! + skew <= now)
-    throw failure('EK_SAML_ASSERTION');
+  const confirmationExpires = timestamp(data.getAttribute('NotOnOrAfter'))!;
+  if (confirmationExpires + skew <= now) throw failure('EK_SAML_ASSERTION');
   const confirmationBefore = timestamp(data.getAttribute('NotBefore'), false);
   if (confirmationBefore !== undefined && confirmationBefore - skew > now)
     throw failure('EK_SAML_ASSERTION');
@@ -160,6 +161,15 @@ function assertion(
       if (bytes > 32768) throw failure('EK_SAML_ASSERTION');
       attributes[name] = Object.freeze(values);
     }
+  const verificationExpiresAt = Math.min(
+    responseExpiresAt,
+    issued + 300000 + skew,
+    confirmationExpires + skew,
+    expires + skew,
+    sessionExpires + skew,
+    Date.parse(input.instant) + 300000,
+  );
+  if (verificationExpiresAt <= Date.now()) throw failure('EK_SAML_ASSERTION');
   return {
     issuer: config.issuer,
     subject: content(name, 1024),
@@ -179,6 +189,7 @@ function assertion(
       ? { sessionIndex: text(statement.getAttribute('SessionIndex'), 256) }
       : {}),
     sessionExpiresAt: new Date(Math.min(sessionExpires, now + 28800000)).toISOString(),
+    verificationExpiresAt: new Date(verificationExpiresAt).toISOString(),
   };
 }
 async function run(input: NativeRequest): Promise<NativeResult> {
@@ -333,14 +344,21 @@ async function run(input: NativeRequest): Promise<NativeResult> {
   if (!input.response) throw failure('EK_SAML_ASSERTION');
   if (input.action === 'verify-login') {
     const xml = base64(input.response),
-      root = message(input, xml, 'Response', true);
+      root = message(input, xml, 'Response', true),
+      responseExpiresAt =
+        timestamp(root.getAttribute('IssueInstant'))! + 300000 + selected.clockSkewSeconds * 1000;
     if (
       children(root, NS.assertion, 'Assertion').length !== 1 ||
       children(root, NS.assertion, 'EncryptedAssertion').length
     )
       throw failure('EK_SAML_ASSERTION');
     // Structural rejection grants no identity; only the native verified assertion is returned below.
-    assertion(input, one(root, NS.assertion, 'Assertion').toString(), id(root.getAttribute('ID')));
+    assertion(
+      input,
+      one(root, NS.assertion, 'Assertion').toString(),
+      id(root.getAttribute('ID')),
+      responseExpiresAt,
+    );
     const result = await saml
       .validatePostResponseAsync({ SAMLResponse: input.response })
       .catch(() => {
@@ -349,7 +367,12 @@ async function run(input: NativeRequest): Promise<NativeResult> {
     if (result.loggedOut || !result.profile?.getAssertionXml) throw failure('EK_SAML_ASSERTION');
     return {
       kind: 'identity',
-      identity: assertion(input, result.profile.getAssertionXml(), id(root.getAttribute('ID'))),
+      identity: assertion(
+        input,
+        result.profile.getAssertionXml(),
+        id(root.getAttribute('ID')),
+        responseExpiresAt,
+      ),
     };
   }
   if (selected.binding === 'post') {
