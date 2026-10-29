@@ -18,3 +18,4 @@
 - Bind raw and policy-resolved OpenID Provider/OAuth issuer metadata to the verified Entity Identifier, rejecting missing, replaced or foreign issuers despite otherwise valid signatures.
 - Capture typed application-owned OIDC RP registration metadata, current subject-bound mark candidates, explicit algorithms and separate external decryption references without inventing registration values or claiming accreditation.
 - Import separate external RSA response-decryption keys as non-extractable native CryptoKeys, reuse guarded key import and verify prescribed JWE combinations and signed encrypted UserInfo with the selected OpenID Client.
+- Sign bounded RP Entity Configurations with native JOSE, exact immutable registration, public signing/encryption key roles and expiry limited by received marks, external key material and metadata refresh policy.
