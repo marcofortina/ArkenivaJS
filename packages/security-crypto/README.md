@@ -10,6 +10,11 @@ unknown fields, accessors, missing providers, invalid references and unbounded
 policies before opening resources. Each application owns separate admission and
 shutdown state, even when a plugin factory is reused.
 
+The external key method retains its captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy providers
+or callbacks, accessors and prototype traversal beyond 32 levels fail configuration
+validation; later method replacement does not alter the captured provider.
+
 `secrets.get(ref, options)` must be an independently reviewed external secret
 provider. Its returned bytes have a nonempty immutable `keyVersion` and optional
 canonical ISO expiry. No key is embedded in configuration, retained in an
