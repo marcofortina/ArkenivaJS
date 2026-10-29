@@ -27,3 +27,4 @@
 - Share the native WebSocket dispatcher with realtime on the existing Fastify listener, preserving independent route limits and both module initialization orders.
 - Bound native subscription writes by queued messages, buffered bytes and physical callback deadlines; sanitize start errors and prevent late callbacks from acknowledging abandoned connections.
 - Own authenticated native subscription connections through periodic tenant revalidation, per-operation cancellation and late source retirement; release idle execution capacity and preserve long configured deadlines without timer overflow.
+- Enforce shared-listener WSS admission and global connection capacity, retain physically pending shutdown work and quarantine provider retirement failures before accepting more clients.
