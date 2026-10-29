@@ -430,3 +430,37 @@ test('Inherited expiry bounds the entire proof and canceled calls produce no evi
     await runtime.close();
   }
 });
+test('Federation metadata issuer binding survives superior overrides and policy application', async () => {
+  const foreign = 'https://foreign.example.test';
+  await using(async (verify) => {
+    for (const options of [
+      { leaf: { metadata: { openid_provider: { issuer: foreign } } } },
+      { root: { metadata: { openid_provider: { issuer: foreign } } } },
+      { leaf: { metadata: { openid_provider: {} } } },
+      { lower: { metadata: { openid_provider: { issuer: foreign } } } },
+      { upper: { metadata_policy: { openid_provider: { issuer: { value: foreign } } } } },
+      { upper: { metadata_policy: { openid_provider: { issuer: { value: null } } } } },
+      {
+        leaf: {
+          metadata: {
+            openid_provider: { issuer: leafId },
+            oauth_authorization_server: { issuer: foreign },
+          },
+        },
+      },
+    ])
+      await assert.rejects(() => fixture(options).then(verify), { code: 'EK_EID_FEDERATION' });
+    await verify(
+      await fixture({
+        upper: { metadata_policy: { openid_provider: { issuer: { value: leafId } } } },
+        lower: { metadata: { openid_provider: { issuer: foreign } } },
+        leaf: {
+          metadata: {
+            openid_provider: { issuer: leafId },
+            oauth_authorization_server: { issuer: leafId },
+          },
+        },
+      }),
+    );
+  });
+});
