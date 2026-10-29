@@ -40,6 +40,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
     owner: AbortSignal,
     private readonly entered?: (scope: Operation) => void,
     private readonly taken?: () => void,
+    private readonly observed?: (scope: Operation) => Promise<void>,
   ) {
     try {
       if (authority.tenantFrom(principal.identity) !== principal) throw failure('EK_GQL_AUTH');
@@ -117,6 +118,8 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
       Object.defineProperty(scope, 'context', {
         value: Object.freeze({ ...scope.context, identity, auth: tenant }),
       });
+      await this.observed?.(scope);
+      scope.check();
       return scope;
     } catch (error) {
       scope.end();

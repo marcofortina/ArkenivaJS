@@ -55,7 +55,11 @@ export class SubscriptionConnection {
     private readonly executions: OwnedContexts<SubscriptionExecution>,
     private readonly owner: AbortSignal,
     private readonly entered: (scope: Operation) => void = () => {},
-    private readonly signals: { changed?(): void; event?(result: 'deliver' | 'drop'): void } = {},
+    private readonly signals: {
+      changed?(): void;
+      event?(result: 'deliver' | 'drop'): void;
+      scope?(scope: Operation): Promise<void>;
+    } = {},
   ) {
     if (!settings.subscriptions || !settings.security.auth.required) throw failure();
     if (
@@ -248,6 +252,7 @@ export class SubscriptionConnection {
       () => {
         reservation.pendingEvent = true;
       },
+      this.signals.scope,
     );
     reservation.execution = execution;
     execution.bind(context, this.scopes);

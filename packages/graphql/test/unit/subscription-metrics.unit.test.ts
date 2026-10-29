@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
 import { telemetryPlugin } from '@arkenivajs/telemetry';
@@ -25,6 +26,11 @@ interface Metric {
 }
 interface Envelope {
   resourceMetrics?: { scopeMetrics: { metrics: Metric[] }[] }[];
+  resourceSpans?: {
+    scopeSpans: {
+      spans: { name: string; traceId: string; spanId: string; parentSpanId?: string }[];
+    }[];
+  }[];
 }
 
 test(
@@ -61,7 +67,7 @@ test(
                     context.signal.addEventListener('abort', () => resolve(), { once: true }),
                   );
               },
-              resolve: (parent) => parent,
+              resolve: (parent) => telemetry.withSpan('subscription.resolver', async () => parent),
             },
           },
         },
@@ -95,6 +101,7 @@ test(
             allowInsecureLoopback: true,
             exportTimeoutMs: 500,
             exportIntervalMs: 60000,
+            labelValues: { route: ['/graphql'] },
           }),
         ],
       },
@@ -105,11 +112,20 @@ test(
       throw error;
     });
     const sockets: WebSocket[] = [];
+    const telemetry: Telemetry = f.app.telemetry;
+    const remote = new Map<string, { trace: string; parent: string }>();
     const connect = async (tenant: string) => {
+      const trace = randomBytes(16).toString('hex'),
+        parent = randomBytes(8).toString('hex');
+      remote.set(tenant, { trace, parent });
       const socket = new WebSocket(
         f.origin.replace('https:', 'wss:') + '/graphql',
         'graphql-transport-ws',
-        { ca: tls.ca, origin: 'https://portal.example.test' },
+        {
+          ca: tls.ca,
+          origin: 'https://portal.example.test',
+          headers: { traceparent: `00-${trace}-${parent}-01` },
+        },
       );
       sockets.push(socket);
       await once(socket, 'open');
@@ -153,6 +169,29 @@ test(
         await delay(5);
       assert.equal(f.service.stats().activeSubscriptions, 0);
       await f.app.telemetry.flush();
+      const spans = envelopes.flatMap(
+        (envelope) =>
+          envelope.resourceSpans?.flatMap((resource) =>
+            resource.scopeSpans.flatMap((scope) => scope.spans),
+          ) ?? [],
+      );
+      const parents = spans.filter((span) => span.name === 'http.server.request');
+      assert.equal(parents.length, 2);
+      const children = spans.filter((span) => span.name === 'graphql.subscription');
+      assert.equal(children.length, 4, 'One source and one delivery scope per subscription');
+      const resolvers = spans.filter((span) => span.name === 'subscription.resolver');
+      assert.equal(resolvers.length, 2);
+      for (const { trace, parent } of remote.values()) {
+        const roots = parents.filter((span) => span.traceId === trace);
+        assert.equal(roots.length, 1);
+        assert.equal(roots[0]!.parentSpanId, parent);
+        const events = children.filter((span) => span.traceId === trace);
+        assert.equal(events.length, 2);
+        assert.ok(events.every((span) => span.parentSpanId === roots[0]!.spanId));
+        const work = resolvers.filter((span) => span.traceId === trace);
+        assert.equal(work.length, 1);
+        assert.ok(events.some((span) => span.spanId === work[0]!.parentSpanId));
+      }
       const metrics = envelopes
         .flatMap((envelope) => envelope.resourceMetrics ?? [])
         .flatMap((resource) => resource.scopeMetrics)
@@ -212,114 +251,123 @@ test(
   },
 );
 
-test(
-  'Throwing subscription metric observers neither repeat business work nor bypass real identity checks',
-  { timeout: 10000 },
-  async () => {
-    const tls = await tlsFiles();
-    let metrics = 0,
-      allocations = 0,
-      queries = 0;
-    const fail = () => {
-      metrics++;
-      throw new Error('Private diagnostic provider failure');
-    };
-    const telemetry: Telemetry = {
-      measure: async (_name, work) => work(),
-      withSpan: async (_name, work) => work(),
-      addCounter: fail,
-      recordHistogram: fail,
-      setGauge: fail,
-      async flush() {},
-    };
-    const observer: Plugin = {
-      id: 'telemetry',
-      version: '0.1.0',
-      capabilities: new Set(['telemetry']),
-      init(context) {
-        context.provide(COMPONENTS.telemetry, telemetry);
-      },
-      close() {},
-    };
-    const f = await fixture(
-      {
-        schema: 'type Query { ping: String } type Subscription { notice: String! }',
-        resolvers: {
-          Query: {
-            ping: () => {
-              queries++;
-              return 'pong';
-            },
-          },
-          Subscription: {
-            notice: {
-              async *subscribe(_parent, _args, context) {
-                allocations++;
-                yield context.auth!.tenantId;
+for (const mode of ['before', 'after', 'twice', 'stall'] as const)
+  test(
+    `Failing subscription observers (${mode}) neither repeat business work nor bypass real identity checks`,
+    { timeout: 10000 },
+    async () => {
+      const tls = await tlsFiles();
+      let metrics = 0,
+        allocations = 0,
+        queries = 0;
+      const fail = () => {
+        metrics++;
+        throw new Error('Private diagnostic provider failure');
+      };
+      const telemetry: Telemetry = {
+        measure: async (_name, work) => work(),
+        withSpan: async (_name, work) => {
+          if (mode === 'stall')
+            return _name === 'graphql.subscription' ? new Promise<never>(() => {}) : work();
+          if (mode === 'before') throw new Error('Private diagnostic provider failure');
+          const result = work();
+          if (mode === 'twice') void Promise.resolve(work()).catch(() => undefined);
+          void Promise.resolve(result).catch(() => undefined);
+          throw new Error('Private diagnostic provider failure');
+        },
+        addCounter: fail,
+        recordHistogram: fail,
+        setGauge: fail,
+        async flush() {},
+      };
+      const observer: Plugin = {
+        id: 'telemetry',
+        version: '0.1.0',
+        capabilities: new Set(['telemetry']),
+        init(context) {
+          context.provide(COMPONENTS.telemetry, telemetry);
+        },
+        close() {},
+      };
+      const f = await fixture(
+        {
+          schema: 'type Query { ping: String } type Subscription { notice: String! }',
+          resolvers: {
+            Query: {
+              ping: () => {
+                queries++;
+                return 'pong';
               },
-              resolve: (parent) => parent,
+            },
+            Subscription: {
+              notice: {
+                async *subscribe(_parent, _args, context) {
+                  allocations++;
+                  yield context.auth!.tenantId;
+                },
+                resolve: (parent) => parent,
+              },
             },
           },
-        },
-        security: { auth: { required: true }, authorizeField: ({ context }) => !!context.auth },
-        subscriptions: {
-          enabled: true,
-          pubsub: {
-            subscribe() {
-              throw new Error('This fixture owns its source explicitly');
+          security: { auth: { required: true }, authorizeField: ({ context }) => !!context.auth },
+          subscriptions: {
+            enabled: true,
+            pubsub: {
+              subscribe() {
+                throw new Error('This fixture owns its source explicitly');
+              },
+              async publish() {},
+              async close() {},
             },
-            async publish() {},
-            async close() {},
+            maxConnections: 2,
+            maxOperationsPerConnection: 2,
+            maxQueuedEventsPerConnection: 4,
+            revalidateIntervalMs: 100,
+            allowedOrigins: ['https://portal.example.test'],
           },
-          maxConnections: 2,
-          maxOperationsPerConnection: 2,
-          maxQueuedEventsPerConnection: 4,
-          revalidateIntervalMs: 100,
-          allowedOrigins: ['https://portal.example.test'],
         },
-      },
-      { tls: tls.tls, telemetry: { mode: 'standard' }, plugins: [observer] },
-    );
-    let socket: WebSocket | undefined;
-    try {
-      assert.equal((await send(f.origin, { query: '{ ping }' }, { ca: tls.ca })).status, 401);
-      assert.equal(queries, 0);
-      socket = new WebSocket(
-        f.origin.replace('https:', 'wss:') + '/graphql',
-        'graphql-transport-ws',
-        { ca: tls.ca, origin: 'https://portal.example.test' },
+        { tls: tls.tls, telemetry: { mode: 'standard' }, plugins: [observer] },
       );
-      await once(socket, 'open');
-      const wire = socket;
-      wire.on('message', (raw) => {
-        if (JSON.parse(String(raw)).type === 'ping') wire.send('{"type":"pong"}');
-      });
-      const ack = once(wire, 'message');
-      wire.send(
-        JSON.stringify({ type: 'connection_init', payload: { authorization: await f.token() } }),
-      );
-      await ack;
-      const received = new Promise<unknown>((resolve) =>
+      let socket: WebSocket | undefined;
+      try {
+        assert.equal((await send(f.origin, { query: '{ ping }' }, { ca: tls.ca })).status, 401);
+        assert.equal(queries, 0);
+        socket = new WebSocket(
+          f.origin.replace('https:', 'wss:') + '/graphql',
+          'graphql-transport-ws',
+          { ca: tls.ca, origin: 'https://portal.example.test' },
+        );
+        await once(socket, 'open');
+        const wire = socket;
         wire.on('message', (raw) => {
-          const frame = JSON.parse(String(raw));
-          if (frame.type === 'next') resolve(frame.payload);
-        }),
-      );
-      wire.send('{"type":"subscribe","id":"one","payload":{"query":"subscription { notice }"}}');
-      assert.deepEqual(await received, { data: { notice: 'tenant-a' } });
-      assert.equal(allocations, 1);
-      const query = await send(
-        f.origin,
-        { query: '{ ping }' },
-        { ca: tls.ca, headers: { authorization: await f.token() } },
-      );
-      assert.deepEqual(query.json(), { data: { ping: 'pong' } });
-      assert.equal(queries, 1);
-      assert.ok(metrics > 0);
-    } finally {
-      socket?.terminate();
-      await f.close();
-      await tls.close();
-    }
-  },
-);
+          if (JSON.parse(String(raw)).type === 'ping') wire.send('{"type":"pong"}');
+        });
+        const ack = once(wire, 'message');
+        wire.send(
+          JSON.stringify({ type: 'connection_init', payload: { authorization: await f.token() } }),
+        );
+        await ack;
+        const received = new Promise<unknown>((resolve) =>
+          wire.on('message', (raw) => {
+            const frame = JSON.parse(String(raw));
+            if (frame.type === 'next') resolve(frame.payload);
+          }),
+        );
+        wire.send('{"type":"subscribe","id":"one","payload":{"query":"subscription { notice }"}}');
+        assert.deepEqual(await received, { data: { notice: 'tenant-a' } });
+        assert.equal(allocations, 1);
+        const query = await send(
+          f.origin,
+          { query: '{ ping }' },
+          { ca: tls.ca, headers: { authorization: await f.token() } },
+        );
+        assert.deepEqual(query.json(), { data: { ping: 'pong' } });
+        assert.equal(queries, 1);
+        assert.ok(metrics > 0);
+      } finally {
+        socket?.terminate();
+        await f.close();
+        await tls.close();
+      }
+    },
+  );

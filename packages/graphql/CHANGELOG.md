@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Retain authenticated subscription source and event trace context through native resolver callbacks and physical retirement, with bounded W3C propagation and diagnostic failure isolation.
+
 - Add optional GraphQL contracts and administrative capability identity.
 - Pin the selected Mercurius and GraphQL engines without changing REST-only dependencies.
 - Validate immutable startup declarations, finite budgets and schema field mappings before transport registration.

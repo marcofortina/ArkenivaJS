@@ -19,6 +19,8 @@ export class Operation {
   loaderBatches = 0;
   loaderItems = 0;
   mutationEpoch = 0;
+  /** Private adapter context, captured only after runtime authentication. */
+  runInContext: (<T>(work: () => T) => T) | undefined;
   private readonly pending = new Set<Promise<unknown>>();
   private release!: () => void;
   private ended = false;
@@ -53,7 +55,7 @@ export class Operation {
     this.check();
     const pending = Promise.resolve().then(() => {
       this.check();
-      return work();
+      return this.runInContext ? this.runInContext(work) : work();
     });
     this.pending.add(pending);
     const settle = () => {
