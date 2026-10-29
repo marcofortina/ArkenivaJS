@@ -20,12 +20,8 @@ import { configurationEndpoint } from './resolver.js';
 import { loadFederationSigningKey } from './signing.js';
 import { inspectTrustMark } from './statements.js';
 import { failure, fields, list, method, text, url } from './validation.js';
+import { assuranceContext } from './assurance.js';
 
-const contexts = {
-  'spid-l1': 'https://www.spid.gov.it/SpidL1',
-  'spid-l2': 'https://www.spid.gov.it/SpidL2',
-  'spid-l3': 'https://www.spid.gov.it/SpidL3',
-} as const;
 /** Private protocol composition; callback verification and canonical identity mapping remain separate. */
 export class FederationOidcLogin {
   private readonly profile;
@@ -61,15 +57,15 @@ export class FederationOidcLogin {
       const value = fields(input, ['issuer', 'assurance', 'returnPath', 'tenantHint']),
         issuer = url(value.issuer),
         path = returnPath(value.returnPath),
-        assurance = value.assurance as keyof typeof contexts,
+        assurance = value.assurance as FederationAssurance,
         tenantHint = value.tenantHint === undefined ? undefined : text(value.tenantHint),
         registration = this.profile.oidcRegistration!;
       if (
         !this.profile.expectedIssuers.includes(issuer) ||
-        !this.profile.allowedAssurance.includes(assurance) ||
-        !Object.hasOwn(contexts, assurance)
+        !this.profile.allowedAssurance.includes(assurance)
       )
         throw failure('EK_EID_ASSURANCE');
+      const context = assuranceContext(this.profile.system, assurance);
       if (
         Buffer.byteLength(
           JSON.stringify({
@@ -103,7 +99,7 @@ export class FederationOidcLogin {
       supported('scopes_supported', 'openid');
       supported('code_challenge_methods_supported', 'S256');
       supported('request_object_signing_alg_values_supported', registration.signingAlgorithm);
-      supported('acr_values_supported', contexts[assurance]);
+      supported('acr_values_supported', context);
       supported('client_registration_types_supported', 'automatic');
       const automaticRequest =
         metadata.request_authentication_methods_supported === undefined
@@ -155,7 +151,7 @@ export class FederationOidcLogin {
           nonce: transaction.nonce,
           code_challenge: challenge,
           code_challenge_method: 'S256',
-          acr_values: contexts[assurance],
+          acr_values: context,
           prompt: 'consent',
           ...(registration.requestedClaims.length
             ? { claims: JSON.stringify({ userinfo: claims }) }

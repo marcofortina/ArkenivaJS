@@ -25,6 +25,7 @@ import { transactionFixture } from './transactions.js';
 import { registration } from './registration.js';
 import { checkMapping } from './mapping-checks.js';
 import { runPublicOidc } from './public-oidc-worker.js';
+import type { FederationAssurance, FederationProfileV1 } from '../../dist/index.js';
 
 type Mode =
   | 'valid'
@@ -39,6 +40,7 @@ type Mode =
   | 'access-audience'
   | 'access-client'
   | 'plain-id'
+  | 'unexpected-id-encryption'
   | 'plain-info'
   | 'info-signature'
   | 'info-subject'
@@ -92,6 +94,7 @@ async function run(files: {
   mapping?: boolean;
   public?: boolean;
 }) {
+  const system = files.mapping ? 'spid' : 'cie';
   const f = await transactionFixture(),
     canonical = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }),
     rp = generateKeyPairSync('rsa', { modulusLength: 2048 }),
@@ -264,9 +267,14 @@ async function run(files: {
               JSON.stringify({
                 access_token: accessToken,
                 id_token:
-                  record.mode === 'plain-id'
-                    ? id
-                    : await encrypt(id, record.mode === 'wrong-id-encryption' ? 'userinfo' : 'id'),
+                  record.mode === 'unexpected-id-encryption'
+                    ? await encrypt(id, 'id')
+                    : system === 'spid' || record.mode === 'plain-id'
+                      ? id
+                      : await encrypt(
+                          id,
+                          record.mode === 'wrong-id-encryption' ? 'userinfo' : 'id',
+                        ),
                 token_type: 'Bearer',
                 expires_in: 120,
               }),
@@ -361,15 +369,21 @@ async function run(files: {
       op: { metadata: { openid_provider: metadata } },
       status: liveStatus,
     }),
-    profile = {
+    profile: FederationProfileV1 = {
       ...graph.profile,
+      system,
+      allowedAssurance: [`${system}-l2`, `${system}-l3`] as readonly FederationAssurance[],
       redirectUri: f.profile.redirectUri + '?application=fixture',
       oidcRegistration: {
         ...(await registration(graph.profile.entityId)),
-        idTokenEncryption: {
-          algorithm: 'RSA-OAEP' as const,
-          encryption: 'A128CBC-HS256' as const,
-        },
+        ...(system === 'cie'
+          ? {
+              idTokenEncryption: {
+                algorithm: 'RSA-OAEP' as const,
+                encryption: 'A128CBC-HS256' as const,
+              },
+            }
+          : {}),
         requestedClaims: ['name', 'family_name', 'email_verified', 'age'],
         approvedProtocolEndpoints: [
           origin + '/token',
@@ -379,7 +393,7 @@ async function run(files: {
         ],
       },
     },
-    settings = capture({ ...f.settings, profiles: [profile] }, 'test'),
+    settings = capture({ ...f.settings, profiles: [profile] }, 'test', system),
     transport = new FederationProtocolHttp(settings, profile.profileId),
     callback = new FederationOidcCallback(
       settings,
@@ -405,7 +419,7 @@ async function run(files: {
     const initiated = await f.runtime.run((call) =>
         login.begin(call, {
           issuer: op,
-          assurance: 'spid-l2',
+          assurance: `${system}-l2` as FederationAssurance,
           returnPath: '/private',
           tenantHint,
         }),
@@ -434,7 +448,7 @@ async function run(files: {
     assert.equal(callback.result(result), result);
     assert.equal(result.issuer, op);
     assert.equal(result.subject, 'upstream-subject');
-    assert.equal(result.assurance, 'spid-l2');
+    assert.equal(result.assurance, `${system}-l2`);
     assert.deepEqual(result.attributes.name, ['Fixture Member']);
     assert.deepEqual(result.attributes.email_verified, ['true']);
     assert.deepEqual(result.attributes.age, ['42']);
@@ -444,6 +458,21 @@ async function run(files: {
     assert.equal('nonce' in result, false);
     assert.equal('verifier' in result, false);
     if (files.mapping) {
+      const encryptedId = await begin('unexpected-id-encryption');
+      await assert.rejects(
+        () => f.runtime.run((call) => callback.consume(call, encryptedId.href)),
+        {
+          code: 'EK_EID_FEDERATION',
+        },
+      );
+      const exchanged = tokenRequests;
+      await assert.rejects(
+        () => f.runtime.run((call) => callback.consume(call, encryptedId.href)),
+        {
+          code: 'EK_EID_FEDERATION',
+        },
+      );
+      assert.equal(tokenRequests, exchanged);
       await checkMapping(
         origin,
         canonical.privateKey,
@@ -483,7 +512,7 @@ async function run(files: {
     const higher = await f.runtime.run(async (call) =>
       callback.consume(call, (await begin('higher')).href),
     );
-    assert.equal(higher.assurance, 'spid-l3');
+    assert.equal(higher.assurance, `${system}-l3`);
     for (const mode of ['info-array', 'info-omitted'] as const) {
       const target = await begin(mode),
         verified = await f.runtime.run((call) => callback.consume(call, target.href));

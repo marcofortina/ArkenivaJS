@@ -9,6 +9,64 @@ import { FederationTransactions } from '../../dist/transactions.js';
 import type { ItalianEidPluginSettings } from '../../dist/index.js';
 import type { SealedEnvelope } from '@arkenivajs/security-crypto';
 
+test('SPID and CIE protected transactions cannot cross identity systems even with the same profile ID, store and external keys', async () => {
+  const f = await transactionFixture();
+  try {
+    const profile = { ...f.profile, system: 'cie' as const, allowedAssurance: ['cie-l2' as const] },
+      cie = new FederationTransactions(
+        capture({ ...f.settings, profiles: [profile] }, 'test', 'cie'),
+        profile.profileId,
+        f.crypto,
+      ),
+      spidState = await f.runtime.run((call) => f.first.create(call, f.input)),
+      cieState = await f.runtime.run((call) =>
+        cie.create(call, { ...f.input, assurance: 'cie-l2' }),
+      );
+    await assert.rejects(
+      () => f.runtime.run((call) => cie.consume(call, spidState.transactionId, spidState.issuer)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    await assert.rejects(
+      () => f.runtime.run((call) => f.first.consume(call, cieState.transactionId, cieState.issuer)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    assert.equal(f.claims.size, 0);
+    const [first, second] = [...f.rows];
+    assert.ok(first && second);
+    assert.notEqual(JSON.parse(first[0])[0], JSON.parse(second[0])[0]);
+    assert.notEqual(first[1].ownerKey, second[1].ownerKey);
+    assert.notEqual(first[1].fingerprint, second[1].fingerprint);
+    f.rows.set(first[0], second[1]);
+    await assert.rejects(
+      () =>
+        f.runtime.run((call) => f.first.consume(call, spidState.transactionId, spidState.issuer)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    assert.equal(f.claims.size, 0);
+    f.rows.set(first[0], first[1]);
+    assert.equal(
+      (
+        await f.runtime.run((call) =>
+          f.second.consume(call, spidState.transactionId, spidState.issuer),
+        )
+      ).assurance,
+      'spid-l2',
+    );
+    assert.equal(
+      (await f.runtime.run((call) => cie.consume(call, cieState.transactionId, cieState.issuer)))
+        .assurance,
+      'cie-l2',
+    );
+    assert.equal(f.claims.size, 2);
+    await assert.rejects(
+      () => f.runtime.run((call) => cie.consume(call, cieState.transactionId, cieState.issuer)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test('Noncanonical state references are rejected before any cryptographic provider or storage work', async () => {
   const f = await transactionFixture();
   let work = 0;

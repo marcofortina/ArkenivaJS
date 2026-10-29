@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { runOidcWorker } from '../fixtures/oidc-worker-process.js';
 
 test(
-  'Actual HTTPS native OIDC exchanges verify private-key JWT, protected state, signatures, encryption and assurance',
+  'Actual HTTPS native CIE-profile OIDC exchanges verify private-key JWT, protected state, signatures, encryption and CIE assurance',
   { timeout: 30000 },
   () => runOidcWorker(),
 );

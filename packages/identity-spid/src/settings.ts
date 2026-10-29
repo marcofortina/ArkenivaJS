@@ -8,9 +8,11 @@ import type {
   FederationProfileV1,
   FederationTrustAnchor,
   ItalianEidPluginSettings,
+  ItalianIdentitySystem,
 } from './contracts.js';
 import { failure, fields, integer, list, method, property, text, url } from './validation.js';
 import { captureRegistration } from './registration.js';
+import { assuranceLevels } from './assurance.js';
 
 function strings(input: unknown, convert: (value: unknown) => string = text) {
   const result = list(input).map((value) => convert(value));
@@ -64,7 +66,10 @@ function anchor(input: unknown): FederationTrustAnchor {
     expiresAt,
   });
 }
-export function captureProfile(input: unknown): FederationProfileV1 {
+export function captureProfile(
+  input: unknown,
+  expectedSystem?: ItalianIdentitySystem,
+): FederationProfileV1 {
   const value = fields(input, [
     'schemaVersion',
     'profileId',
@@ -83,14 +88,17 @@ export function captureProfile(input: unknown): FederationProfileV1 {
     'sessionTtlSeconds',
     'oidcRegistration',
   ]);
+  const system = expectedSystem === undefined ? value.system : expectedSystem;
+  if (system !== 'spid' && system !== 'cie') throw failure();
+  const permittedAssurance = assuranceLevels(system);
   if (
     value.schemaVersion !== '1.0.0' ||
-    value.system !== 'spid' ||
+    value.system !== system ||
     !['saml2', 'oidc-federation'].includes(value.protocol as string)
   )
     throw failure();
   const assurance = strings(value.allowedAssurance);
-  if (assurance.some((item) => !['spid-l1', 'spid-l2', 'spid-l3'].includes(item)))
+  if (assurance.some((item) => !permittedAssurance.includes(item as FederationAssurance)))
     throw failure('EK_EID_ASSURANCE');
   const metadata = fields(value.metadata, [
     'trustAnchors',
@@ -122,10 +130,11 @@ export function captureProfile(input: unknown): FederationProfileV1 {
       ? undefined
       : captureRegistration(value.oidcRegistration, entityId, signingKeyRef, maxBytes);
   if (oidcRegistration && (clientId !== entityId || new URL(entityId).search)) throw failure();
+  if (system === 'spid' && oidcRegistration?.idTokenEncryption) throw failure();
   return freezeData({
     schemaVersion: '1.0.0',
     profileId: text(value.profileId),
-    system: 'spid',
+    system,
     protocol: value.protocol as FederationProfileV1['protocol'],
     entityId,
     ...(clientId ? { clientId } : {}),
@@ -153,6 +162,7 @@ export function captureProfile(input: unknown): FederationProfileV1 {
 export function capture(
   input: ItalianEidPluginSettings,
   environment: 'production' | 'development' | 'test' = 'production',
+  system: ItalianIdentitySystem = 'spid',
 ) {
   if (!['production', 'development', 'test'].includes(environment)) throw failure();
   const value = fields(input, [
@@ -165,7 +175,7 @@ export function capture(
     'stateEncryptionKeyRefs',
     'stateMacKeyRefs',
   ]);
-  const profiles = list(value.profiles).map(captureProfile);
+  const profiles = list(value.profiles).map((profile) => captureProfile(profile, system));
   if (new Set(profiles.map((item) => item.profileId)).size !== profiles.length) throw failure();
   const encryptionRefs =
       value.stateEncryptionKeyRefs === undefined
