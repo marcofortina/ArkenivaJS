@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Verify bounded SAML metadata signatures in owned native workers, retaining shared
+  admission until physical termination and rejecting copied or expired signature
+  evidence. Signature validation does not establish current registry participation.
 - Retrieve explicit SAML registry JSON locations through the existing bounded HTTPS
   transport with strict media types, fresh requests and shared admission. Reading
   a status document does not establish active participation or enable SAML.
