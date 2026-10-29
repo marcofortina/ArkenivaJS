@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, sep } from 'node:path';
 import { parseDocument } from 'yaml';
 import { KitError, COMPONENTS } from '@arkenivajs/core';
@@ -14,6 +14,7 @@ import {
   reportConfigurationDiagnostic,
 } from '@arkenivajs/core/support';
 import type { StoreOptions } from '@arkenivajs/core/support';
+import { readConfigurationFile } from './file.js';
 
 export type { ConfigService } from '@arkenivajs/core';
 
@@ -97,16 +98,7 @@ export async function createConfig<T extends Record<string, unknown>>(
             code: 'EK_CONFIG_INVALID',
             message: 'Configuration path is outside the approved workspace',
           });
-        const metadata = await stat(file);
-        if (!metadata.isFile() || metadata.size > 1_048_576)
-          throw new KitError({
-            code: 'EK_CONFIG_INVALID',
-            message: 'Configuration must be a bounded regular file',
-          });
-        text = await readFile(file, {
-          encoding: 'utf8',
-          ...(options.signal ? { signal: options.signal } : {}),
-        });
+        text = await readConfigurationFile(file, options.signal);
       }
       if (text !== undefined && Buffer.byteLength(text) > 1_048_576)
         throw new KitError({
