@@ -64,7 +64,7 @@ export function subscriptionFrame(raw: unknown, binary: boolean, limits: Limits)
 export function installSubscriptionIngress(
   socket: WebSocket,
   limits: Limits,
-  admit: (frame: Message) => undefined,
+  admit: (frame: Message) => false | undefined,
 ) {
   const emit = socket.emit.bind(socket);
   let closed = false;
@@ -77,6 +77,7 @@ export function installSubscriptionIngress(
       try {
         const frame = subscriptionFrame(args[0], args[1] === true, limits);
         const result: unknown = admit(frame);
+        if (result === false) return false;
         if (result !== undefined) {
           if (types.isPromise(result)) void result.catch(() => undefined);
           throw failure('EK_GQL_SUBSCRIPTION');
