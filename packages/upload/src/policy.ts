@@ -94,7 +94,7 @@ export function capture(input: UploadPluginSettings): readonly UploadRoute[] {
       const value = fields(item, ['path', 'method', 'policy', 'auth', 'responseSchema', 'handler']);
       const path = text(value.path, 1024);
       if (
-        !/^\/(?:[A-Za-z0-9._~:-]+\/?)*$/.test(path) ||
+        !/^\/(?:[A-Za-z0-9._~:-]+\/)*[A-Za-z0-9._~:-]*$/.test(path) ||
         path.includes('//') ||
         path.split('/').some((segment) => segment === '.' || segment === '..') ||
         ['/livez', '/readyz'].includes(path) ||
