@@ -27,6 +27,11 @@ export async function startMagicLinks(settings: MagicLinksPluginSettings) {
 
 ## Settings and trust
 
+Provider methods retain their captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy providers
+or callbacks, accessors and prototype traversal beyond 32 levels fail configuration
+validation; later method replacement does not alter captured ports.
+
 `stateStore` supplies all seven `SecurityTransactionalStore` methods,
 `securityLevel` and a positive integer `operationTimeoutMs` up to 30000.
 `hmac` supplies actual HMAC-SHA256 digest/verification through an external secret

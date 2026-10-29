@@ -5,6 +5,8 @@
 
 ## 0.1.0
 
+- Capture configured provider methods without evaluating callable metadata,
+  retaining original receivers and rejecting executable proxy prototypes.
 - Add native random magic links, external versioned HMAC and shared atomic one-use state.
 - Enforce runtime authorization, tenant binding, expiry, quotas and fail-closed provider handling.
 - Add bounded lifecycle, private observation and PostgreSQL/HTTPS consumer verification.
