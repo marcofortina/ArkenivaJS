@@ -17,6 +17,7 @@ import { OwnedContexts } from '../../dist/contexts.js';
 import { installSubscriptionIngress } from '../../dist/subscription-ingress.js';
 import { capture } from '../../dist/policy.js';
 import { SubscriptionStream } from '../../dist/subscription-stream.js';
+import { sealSubscriptionResult } from '../../dist/subscription-output.js';
 
 /** Engine compatibility probes do not activate the framework's subscription transport. */
 function deferred<T>() {
@@ -35,7 +36,7 @@ interface Session {
   readonly tenant: string;
 }
 
-async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
+async function nativeFixture(options: { maxDocumentBytes?: number; maxResultBytes?: number } = {}) {
   const tls = await tlsFiles();
   const pair = await generateKeyPair('ES256');
   const server = Fastify({
@@ -50,10 +51,12 @@ async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
     resolvers: {},
     security: {
       authorizeField: () => false,
-      limits:
-        options.maxDocumentBytes === undefined
+      limits: {
+        ...(options.maxDocumentBytes === undefined
           ? {}
-          : { maxDocumentBytes: options.maxDocumentBytes },
+          : { maxDocumentBytes: options.maxDocumentBytes }),
+        ...(options.maxResultBytes === undefined ? {} : { maxResultBytes: options.maxResultBytes }),
+      },
     },
   }).security.limits;
   server.addHook('onRoute', (options) => {
@@ -105,7 +108,8 @@ async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
   try {
     await server.register(mercurius, {
       schema: `
-        type Notice { id: ID!, text: String! }
+        scalar Payload
+        type Notice { id: ID!, text: String!, serialized: Payload }
         type Query { heartbeat: Boolean! }
         type Subscription { notice(tenantHint: String): Notice! }
       `,
@@ -173,8 +177,9 @@ async function nativeFixture(options: { maxDocumentBytes?: number } = {}) {
     );
     server.graphql.addHook(
       'onSubscriptionResolution',
-      async (_execution, context: MercuriusContext) => {
+      async (execution, context: MercuriusContext) => {
         await revalidate(context);
+        sealSubscriptionResult(execution, limits.maxResultBytes);
       },
     );
     server.graphql.addHook<MercuriusContext>('onSubscriptionEnd', (context) => {
@@ -500,6 +505,135 @@ test(
         assert.equal(fixture.resolverContexts.length, 0);
       }
     } finally {
+      await fixture.close();
+    }
+  },
+);
+
+test(
+  'Native WSS serializes a bounded materialized custom scalar without invoking application toJSON twice',
+  { timeout: 10000 },
+  async () => {
+    const fixture = await nativeFixture({ maxResultBytes: 80 });
+    let stop: (() => void) | undefined;
+    try {
+      const ready = deferred<void>();
+      fixture.started.set('tenant-a', ready);
+      const connection = await fixture.client('tenant-a');
+      const received = deferred<unknown>();
+      stop = connection.client.subscribe(
+        { query: 'subscription { notice { serialized } }' },
+        {
+          next: received.resolve,
+          error: received.reject,
+          complete() {},
+        },
+      );
+      await ready.promise;
+      let encodings = 0,
+        reads = 0;
+      const scalar = {
+        toJSON() {
+          encodings++;
+          return encodings === 1
+            ? {
+                get value() {
+                  reads++;
+                  return 'snapshot';
+                },
+              }
+            : 'x'.repeat(1000000);
+        },
+      };
+      await fixture.server.graphql.pubsub.publish({
+        topic: 'tenant-a',
+        payload: { notice: { serialized: scalar } },
+      });
+      assert.deepEqual(await received.promise, {
+        data: { notice: { serialized: { value: 'snapshot' } } },
+      });
+      assert.equal(encodings, 1);
+      assert.equal(reads, 1);
+    } finally {
+      stop?.();
+      await fixture.close();
+    }
+  },
+);
+
+test(
+  'An oversized native subscription result closes WSS without a partial success payload',
+  { timeout: 10000 },
+  async () => {
+    const fixture = await nativeFixture({ maxResultBytes: 80 });
+    let stop: (() => void) | undefined;
+    try {
+      const ready = deferred<void>();
+      fixture.started.set('tenant-a', ready);
+      const connection = await fixture.client('tenant-a');
+      let received = 0;
+      stop = connection.client.subscribe(
+        { query: 'subscription { notice { serialized } }' },
+        {
+          next() {
+            received++;
+          },
+          error() {},
+          complete() {},
+        },
+      );
+      await ready.promise;
+      await fixture.server.graphql.pubsub.publish({
+        topic: 'tenant-a',
+        payload: { notice: { serialized: 'x'.repeat(2000) } },
+      });
+      await connection.closed.promise;
+      assert.equal(received, 0);
+    } finally {
+      stop?.();
+      await fixture.close();
+    }
+  },
+);
+
+test(
+  'Native subscription error formatting preserves safe field codes and paths without exposing engine diagnostics',
+  { timeout: 10000 },
+  async () => {
+    const fixture = await nativeFixture();
+    let stop: (() => void) | undefined;
+    try {
+      const ready = deferred<void>();
+      fixture.started.set('tenant-a', ready);
+      const connection = await fixture.client('tenant-a');
+      const received = deferred<unknown>();
+      stop = connection.client.subscribe(
+        { query: 'subscription { notice { text } }' },
+        {
+          next: received.resolve,
+          error: received.reject,
+          complete() {},
+        },
+      );
+      await ready.promise;
+      await fixture.server.graphql.pubsub.publish({
+        topic: 'tenant-a',
+        payload: { notice: { text: null } },
+      });
+      const value = await received.promise;
+      assert.deepEqual(value, {
+        data: null,
+        errors: [
+          {
+            message: 'GraphQL field execution failed',
+            path: ['notice', 'text'],
+            extensions: { code: 'EK_GQL_EXECUTION' },
+          },
+        ],
+      });
+      assert.doesNotMatch(JSON.stringify(value), /Cannot return null|non-nullable|Notice|stack/);
+    } finally {
+      stop?.();
       await fixture.close();
     }
   },

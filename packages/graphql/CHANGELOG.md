@@ -23,3 +23,4 @@
 - Reserve subscription operations and pending native frames before dispatch, require authenticated ACK ordering and retain capacity until physical retirement while ignoring benign completion races.
 - Retain physical source ownership through late acquisition, cancellation and pending reads; release native WSS streams exactly once and observe provider cleanup failures.
 - Reauthorize each subscription event with fresh operation scopes, guard source allocation and per-event default/metadata fields, and retain late timed-out sources through physical cleanup.
+- Materialize bounded subscription responses once before native WebSocket serialization, preserve safe native GraphQLError compatibility and prevent private error details or oversized partial results from reaching clients.
