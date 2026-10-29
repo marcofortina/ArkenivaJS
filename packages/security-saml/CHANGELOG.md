@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Retain native worker ownership until actual thread exit when cancellation fails,
+  including physical drain after the public caller has been aborted.
 - Retain bounded native-verified assertion profile facts for federation policy,
   preserving generic SAML acceptance and authorized legacy logout snapshots.
 - Permit explicitly bounded SPID minimum comparison while preserving exact policy,
