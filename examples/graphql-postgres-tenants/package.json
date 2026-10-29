@@ -1,0 +1,26 @@
+{
+  "name": "@arkenivajs/example-graphql-postgres-tenants",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/unit/*.test.js",
+    "test:integration": "node --test dist-test/integration/*.test.js"
+  },
+  "dependencies": {
+    "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/graphql": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/database-postgres": "workspace:*"
+  },
+  "devDependencies": {
+    "jose": "6.2.13",
+    "pg": "8.23.1",
+    "@types/pg": "8.23.1"
+  },
+  "license": "AGPL-3.0-or-later"
+}
