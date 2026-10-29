@@ -5,6 +5,7 @@ import { constants, openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { isIP } from 'node:net';
 import { X509Certificate } from 'node:crypto';
+import { types } from 'node:util';
 import { DEFAULT_MIN_VERSION, createSecureContext, rootCertificates } from 'node:tls';
 import type { ConnectionOptions } from 'nats';
 import { KitError } from '@arkenivajs/core';
@@ -17,26 +18,45 @@ export interface NatsConfiguration {
 const invalid = (message: string, cause?: unknown) =>
   new KitError({ code: 'EK_CONFIG_INVALID', message, ...(cause === undefined ? {} : { cause }) });
 
+function policyProperty(input: object, name: string): unknown {
+  let current: object | null = input;
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid('NATS policy proxies are not supported');
+    const descriptor = Object.getOwnPropertyDescriptor(current, name);
+    if (descriptor) {
+      if (!('value' in descriptor)) throw invalid('NATS policy requires data properties');
+      return descriptor.value;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  if (current) throw invalid('NATS policy prototype depth exceeds its bounded limit');
+  return undefined;
+}
+
 /** Capture executable policy independently from environment data and native resources. */
 export function natsPolicy(input: NatsBusOptions): Readonly<NatsBusOptions> {
   if (
     !input ||
     typeof input !== 'object' ||
+    types.isProxy(input) ||
     Array.isArray(input) ||
     Object.values(Object.getOwnPropertyDescriptors(input)).some((entry) => !('value' in entry)) ||
     Object.keys(input).some(
       (key) => !['connectionStringEnv', 'onError', 'logger', 'telemetry', 'meter'].includes(key),
-    ) ||
-    typeof input.onError !== 'function'
+    )
   )
     throw invalid('NATS requires an explicit asynchronous error strategy and supported policy');
-  const variable = input.connectionStringEnv ?? 'NATS_URL';
+  const callback = policyProperty(input, 'onError');
+  if (typeof callback !== 'function' || types.isProxy(callback))
+    throw invalid('NATS requires an explicit asynchronous error strategy');
+  const variable = policyProperty(input, 'connectionStringEnv') ?? 'NATS_URL';
   if (typeof variable !== 'string' || !/^[A-Z_][A-Z0-9_]{0,127}(?![\s\S])/.test(variable))
     throw invalid('Invalid NATS connection environment reference');
   return Object.freeze({
     ...input,
     connectionStringEnv: variable,
-    onError: input.onError.bind(input),
+    onError: (...args: Parameters<NatsBusOptions['onError']>) =>
+      Reflect.apply(callback, input, args),
   });
 }
 

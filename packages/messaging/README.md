@@ -51,6 +51,11 @@ or overdue strategy makes the owner unhealthy and starts cleanup. Raw causes
 are private developer diagnostics. See the disposable fixture for secure
 configuration and the [complete consumer example](../../examples/messaging/README.md) for executable application code.
 
+Error strategies retain their captured callback and receiver without evaluating
+callable `bind`, `name` or `length` properties. Later callback replacement does
+not change the captured strategy. Policy method lookup rejects accessors and
+proxies and is bounded to 32 prototype levels before any connection is opened.
+
 ## Connection and authority
 
 `NATS_URL` is a private environment value resolved at explicit startup. Use

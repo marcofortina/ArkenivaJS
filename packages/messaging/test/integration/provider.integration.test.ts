@@ -9,7 +9,7 @@ import nats from 'nats';
 import { createApplication } from '@arkenivajs/core';
 import type { MessageEnvelope } from '@arkenivajs/core';
 import { createNatsBus, messagingPlugin } from '@arkenivajs/messaging';
-import type { MessageFailure } from '@arkenivajs/messaging';
+import type { MessageFailure, NatsBusOptions } from '@arkenivajs/messaging';
 import { natsConfiguration } from '../../dist/config.js';
 
 async function eventually(check: () => boolean | Promise<boolean>) {
@@ -79,10 +79,28 @@ test(
     const topic = fixture(),
       failures: MessageFailure[] = [],
       messages: MessageEnvelope<unknown>[] = [];
-    const bus = await createNatsBus({
+    let metadataEffects = 0,
+      replacements = 0;
+    const options: NatsBusOptions = {
       connectionStringEnv: 'ARKENIVA_NATS_URL',
-      onError: async (failure) => {
+      async onError(failure, operation) {
+        assert.equal(this, options);
+        assert.ok(operation.signal);
+        assert.ok(operation.timeoutMs);
         failures.push(failure);
+      },
+    };
+    for (const key of ['bind', 'name', 'length'])
+      Object.defineProperty(options.onError, key, {
+        get() {
+          metadataEffects++;
+          throw new Error('Error strategy callable metadata must not execute');
+        },
+      });
+    const bus = await createNatsBus(options);
+    Object.defineProperty(options, 'onError', {
+      value: async () => {
+        replacements++;
       },
     });
     const configuration = natsConfiguration('ARKENIVA_NATS_URL'),
@@ -101,6 +119,8 @@ test(
       native.publish(configuration.prefix + topic, Buffer.from(JSON.stringify(envelope)));
       await native.flush();
       await eventually(() => failures.length === 1);
+      assert.equal(metadataEffects, 0);
+      assert.equal(replacements, 0);
       assert.equal(failures[0]!.kind, 'wire');
       assert.equal(failures[0]!.message, undefined);
       assert.equal(messages.length, 0);
