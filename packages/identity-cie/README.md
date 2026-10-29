@@ -5,6 +5,11 @@ native JOSE/OpenID Client, application security and external Crypto services.
 Register `ciePlugin(settings)` before application startup and resolve `CIE_CAPABILITY`
 after readiness. It installs no SPID plugin, listener, route or local session.
 
+The [executable browser transaction example](../../examples/identity-cie/README.md)
+uses public imports, a separate CIE first-party cookie, actual HTTPS callbacks and
+an independently installed package consumer. The application retains ownership
+of local authorization and session creation.
+
 ```typescript
 import { ciePlugin, CIE_CAPABILITY } from '@arkenivajs/identity-cie';
 import type { CieService, ItalianEidPluginSettings } from '@arkenivajs/identity-cie';
