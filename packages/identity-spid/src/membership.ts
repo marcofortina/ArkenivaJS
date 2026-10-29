@@ -78,7 +78,10 @@ export class FederationMembership {
   constructor(
     profile: FederationProfileV1,
     http: Pick<FederationHttp, 'statement' | 'trustMarkStatus'>,
+    private readonly leafRole: 'openid_provider' | 'openid_relying_party' = 'openid_provider',
   ) {
+    if (!['openid_provider', 'openid_relying_party'].includes(leafRole))
+      throw failure('EK_EID_PROFILE');
     this.profile = captureProfile(profile);
     this.read = method<FederationHttp['statement']>(http, 'statement');
     this.status = method<FederationHttp['trustMarkStatus']>(http, 'trustMarkStatus');
@@ -134,8 +137,8 @@ export class FederationMembership {
           });
         });
       };
-      remember(nodes, ['openid_provider']);
-      if (!Object.hasOwn(chain.metadata, 'openid_provider')) throw failure('EK_EID_FEDERATION');
+      remember(nodes, [this.leafRole]);
+      if (!Object.hasOwn(chain.metadata, this.leafRole)) throw failure('EK_EID_FEDERATION');
       const authorized = (type: string, issuer: string) => {
         if (!Object.hasOwn(catalog, type)) return false;
         const raw = catalog[type];
@@ -261,10 +264,7 @@ export class FederationMembership {
         }
       };
       for (let index = 1; index < nodes.length; index++)
-        await validate(
-          nodes[index]!,
-          index === nodes.length - 1 ? 'openid_provider' : 'intermediate',
-        );
+        await validate(nodes[index]!, index === nodes.length - 1 ? this.leafRole : 'intermediate');
       call.check();
       if (exhausted || expiry <= Date.now() / 1000) throw failure('EK_EID_FEDERATION');
       const result = freezeData({
