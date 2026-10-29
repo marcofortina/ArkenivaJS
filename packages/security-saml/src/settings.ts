@@ -176,7 +176,8 @@ export function capture(input: SamlSettings) {
       audience !== entityId
     )
       throw failure();
-    url(entityId, 'production');
+    // Validate an origin-only URI without changing its exact signed SAML identifier.
+    url(/^https:\/\/[^/?#]+$/u.test(entityId) ? entityId + '/' : entityId, 'production');
     url(acsUrl, 'production');
     authenticationRequestProfile = Object.freeze({
       kind: 'spid',

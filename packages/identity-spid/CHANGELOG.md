@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Reuse the native SAML adapter for private SPID Redirect initiation, with current
+  RP/IdP registration, per-read certificate pinning, encrypted request correlation
+  and physical drain ownership. Public SAML authentication remains unavailable.
 - Bind the native SAML request ID inside encrypted single-use federation state,
   rejecting missing or malformed correlation and cross-protocol substitution.
 - Bind fresh SAML registry state to the exact entity, current pinned XML signing
