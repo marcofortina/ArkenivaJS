@@ -27,8 +27,9 @@
   },
   "dependencies": {
     "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/security-apikey": "workspace:*",
     "@arkenivajs/security-crypto": "workspace:*",
-    "@arkenivajs/security-apikey": "workspace:*"
+    "jose": "6.2.13"
   },
   "license": "AGPL-3.0-or-later"
 }

@@ -1561,6 +1561,9 @@ importers:
       '@arkenivajs/security-crypto':
         specifier: workspace:*
         version: link:../security-crypto
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
 
   packages/logging:
     dependencies:
