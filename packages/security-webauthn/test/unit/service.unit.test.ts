@@ -41,6 +41,67 @@ async function enroll(
   return { service, device, summary, userHandle: handle(ceremony) };
 }
 
+for (const algorithm of ['RS256', 'EdDSA'] as const)
+  test(`Public ${algorithm} factor ceremonies preserve atomic claims, counters and one-use MFA evidence`, async () => {
+    const f = serviceFixture(),
+      service = createWebAuthnService({ ...f.options, passwordlessEnabled: true }),
+      device = authenticator(algorithm);
+    await enroll(f, service, f.subject, device);
+    const invalid = await service.beginAuthentication(f.subject),
+      original = device.authentication(challenge(invalid), { origin: 'https://example.test' }),
+      corrupt = structuredClone(original),
+      bytes = Buffer.from(corrupt.response.signature!, 'base64url');
+    bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
+    corrupt.response.signature = bytes.toString('base64url');
+    await assert.rejects(
+      service.finishAuthentication(f.subject, invalid.ceremonyId, corrupt),
+      hasCode('EK_MFA_INVALID'),
+    );
+    assert.equal(f.credentials.get(device.id)!.counter, 0);
+    assert.equal(f.evidence.size, 0);
+    await assert.rejects(
+      service.finishAuthentication(f.subject, invalid.ceremonyId, original),
+      hasCode('EK_MFA_CHALLENGE_EXPIRED'),
+    );
+    const ceremony = await service.beginAuthentication(f.subject),
+      response = device.authentication(challenge(ceremony), { origin: 'https://example.test' }),
+      attempts = await Promise.allSettled(
+        Array.from({ length: 4 }, () =>
+          service.finishAuthentication(f.subject, ceremony.ceremonyId, response),
+        ),
+      );
+    const accepted = attempts.filter((result) => result.status === 'fulfilled');
+    assert.equal(accepted.length, 1);
+    assert.equal(f.credentials.get(device.id)!.counter, 1);
+    assert.equal(f.evidence.size, 1);
+    const result = accepted[0]!.value,
+      binding = {
+        evidenceId: result.evidenceId,
+        issuer: f.subject.issuer,
+        subject: f.subject.subject,
+        primarySessionId: f.subject.primarySessionId,
+        now: new Date(f.now()).toISOString(),
+      };
+    assert.equal(result.assurance, 'phishing-resistant');
+    assert.ok(await f.options.evidenceStore.consume(binding));
+    assert.equal(await f.options.evidenceStore.consume(binding), null);
+    const anonymous = await service.beginPasswordless(),
+      passwordless = await service.finishPasswordless(
+        anonymous.ceremonyId,
+        device.authentication(challenge(anonymous), { origin: 'https://example.test', counter: 2 }),
+      );
+    assert.equal(passwordless.subject, f.subject.subject);
+    assert.equal(passwordless.issuer, f.subject.issuer);
+    assert.equal(f.credentials.get(device.id)!.counter, 2);
+    await assert.rejects(
+      service.finishPasswordless(
+        anonymous.ceremonyId,
+        device.authentication(challenge(anonymous), { origin: 'https://example.test', counter: 2 }),
+      ),
+      hasCode('EK_MFA_CHALLENGE_EXPIRED'),
+    );
+  });
+
 test('Complete registration and session-bound authentication persist one-use phishing-resistant evidence', async () => {
   const f = serviceFixture(),
     { service, device, summary, userHandle } = await enroll(f);

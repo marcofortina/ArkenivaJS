@@ -817,6 +817,9 @@ importers:
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
+      '@simplewebauthn/server':
+        specifier: 14.0.3
+        version: 14.0.3
       fastify:
         specifier: 5.12.7
         version: 5.12.7
