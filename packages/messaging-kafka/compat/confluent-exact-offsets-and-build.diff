@@ -1,7 +1,23 @@
 diff --git a/deps/librdkafka.gyp b/deps/librdkafka.gyp
 --- a/deps/librdkafka.gyp
 +++ b/deps/librdkafka.gyp
-@@ -32,7 +32,7 @@
+@@ -17,7 +17,7 @@
+                 "action_name": "configure",
+                 "inputs": [],
+                 "outputs": [
+-                  "librdkafka/config.h",
++                  "<(module_root_dir)/deps/librdkafka/config.h",
+                 ],
+                 "action": [
+                   "node", "../util/configure"
+@@ -26,13 +26,13 @@
+               {
+                 "action_name": "build_dependencies",
+                 "inputs": [
+-                  "librdkafka/config.h",
++                  "<(module_root_dir)/deps/librdkafka/config.h",
+                 ],
+                 "outputs": [
                    "deps/librdkafka/src/librdkafka.so",
                  ],
                  "action": [
