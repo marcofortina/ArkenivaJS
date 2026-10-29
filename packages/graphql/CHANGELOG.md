@@ -26,3 +26,4 @@
 - Materialize bounded subscription responses once before native WebSocket serialization, preserve safe native GraphQLError compatibility and prevent private error details or oversized partial results from reaching clients.
 - Share the native WebSocket dispatcher with realtime on the existing Fastify listener, preserving independent route limits and both module initialization orders.
 - Bound native subscription writes by queued messages, buffered bytes and physical callback deadlines; sanitize start errors and prevent late callbacks from acknowledging abandoned connections.
+- Own authenticated native subscription connections through periodic tenant revalidation, per-operation cancellation and late source retirement; release idle execution capacity and preserve long configured deadlines without timer overflow.

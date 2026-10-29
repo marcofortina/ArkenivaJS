@@ -3,6 +3,7 @@
 
 import type { GraphQLResolveInfo } from 'graphql';
 import type { AuthService, VerifiedTenantContext } from '@arkenivajs/core';
+import { KitError } from '@arkenivajs/core';
 import type { GraphqlRequestContext, GraphqlSubscriptionSource } from './contracts.js';
 import type { CapturedSettings } from './policy.js';
 import { failure } from './policy.js';
@@ -36,6 +37,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
     private readonly principal: VerifiedTenantContext,
     private readonly metadata: Omit<GraphqlRequestContext, 'signal' | 'identity' | 'auth'>,
     owner: AbortSignal,
+    private readonly entered?: (scope: Operation) => void,
   ) {
     try {
       if (authority.tenantFrom(principal.identity) !== principal) throw failure('EK_GQL_AUTH');
@@ -86,6 +88,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
     this.scopes.add(scope);
     void scope.completion.then(() => this.scopes.delete(scope));
     try {
+      this.entered?.(scope);
       const identity = await scope.run(() =>
         this.authority.verifyBearer(this.authorization, {
           signal: scope.controller.signal,
@@ -110,8 +113,9 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
         value: Object.freeze({ ...scope.context, identity, auth: tenant }),
       });
       return scope;
-    } catch {
+    } catch (error) {
       scope.end();
+      if (error instanceof KitError && error.code === 'EK_GQL_BACKPRESSURE') throw error;
       throw failure(scope.controller.signal.aborted ? 'EK_GQL_TIMEOUT' : 'EK_GQL_AUTH');
     }
   }
@@ -153,6 +157,7 @@ export class SubscriptionExecution implements AsyncIterableIterator<unknown> {
         stream.open(),
       );
       this.current = undefined;
+      scope.end();
       return this;
     } catch (error) {
       void this.close();

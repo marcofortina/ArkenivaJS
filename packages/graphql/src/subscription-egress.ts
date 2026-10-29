@@ -6,6 +6,7 @@ import type { Message } from 'graphql-ws';
 import type WebSocket from 'ws';
 import { failure } from './policy.js';
 import { subscriptionError } from './subscription-output.js';
+import { subscriptionTimer } from './subscription-timer.js';
 
 interface Bounds {
   readonly maxResultBytes: number;
@@ -97,7 +98,7 @@ export class SubscriptionEgress {
         if (settled) return;
         if (this.closed && !error) error = failure('EK_GQL_SUBSCRIPTION');
         settled = true;
-        clearTimeout(timer);
+        cancelTimer();
         this.writes.delete(finish);
         if (error) {
           this.closed = true;
@@ -115,8 +116,9 @@ export class SubscriptionEgress {
         }
         notify();
       };
-      const timer = setTimeout(() => finish(failure('EK_GQL_TIMEOUT')), bounds.timeoutMs);
-      timer.unref();
+      const cancelTimer = subscriptionTimer(bounds.timeoutMs, () =>
+        finish(failure('EK_GQL_TIMEOUT')),
+      );
       this.writes.add(finish);
       try {
         native(encoded, finish);
