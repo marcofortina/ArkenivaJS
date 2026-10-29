@@ -95,9 +95,10 @@ export class FederationHttp {
   }
   private async read(
     target: URL,
-    type: string,
+    type: string | readonly string[],
     body: string | undefined,
     options?: OperationOptions,
+    fresh = false,
   ): Promise<string> {
     let retained = false;
     try {
@@ -114,10 +115,12 @@ export class FederationHttp {
         });
       this.active++;
       retained = true;
+      const accepted = typeof type === 'string' ? [type] : type;
       const response = await this.client.request(target.href, {
         method: body === undefined ? 'GET' : 'POST',
         headers: {
-          accept: type,
+          accept: accepted.join(', '),
+          ...(fresh ? { 'cache-control': 'no-cache, no-store' } : {}),
           ...(body === undefined ? {} : { 'content-type': 'application/x-www-form-urlencoded' }),
         },
         ...(body === undefined ? {} : { body }),
@@ -125,7 +128,9 @@ export class FederationHttp {
       });
       if (
         response.status !== 200 ||
-        response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== type
+        !accepted.includes(
+          response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '',
+        )
       )
         throw failure('EK_EID_FEDERATION');
       const bytes = await response.arrayBuffer();
@@ -145,6 +150,20 @@ export class FederationHttp {
         target.searchParams.set('sub', url(subject));
       }
       return await this.read(target, 'application/entity-statement+jwt', undefined, options);
+    } catch (error) {
+      throw transportFailure(error);
+    }
+  }
+  /** Bounded transport only: XML signature and current participation remain separate checks. */
+  async samlMetadata(endpoint: string, options?: OperationOptions): Promise<string> {
+    try {
+      return await this.read(
+        this.endpoint(endpoint),
+        ['application/samlmetadata+xml', 'application/xml', 'text/xml'],
+        undefined,
+        options,
+        true,
+      );
     } catch (error) {
       throw transportFailure(error);
     }

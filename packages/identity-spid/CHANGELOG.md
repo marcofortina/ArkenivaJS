@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Retrieve bounded SAML metadata through the existing exact-approved HTTPS transport,
+  without credentials, redirect discovery, caching or stale fallback. Retrieval
+  alone grants no federation trust or protocol activation.
 - Add a bounded native XML signature primitive for SPID SAML metadata, with pinned
   current RSA roots, verified-reference extraction and wrapping/downgrade defenses.
   Current participation and the SAML authentication flow remain independently gated.

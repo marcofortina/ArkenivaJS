@@ -10,7 +10,8 @@ import { createServer } from 'node:https';
 import { mkdtemp, readFile, rm, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { generateKeyPair, exportJWK, exportSPKI, SignJWT } from 'jose';
+import { generateKeyPair, exportJWK, exportSPKI, exportPKCS8, SignJWT } from 'jose';
+import { SignedXml } from 'xml-crypto';
 import { FederationHttp } from '../../dist/metadata-http.js';
 
 test('Metadata transport construction rejects duplicate approvals, invalid environments and nonpositive budgets', () => {
@@ -74,7 +75,7 @@ test(
         { timeout: 10000 },
       );
       await Promise.all([chmod(privateKey, 0o600), chmod(certificate, 0o600)]);
-      const pair = await generateKeyPair('RS256', { modulusLength: 2048 });
+      const pair = await generateKeyPair('RS256', { modulusLength: 2048, extractable: true });
       const issuer = 'https://anchor.example.test',
         subject = 'https://idp.example.test',
         now = Math.floor(Date.now() / 1000);
@@ -101,8 +102,29 @@ test(
         method: string;
         authorization?: string;
         cookie?: string;
+        accept?: string;
+        cacheControl?: string;
         body: string;
       }[] = [];
+      const canonical = 'http://www.w3.org/2001/10/xml-exc-c14n#',
+        xmlSigner = new SignedXml({
+          privateKey: await exportPKCS8(pair.privateKey),
+          signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
+          canonicalizationAlgorithm: canonical,
+        });
+      xmlSigner.addReference({
+        xpath: "/*[local-name(.)='EntityDescriptor']",
+        transforms: ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', canonical],
+        digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256',
+      });
+      xmlSigner.computeSignature(
+        `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" ID="native_metadata" entityID="${subject}" validUntil="${new Date(Date.now() + 60000).toISOString()}"><md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"/></md:EntityDescriptor>`,
+        {
+          prefix: 'ds',
+          location: { reference: "/*[local-name(.)='EntityDescriptor']", action: 'prepend' },
+        },
+      );
+      const samlMetadata = xmlSigner.getSignedXml();
       let rootConfiguration = '',
         delegation = '',
         federationStatus = '';
@@ -119,8 +141,46 @@ test(
               ? { authorization: request.headers.authorization }
               : {}),
             ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+            ...(request.headers.accept ? { accept: request.headers.accept } : {}),
+            ...(request.headers['cache-control']
+              ? { cacheControl: request.headers['cache-control'] }
+              : {}),
             body: Buffer.concat(chunks).toString(),
           });
+          if (path.startsWith('/saml/')) {
+            response.setHeader(
+              'content-type',
+              path === '/saml/application-xml'
+                ? 'application/xml; charset=utf-8'
+                : path === '/saml/text-xml'
+                  ? 'text/xml'
+                  : 'application/samlmetadata+xml',
+            );
+            if (
+              path === '/saml/withdrawn' ||
+              (path === '/saml/cache' && requests.filter((r) => r.path === path).length > 1)
+            )
+              response.statusCode = 410;
+            if (path === '/saml/slow') {
+              setTimeout(() => response.end(samlMetadata), 250);
+              return;
+            }
+            response.end(
+              path === '/saml/empty'
+                ? ''
+                : path === '/saml/utf8'
+                  ? Buffer.from([0xc3, 0x28])
+                  : path === '/saml/oversized'
+                    ? 'x'.repeat(4097)
+                    : path === '/saml/tampered'
+                      ? samlMetadata.replace(
+                          'protocolSupportEnumeration=',
+                          'altered="true" protocolSupportEnumeration=',
+                        )
+                      : samlMetadata,
+            );
+            return;
+          }
           if (path.startsWith('/federation-root/')) {
             if (path === '/federation-root/status') {
               response.setHeader('content-type', 'application/trust-mark-status-response+jwt');
@@ -251,6 +311,18 @@ test(
         if (diagnostics.length < 8192) diagnostics += chunk.toString();
       });
       try {
+        const untrustedTls = new FederationHttp(
+          { approvedMetadataEndpoints: [origin + '/saml/metadata'], maxBytes: 4096 },
+          { maxConcurrent: 1, timeoutMs: 1000 },
+          'test',
+        );
+        try {
+          await assert.rejects(() => untrustedTls.samlMetadata(origin + '/saml/metadata'), {
+            code: 'EK_EID_FEDERATION',
+          });
+        } finally {
+          await untrustedTls.close();
+        }
         const received = Promise.race([
           once(child, 'message'),
           once(child, 'exit').then(() => {
@@ -265,6 +337,7 @@ test(
           leafConfiguration,
           deniedConfiguration,
           membershipConfiguration,
+          samlMetadata,
           anchor: {
             kid: 'root-public',
             issuer,
@@ -281,7 +354,7 @@ test(
             (request) => request.authorization === undefined && request.cookie === undefined,
           ),
         );
-        assert.equal(requests.filter((request) => request.path === '/statement').length, 1);
+        assert.equal(requests.filter((request) => request.path === '/statement').length, 2);
         assert.equal(
           requests.filter(
             (request) => request.path === '/not-approved' || request.path === '/cancel',
@@ -294,6 +367,18 @@ test(
           subject,
         );
         const checked = requests.find((request) => request.path === '/status')!;
+        const xmlRequests = requests.filter((request) => request.path.startsWith('/saml/'));
+        assert.ok(xmlRequests.length >= 8);
+        assert.ok(
+          xmlRequests.every(
+            (request) =>
+              request.method === 'GET' &&
+              request.body === '' &&
+              request.cacheControl === 'no-cache, no-store' &&
+              request.accept === 'application/samlmetadata+xml, application/xml, text/xml',
+          ),
+        );
+        assert.equal(requests.filter((request) => request.path === '/saml/cache').length, 2);
         assert.equal(checked.method, 'POST');
         assert.equal(new URLSearchParams(checked.body).get('trust_mark'), trustMark);
         assert.equal(
