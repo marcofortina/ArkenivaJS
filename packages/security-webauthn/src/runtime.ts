@@ -3,6 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type {
   MfaManagementAuthorization,
@@ -20,7 +21,8 @@ export const storageError = () =>
 
 /** Read data properties without treating their presence as authentication. */
 export function data(value: unknown, fields: readonly string[]): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw policyError();
+  if (!value || typeof value !== 'object' || types.isProxy(value) || Array.isArray(value))
+    throw policyError();
   const descriptors = Object.getOwnPropertyDescriptors(value),
     result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const name of Reflect.ownKeys(descriptors)) {
@@ -53,6 +55,7 @@ function property(object: object, name: string): unknown {
   if (!object || typeof object !== 'object') throw policyError();
   let current: object | null = object;
   while (current) {
+    if (types.isProxy(current)) throw policyError();
     const field = Object.getOwnPropertyDescriptor(current, name);
     if (field) {
       if (!('value' in field)) throw policyError();
@@ -65,8 +68,10 @@ function property(object: object, name: string): unknown {
 
 function method<T extends (...args: never[]) => unknown>(object: object, name: string): T {
   const fn = property(object, name);
-  if (typeof fn !== 'function') throw policyError();
-  return fn.bind(object) as T;
+  if (typeof fn !== 'function' || types.isProxy(fn)) throw policyError();
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(fn, object, args) as ReturnType<T>;
+  return invoke as T;
 }
 
 function provider<T extends object>(

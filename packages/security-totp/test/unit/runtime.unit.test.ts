@@ -486,3 +486,111 @@ test('A tenant source object is rejected without invoking primitive coercion hoo
   );
   assert.equal(invoked, false);
 });
+
+test('Provider method capture preserves receiver and ignores executable bind/name/length properties', async () => {
+  const f = fixture(),
+    original = f.options.subjectAuthority.resolveSubject;
+  let hooks = 0;
+  const authority = {
+    ...f.options.subjectAuthority,
+    calls: 0,
+    async resolveSubject(...args: Parameters<typeof original>) {
+      this.calls++;
+      return Reflect.apply(original, f.options.subjectAuthority, args);
+    },
+  };
+  for (const field of ['bind', 'name', 'length'])
+    Object.defineProperty(authority.resolveSubject, field, {
+      configurable: true,
+      get() {
+        hooks++;
+        throw new Error('Executable provider metadata');
+      },
+    });
+  const runtime = createTotpRuntime({ ...f.options, subjectAuthority: authority });
+  assert.equal(hooks, 0);
+  authority.resolveSubject = async () => {
+    throw new Error('The replacement method must not run');
+  };
+  await runtime.run(undefined, async (call) => {
+    assert.equal(await runtime.resolve(f.subject, call), f.subject);
+  });
+  assert.equal(authority.calls, 1);
+  assert.equal(hooks, 0);
+});
+
+test('Executable provider objects, prototypes and callable proxies are rejected before traps execute', () => {
+  const f = fixture();
+  let traps = 0;
+  const handler: ProxyHandler<object> = {
+    get(target, name, receiver) {
+      traps++;
+      return Reflect.get(target, name, receiver);
+    },
+    getPrototypeOf(target) {
+      traps++;
+      return Reflect.getPrototypeOf(target);
+    },
+    ownKeys(target) {
+      traps++;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, name) {
+      traps++;
+      return Reflect.getOwnPropertyDescriptor(target, name);
+    },
+  };
+  for (const options of [
+    new Proxy(f.options, handler),
+    { ...f.options, subjectAuthority: new Proxy(f.options.subjectAuthority, handler) },
+    {
+      ...f.options,
+      subjectAuthority: Object.create(new Proxy(f.options.subjectAuthority, handler)),
+    },
+    {
+      ...f.options,
+      subjectAuthority: {
+        ...f.options.subjectAuthority,
+        resolveSubject: new Proxy(f.options.subjectAuthority.resolveSubject, handler),
+      },
+    },
+  ])
+    assert.throws(() => createTotpRuntime(options as typeof f.options), hasCode('EK_MFA_POLICY'));
+  assert.equal(traps, 0);
+});
+
+test('Unverified subject proxy input is rejected without invoking traps or the identity authority', async () => {
+  const f = fixture();
+  let traps = 0,
+    resolutions = 0;
+  const runtime = createTotpRuntime({
+    ...f.options,
+    subjectAuthority: {
+      ...f.options.subjectAuthority,
+      async resolveSubject(...args) {
+        resolutions++;
+        return f.options.subjectAuthority.resolveSubject(...args);
+      },
+    },
+  });
+  const subject = new Proxy(f.subject, {
+    ownKeys(target) {
+      traps++;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, name) {
+      traps++;
+      return Reflect.getOwnPropertyDescriptor(target, name);
+    },
+    getPrototypeOf(target) {
+      traps++;
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  await assert.rejects(
+    runtime.run(undefined, (call) => runtime.resolve(subject, call)),
+    hasCode('EK_MFA_POLICY'),
+  );
+  assert.equal(traps, 0);
+  assert.equal(resolutions, 0);
+});

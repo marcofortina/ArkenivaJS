@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Capture provider methods without invoking custom function metadata and reject
+  Proxy configuration, provider prototypes and callable wrappers before reflection.
 - Test concurrent credential key/handle/backup changes and newer committed
   revisions around signature verification and evidence persistence.
 - Reject executable Proxy objects before browser JSON reflection, including
