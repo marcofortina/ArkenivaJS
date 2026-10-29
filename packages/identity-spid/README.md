@@ -11,6 +11,14 @@ composing CIE. Application code should use the owning package's `spidPlugin` or
 from a request. The native configuration, cryptographic and lifecycle logic is
 shared; activated profiles, authority actions and state remain independent.
 
+The reserved SPID SAML registration group contains an explicit
+`samlRegistration.signingCertificateRef`, resolved through the existing external
+secret provider. It is separate from private signing and state-key references;
+capture never reads certificate material. Unknown fields, executable values and
+OIDC/CIE use are rejected. This is configuration support only: SAML activation
+still fails with `EK_UNSUPPORTED_CAPABILITY` before authentication dependencies
+are used. It does not substitute for verified AgID metadata or enable SAML login.
+
 ## Explicit application composition
 
 Install `loggingPlugin`, `securityPlugin`, `cryptoPlugin` and `spidPlugin` explicitly. The SPID plugin depends on the current application's security and Crypto plugins; it does not install routes, open an application listener or create a session. The application's configured environment controls provider and network restrictions. Test-only stores, secrets, authorities and mappers are rejected in production and development, including labels captured before a caller mutates the original object.

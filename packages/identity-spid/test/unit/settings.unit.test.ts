@@ -10,6 +10,7 @@ import { CRYPTO_CAPABILITY } from '@arkenivajs/security-crypto';
 import type { ItalianEidPluginSettings, FederationProfileV1 } from '../../dist/index.js';
 import { SPID_CAPABILITY, spidPlugin } from '../../dist/index.js';
 import { capture } from '../../dist/settings.js';
+import { managed } from '../../dist/service.js';
 import { assuranceLevels, assuranceContext, acrValues } from '../../dist/assurance.js';
 import type { FederationAssurance, ItalianIdentitySystem } from '../../dist/index.js';
 import { registration } from '../fixtures/registration.js';
@@ -81,6 +82,151 @@ function fixture() {
   };
   return { settings, profile, calls: () => calls };
 }
+
+test('SPID SAML captures a separate immutable certificate reference without provider work or changing older profiles', () => {
+  const f = fixture(),
+    registration = { signingCertificateRef: 'approved-saml-certificate' },
+    profile = { ...f.profile, protocol: 'saml2' as const, samlRegistration: registration },
+    captured = capture({ ...f.settings, profiles: [profile] });
+  assert.equal(
+    captured.profiles[0]!.samlRegistration!.signingCertificateRef,
+    registration.signingCertificateRef,
+  );
+  assert.ok(Object.isFrozen(captured.profiles[0]!.samlRegistration));
+  registration.signingCertificateRef = 'changed-after-capture';
+  assert.equal(
+    captured.profiles[0]!.samlRegistration!.signingCertificateRef,
+    'approved-saml-certificate',
+  );
+  assert.equal(capture(f.settings).profiles[0]!.samlRegistration, undefined);
+  assert.equal(spidPlugin({ ...f.settings, profiles: [profile] }).id, 'spid');
+  assert.equal(f.calls(), 0);
+});
+
+test('SAML certificate configuration rejects executable, incomplete, unknown and private/state-key references', () => {
+  const f = fixture();
+  let executions = 0;
+  const good = { signingCertificateRef: 'approved-saml-certificate' },
+    proxy = new Proxy(good, {
+      ownKeys(target) {
+        executions++;
+        return Reflect.ownKeys(target);
+      },
+      getPrototypeOf(target) {
+        executions++;
+        return Reflect.getPrototypeOf(target);
+      },
+    }),
+    getter = {
+      get signingCertificateRef() {
+        executions++;
+        return good.signingCertificateRef;
+      },
+    };
+  for (const samlRegistration of [
+    null,
+    {},
+    [],
+    proxy,
+    getter,
+    { signingCertificateRef: '' },
+    { signingCertificateRef: 123 },
+    { signingCertificateRef: 'x'.repeat(257) },
+    { signingCertificateRef: f.profile.signingKeyRef },
+    { signingCertificateRef: 'state-encryption' },
+    { signingCertificateRef: 'state-mac' },
+    { ...good, certificatePem: 'untrusted-inline-material' },
+  ])
+    assert.throws(
+      () =>
+        capture({
+          ...f.settings,
+          stateEncryptionKeyRefs: ['state-encryption'],
+          stateMacKeyRefs: ['state-mac'],
+          profiles: [
+            { ...f.profile, protocol: 'saml2', samlRegistration: samlRegistration as never },
+          ],
+        }),
+      { code: 'EK_EID_PROFILE' },
+    );
+  assert.equal(executions, 0);
+  assert.equal(f.calls(), 0);
+});
+
+test('SAML registration cannot mix OIDC configuration or cross the CIE profile boundary', () => {
+  const f = fixture(),
+    samlRegistration = { signingCertificateRef: 'approved-saml-certificate' };
+  assert.throws(() => capture({ ...f.settings, profiles: [{ ...f.profile, samlRegistration }] }), {
+    code: 'EK_EID_PROFILE',
+  });
+  assert.throws(
+    () =>
+      capture({
+        ...f.settings,
+        profiles: [
+          { ...f.profile, protocol: 'saml2', samlRegistration, oidcRegistration: {} as never },
+        ],
+      }),
+    { code: 'EK_EID_PROFILE' },
+  );
+  assert.throws(
+    () =>
+      capture(
+        {
+          ...f.settings,
+          profiles: [
+            {
+              ...f.profile,
+              system: 'cie',
+              protocol: 'saml2',
+              allowedAssurance: ['cie-l2'],
+              samlRegistration,
+            },
+          ],
+        },
+        'test',
+        'cie',
+      ),
+    { code: 'EK_EID_PROFILE' },
+  );
+  assert.equal(f.calls(), 0);
+});
+
+test('A captured SAML certificate does not enable an unimplemented protocol or touch authentication dependencies', async () => {
+  const f = fixture(),
+    settings = capture({
+      ...f.settings,
+      stateEncryptionKeyRefs: ['state-encryption'],
+      stateMacKeyRefs: ['state-mac'],
+      profiles: [
+        {
+          ...f.profile,
+          protocol: 'saml2',
+          samlRegistration: { signingCertificateRef: 'approved-saml-certificate' },
+        },
+      ],
+    });
+  let reads = 0;
+  const unused = new Proxy(
+    {},
+    {
+      get() {
+        reads++;
+        throw new Error('Unsupported protocols must not use authentication dependencies');
+      },
+    },
+  );
+  await assert.rejects(
+    managed(
+      settings,
+      unused as Parameters<typeof managed>[1],
+      unused as Parameters<typeof managed>[2],
+    ),
+    { code: 'EK_UNSUPPORTED_CAPABILITY' },
+  );
+  assert.equal(reads, 0);
+  assert.equal(f.calls(), 0);
+});
 
 test('Italian profile capture keeps SPID and CIE systems and application assurance strictly separate', () => {
   const f = fixture(),

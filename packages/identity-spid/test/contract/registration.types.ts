@@ -5,11 +5,18 @@ import type {
   FederationProfileV1,
   FederationOidcRegistration,
   FederationEncryptionPolicy,
+  FederationSamlRegistration,
 } from '../../dist/index.js';
 
 declare const profile: FederationProfileV1;
 declare const registration: FederationOidcRegistration;
 const configured: FederationProfileV1 = { ...profile, oidcRegistration: registration };
+const saml: FederationSamlRegistration = { signingCertificateRef: 'approved-saml-certificate' };
+const samlProfile: FederationProfileV1 = { ...profile, protocol: 'saml2', samlRegistration: saml };
+const invalidCertificate: FederationSamlRegistration = {
+  // @ts-expect-error Certificates are explicit external references, not inline configuration objects.
+  signingCertificateRef: { pem: 'untrusted-inline-material' },
+};
 const encrypted: FederationEncryptionPolicy = {
   algorithm: 'RSA-OAEP-256',
   encryption: 'A256CBC-HS512',
@@ -33,4 +40,13 @@ const invalidNetwork: FederationOidcRegistration = {
   // @ts-expect-error Protocol destination catalogs contain explicit HTTPS URL strings.
   approvedProtocolEndpoints: [123],
 };
-void [configured, encrypted, invalid, wrong, network, invalidNetwork];
+void [
+  configured,
+  encrypted,
+  invalid,
+  wrong,
+  network,
+  invalidNetwork,
+  samlProfile,
+  invalidCertificate,
+];
