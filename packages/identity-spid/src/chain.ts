@@ -127,6 +127,13 @@ function metadata(configuration: SignedStatement, delegation?: SignedStatement) 
     }
   return result;
 }
+/** Metadata policies may narrow protocol settings but cannot replace the verified issuer. */
+function issuerBindings(input: unknown, entity: string) {
+  const value = fields(input);
+  for (const role of ['openid_provider', 'oauth_authorization_server'])
+    if (Object.hasOwn(value, role) && fields(value[role]).issuer !== entity)
+      throw failure('EK_EID_FEDERATION');
+}
 /** Owned evidence covers signatures, path constraints and metadata; live membership is separate. */
 export class FederationChainVerifier {
   private readonly profile: FederationProfileV1;
@@ -179,6 +186,7 @@ export class FederationChainVerifier {
       const pinned = anchorKeys(policy.trustAnchors, anchor),
         root = await signed(value.configuration, anchor, anchor, pinned);
       supported(root);
+      issuerBindings(root.claims.metadata ?? {}, anchor);
       await signed(value.configuration, anchor, anchor, root.keys);
       const rootConstraints = fields(root.claims.constraints);
       if (!Object.hasOwn(rootConstraints, 'max_path_length')) throw failure('EK_EID_FEDERATION');
@@ -205,6 +213,7 @@ export class FederationChainVerifier {
           delegation.keys,
         );
         supported(configuration);
+        issuerBindings(configuration.claims.metadata ?? {}, node.entity);
         await signed(node.configuration, node.entity, node.entity, configuration.keys);
         const hints = names(configuration.claims.authority_hints);
         if (!hints.includes(issuer)) throw failure('EK_EID_FEDERATION');
@@ -226,6 +235,7 @@ export class FederationChainVerifier {
             index === descendants.length - 1,
           );
         resolved = applyMetadataPolicies(current, policies, policy.maxBytes);
+        issuerBindings(resolved, node.entity);
         nodes.push(Object.freeze({ configuration, delegation, keys: delegation.keys }));
       }
       call.check();
