@@ -103,7 +103,7 @@ export async function transactionFixture(external?: SecurityStoreSettings) {
       return next;
     },
   };
-  const material = new Map(
+  const material = new Map<string, { bytes: Buffer; keyVersion: string }>(
     ['state-encryption-current', 'state-encryption-old', 'state-mac-current', 'state-mac-old'].map(
       (reference) => [reference, { bytes: randomBytes(32), keyVersion: randomUUID() }],
     ),

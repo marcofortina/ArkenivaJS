@@ -14,3 +14,4 @@
 - Validate role-specific live federation participation, exact anchor authorization of trust-mark issuers, same-anchor external issuer chains and current delegated keys, with bounded fresh signed status and owned expiry-limited evidence.
 - Protect single-use login state with the existing native Crypto service, separate explicit external encryption/MAC references, immutable profile binding, shared atomic consumption and cleanup of late plaintext; test actual PostgreSQL races and ambiguous acknowledgements.
 - Encode login state and nonce as 64 hexadecimal characters from 32 random bytes, satisfying the Italian alphanumeric requirement while preserving URL-safe PKCE verifiers.
+- Load approved external signing keys as non-extractable native CryptoKeys, enforce expiry and algorithm/key compatibility, and verify JOSE signatures and actual OpenID Client JAR generation with RFC 7638 public key identifiers.
