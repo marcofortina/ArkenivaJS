@@ -160,6 +160,12 @@ observations. Its [HTTPS example](examples/graphql/README.md) checks tenant rows
 denials and REST coexistence through public exports. See the
 [GraphQL guide](docs/graphql.md) for current transport and release boundaries.
 
+The optional [tenant dispatcher](packages/tenant-routing/README.md) selects local
+handlers or approved fixed HTTP implementations from an immutable startup
+registry. Its [HTTPS rollout example](examples/tenant-routing/README.md) exercises
+verified identities, private capability discovery, registry-only onboarding,
+implementation switches and higher-generation rollback across real processes.
+
 ## License
 
 SPDX-License-Identifier: AGPL-3.0-or-later
