@@ -15,51 +15,65 @@ import { samlResponse } from '../fixtures/saml-response.js';
 
 after(closeRegistryFixture);
 
-test(
-  'Actual signed SPID SAML callback has one identity winner across independent PostgreSQL pools',
-  { timeout: 30000 },
-  async () => {
-    const backend = await securityStateFixture(),
-      peer = await independentSecurityStatePeer(backend.schema),
-      f = await samlLoginFixture({
-        store: backend.store,
-        securityLevel: 'test-only',
-        operationTimeoutMs: 5000,
-      });
-    try {
-      const other = new FederationSamlLogin(
-          { ...f.settings, stateStore: { ...f.settings.stateStore, store: peer.store } },
-          f.document.profile.profileId,
-          f.transport,
-          f.crypto,
-        ),
-        login = await f.runtime.run((call) => f.login.begin(call, f.input)),
-        response = samlResponse(f, login),
-        outcomes = await Promise.allSettled(
-          Array.from({ length: 8 }, (_, index) =>
-            f.runtime.run((call) => (index % 2 ? other : f.login).consume(call, response)),
+for (const level of [2, 3])
+  test(
+    `Actual signed SPID SAML level ${level} callback has one identity winner across independent PostgreSQL pools`,
+    { timeout: 30000 },
+    async () => {
+      const backend = await securityStateFixture(),
+        peer = await independentSecurityStatePeer(backend.schema),
+        f = await samlLoginFixture({
+          store: backend.store,
+          securityLevel: 'test-only',
+          operationTimeoutMs: 5000,
+        });
+      try {
+        const settings = {
+            ...f.settings,
+            profiles: [
+              { ...f.document.profile, allowedAssurance: ['spid-l2', 'spid-l3'] as const },
+            ],
+          },
+          first = new FederationSamlLogin(
+            settings,
+            f.document.profile.profileId,
+            f.transport,
+            f.crypto,
           ),
-        ),
-        winners = outcomes.filter((result) => result.status === 'fulfilled');
-      assert.equal(winners.length, 1);
-      assert.equal(winners[0]!.value.returnPath, f.input.returnPath);
-      assert.equal(winners[0]!.value.tenantHint, f.input.tenantHint);
-      assert.equal(winners[0]!.value.subject, 'synthetic-transient-subject');
-      await assert.rejects(() => f.runtime.run((call) => other.consume(call, response)), {
-        code: 'EK_EID_FEDERATION',
-      });
-      const persisted = await peer.app.sql.query<{ count: number }>('main', {
-        text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_records WHERE namespace LIKE :kind`,
-        bindings: { kind: '%:sessions' },
-      });
-      assert.equal(persisted.rows[0]!.count, 1);
-    } finally {
-      await f.close();
-      await peer.close();
-      await backend.close();
-    }
-  },
-);
+          other = new FederationSamlLogin(
+            { ...settings, stateStore: { ...f.settings.stateStore, store: peer.store } },
+            f.document.profile.profileId,
+            f.transport,
+            f.crypto,
+          ),
+          login = await f.runtime.run((call) => first.begin(call, f.input)),
+          response = samlResponse(f, login, { context: 'https://www.spid.gov.it/SpidL' + level }),
+          outcomes = await Promise.allSettled(
+            Array.from({ length: 8 }, (_, index) =>
+              f.runtime.run((call) => (index % 2 ? other : first).consume(call, response)),
+            ),
+          ),
+          winners = outcomes.filter((result) => result.status === 'fulfilled');
+        assert.equal(winners.length, 1);
+        assert.equal(winners[0]!.value.returnPath, f.input.returnPath);
+        assert.equal(winners[0]!.value.tenantHint, f.input.tenantHint);
+        assert.equal(winners[0]!.value.subject, 'synthetic-transient-subject');
+        assert.equal(winners[0]!.value.assurance, 'spid-l' + level);
+        await assert.rejects(() => f.runtime.run((call) => other.consume(call, response)), {
+          code: 'EK_EID_FEDERATION',
+        });
+        const persisted = await peer.app.sql.query<{ count: number }>('main', {
+          text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_records WHERE namespace LIKE :kind`,
+          bindings: { kind: '%:sessions' },
+        });
+        assert.equal(persisted.rows[0]!.count, 1);
+      } finally {
+        await f.close();
+        await peer.close();
+        await backend.close();
+      }
+    },
+  );
 
 test(
   'A lost actual PostgreSQL SAML session acknowledgement returns no identity and denies retry',

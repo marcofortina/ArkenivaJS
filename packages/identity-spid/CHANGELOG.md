@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Accept and retain an explicitly configured higher native SAML authentication level
+  through canonical mapping, rejecting lower and unconfigured classes.
 - Expose native SPID SAML Redirect initiation, signed POST acceptance, current registered metadata and trust verification through the existing managed service, with a cookie-bound HTTPS ACS consumer.
 
 - Bind native signed SAML callback acceptance to encrypted single-use correlation,

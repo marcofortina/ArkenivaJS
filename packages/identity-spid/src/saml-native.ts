@@ -9,7 +9,7 @@ import type { FederationAssurance, FederationProfileV1 } from './contracts.js';
 import type { Settings } from './settings.js';
 import type { FederationCall } from './runtime.js';
 import type { FederationSamlRegistry } from './saml-registry.js';
-import { assuranceContext } from './assurance.js';
+import { assuranceContext, assuranceLevels } from './assurance.js';
 import { failure, fields } from './validation.js';
 
 type Receipt = ReturnType<FederationSamlRegistry['result']>;
@@ -92,8 +92,14 @@ export async function withFederationSaml<T>(
         replayStore: settings.stateStore.store,
         requestedAuthnContext: {
           classReferences: [context],
-          acceptedClassReferences: [context],
-          comparison: 'exact',
+          acceptedClassReferences: profile.allowedAssurance
+            .filter(
+              (level) =>
+                assuranceLevels('spid').indexOf(level) >=
+                assuranceLevels('spid').indexOf(assurance),
+            )
+            .map((level) => assuranceContext('spid', level)),
+          comparison: 'minimum',
         },
         authenticationRequestProfile: { kind: 'spid' },
         environment: settings.environment,

@@ -43,3 +43,7 @@ browser swaps, IdP withdrawal, downgrade, cross-tenant mapping, authority/storag
 denial and private logs through public package imports. The same driver compiles
 and executes against installed package archives. It is a protocol HTTP test driver;
 it does not claim official IdP accreditation or a browser engine conformance result.
+
+The SAML fixture explicitly permits levels 2 and 3. A request for level 2 followed
+by an actually signed level 3 response returns `federationAssurance: 'spid-l3'`
+through the canonical mapper, without creating MFA evidence or a local session.

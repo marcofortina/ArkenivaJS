@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Permit explicitly bounded SPID minimum comparison while preserving exact policy,
+  native signing, generic assurance and durable request-policy isolation.
 - Retain the native verified assertion deadline and reject expiry during durable
   persistence, preserving separately authorized logout after assertion expiration.
 - Preserve canonical origin-only HTTPS EntityIDs exactly in SPID Redirect and POST

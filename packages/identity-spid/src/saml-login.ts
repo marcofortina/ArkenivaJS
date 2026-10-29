@@ -11,7 +11,7 @@ import type { FederationHttp } from './metadata-http.js';
 import { FederationSamlRegistry } from './saml-registry.js';
 import { FederationTransactions, returnPath } from './transactions.js';
 import { withFederationSaml } from './saml-native.js';
-import { assuranceContext } from './assurance.js';
+import { acrValues, assuranceLevels } from './assurance.js';
 import { failure, fields, text, url } from './validation.js';
 
 export interface VerifiedSamlResult {
@@ -151,6 +151,9 @@ export class FederationSamlLogin {
               ),
             ),
             saml = fields(identity.claims.saml),
+            levels = assuranceLevels('spid'),
+            actualIndex = acrValues.indexOf(saml.authnContext as string),
+            actualAssurance = levels[actualIndex],
             nativeExpiry = text(saml.verificationExpiresAt, 32),
             expiresAt = Math.min(
               Date.parse(nativeExpiry),
@@ -161,7 +164,9 @@ export class FederationSamlLogin {
           if (
             identity.issuer !== issuer ||
             saml.transactionId !== transaction.samlRequestId ||
-            saml.authnContext !== assuranceContext('spid', transaction.assurance) ||
+            actualIndex < levels.indexOf(transaction.assurance) ||
+            actualAssurance === undefined ||
+            !this.profile.allowedAssurance.includes(actualAssurance) ||
             saml.nameIDFormat !== 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient' ||
             saml.nameQualifier !== issuer ||
             (saml.spNameQualifier !== undefined &&
@@ -186,7 +191,7 @@ export class FederationSamlLogin {
               profileId: this.profile.profileId,
               issuer,
               subject: text(subject, 2048),
-              assurance: transaction.assurance,
+              assurance: actualAssurance,
               attributes: identity.attributes,
               returnPath: transaction.returnPath,
               ...(transaction.tenantHint === undefined

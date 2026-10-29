@@ -11,6 +11,56 @@ import { FederationRuntime } from '../../dist/runtime.js';
 
 after(closeRegistryFixture);
 
+test('An explicitly allowed stronger signed SPID class is retained while unconfigured stronger and lower classes fail', async () => {
+  const f = await samlLoginFixture();
+  try {
+    const profile = { ...f.document.profile, allowedAssurance: ['spid-l2', 'spid-l3'] as const },
+      login = new FederationSamlLogin(
+        { ...f.settings, profiles: [profile] },
+        profile.profileId,
+        f.transport,
+        f.crypto,
+      );
+    for (const [requested, n] of [
+      [2, 1],
+      [2, 2],
+      [2, 3],
+      [3, 2],
+      [3, 3],
+    ] as const) {
+      const request = await f.runtime.run((call) =>
+          login.begin(call, { ...f.input, assurance: requested === 2 ? 'spid-l2' : 'spid-l3' }),
+        ),
+        input = samlResponse(f, request, { context: 'https://www.spid.gov.it/SpidL' + n });
+      if (n < requested)
+        await assert.rejects(() => f.runtime.run((call) => login.consume(call, input)), {
+          code: 'EK_EID_FEDERATION',
+        });
+      else {
+        const result = await f.runtime.run((call) => login.consume(call, input));
+        assert.equal(result.assurance, 'spid-l' + n);
+        assert.equal(login.result(result), result);
+        await assert.rejects(() => f.runtime.run((call) => login.consume(call, input)), {
+          code: 'EK_EID_FEDERATION',
+        });
+      }
+    }
+    const request = await f.runtime.run((call) => f.login.begin(call, f.input));
+    await assert.rejects(
+      () =>
+        f.runtime.run((call) =>
+          f.login.consume(
+            call,
+            samlResponse(f, request, { context: 'https://www.spid.gov.it/SpidL3' }),
+          ),
+        ),
+      { code: 'EK_EID_FEDERATION' },
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test('Callback defaults remain bounded and output limits deny an otherwise valid native identity', async () => {
   const f = await samlLoginFixture();
   try {
