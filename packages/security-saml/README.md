@@ -57,6 +57,14 @@ Every response and assertion requires its own valid signature from a currently v
 
 Returned identities prove an upstream issuer and subject only. Attributes remain untrusted for local authorization until the application applies its own account and tenant mapping. No canonical tenant, scope or MFA assurance is inferred. The application must authorize membership before issuing a local session. `beginLogout` additionally requires a configured `TrustedSecurityAuthority` authorizing `saml.logout` against the actual current local session, plus a matching receipt from a successful SAML login. Constructing a TypeScript object does not grant this authorization. Logout consumes protocol correlation; the application separately revokes its own local session.
 
+`claims.saml.verificationExpiresAt` retains the earliest checked response, assertion,
+bearer confirmation, session and request deadline as an ISO timestamp, with the
+configured native clock skew. Composing identity adapters must recheck this deadline
+before accepting downstream mapping. The service checks it again after durable
+replay and session writes; expiration during persistence returns no identity and
+does not make the consumed response reusable. This assertion deadline does not
+replace the separate authorization and session receipt required for later logout.
+
 Replay state uses durable atomic `claimOnce` and compare-and-set calls across pods. Records contain correlation data and a digest of the verified session, without raw assertions, NameID, session index or signing keys. The native SDK cache is only an operation-local view of an already loaded durable request; it never replaces shared replay protection. Storage failures return no identity. A late persistence failure may consume the transaction and require a fresh login; it cannot authorize a retry. This is fail-closed one-use acceptance, not an exactly-once response-delivery guarantee.
 
 Operations default to a five-second deadline, with a 30-second maximum and eight physically outstanding operations per service. Aborts terminate native XML workers; a provider ignoring cancellation retains its capacity until it settles. Plugin drain waits up to five seconds for actual work. Shared quota claims limit verification attempts to at most 1000 per profile and minute; bounded random slot contention may reject earlier. Five-minute requests and additional replay retention prevent a delayed duplicate from reusing a live transaction. There is no automatic retry of authentication work.

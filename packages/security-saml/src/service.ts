@@ -280,8 +280,24 @@ export function managed(
     });
     return freezeData(request);
   }
-  function identity(input: VerifiedAssertion, id: string): SamlVerifiedIdentity {
+  function verificationExpiry(input: VerifiedAssertion, requestExpiresAt: string): string {
+    const upstream = Date.parse(input.verificationExpiresAt),
+      expiresAt = Math.min(upstream, Date.parse(requestExpiresAt));
+    if (
+      !Number.isSafeInteger(expiresAt) ||
+      new Date(upstream).toISOString() !== input.verificationExpiresAt ||
+      expiresAt <= Date.now()
+    )
+      throw failure('EK_SAML_ASSERTION');
+    return new Date(expiresAt).toISOString();
+  }
+  function identity(
+    input: VerifiedAssertion,
+    id: string,
+    requestExpiresAt: string,
+  ): SamlVerifiedIdentity {
     if (input.issuer !== settings.trusted.issuer) throw failure('EK_SAML_ASSERTION');
+    const verificationExpiresAt = verificationExpiry(input, requestExpiresAt);
     return freezeData({
       issuer: settings.trusted.issuer,
       subject: text(input.subject, 1024),
@@ -291,6 +307,7 @@ export function managed(
       claims: {
         saml: {
           transactionId: id,
+          verificationExpiresAt,
           nameIDFormat: input.nameIDFormat,
           ...(input.authnContext ? { authnContext: input.authnContext } : {}),
           ...(input.nameQualifier ? { nameQualifier: input.nameQualifier } : {}),
@@ -329,12 +346,23 @@ export function managed(
         'nameIDFormat',
         'nameQualifier',
         'spNameQualifier',
+        'verificationExpiresAt',
       ]);
     requestId(saml.transactionId);
     text(saml.nameIDFormat, 2048);
     if (saml.authnContext !== undefined) text(saml.authnContext, 2048);
     if (saml.nameQualifier !== undefined) text(saml.nameQualifier, 2048);
     if (saml.spNameQualifier !== undefined) text(saml.spNameQualifier, 2048);
+    if (saml.verificationExpiresAt !== undefined) {
+      const expiry = saml.verificationExpiresAt;
+      // Original assertion expiry never substitutes for the separate authorization of logout.
+      if (
+        typeof expiry !== 'string' ||
+        !Number.isFinite(Date.parse(expiry)) ||
+        new Date(expiry).toISOString() !== expiry
+      )
+        throw failure('EK_SAML_ASSERTION');
+    }
     text(value.subject, 1024);
     if (value.sessionIndex !== undefined) text(value.sessionIndex, 256);
     const rawAttributes = value.attributes;
@@ -383,7 +411,7 @@ export function managed(
         await reserve(call);
         const result = await backend(call, 'verify-login', id, record.createdAt, response);
         if (result.kind !== 'identity') throw failure('EK_SAML_ASSERTION');
-        const verified = identity(result.identity, id);
+        const verified = identity(result.identity, id, record.expiresAt);
         await consume(call, record, result.identity.responseId, result.identity.assertionId);
         const receipt = fields(
           await call.mutate((options) =>
@@ -402,6 +430,7 @@ export function managed(
           ['committed', 'version'],
         );
         if (receipt.committed !== true) throw failure('EK_SAML_REPLAY');
+        verificationExpiry(result.identity, record.expiresAt);
         return verified;
       });
     },
