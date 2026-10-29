@@ -17,9 +17,16 @@ export interface FederationEncryptionPolicy {
   readonly algorithm: 'RSA-OAEP' | 'RSA-OAEP-256';
   readonly encryption: 'A128CBC-HS256' | 'A256CBC-HS512';
 }
+/** Deployment-owned locations; retrieval alone never establishes federation membership. */
+export interface FederationSamlRegistrySource {
+  readonly metadataEndpoint: string;
+  readonly statusEndpoint: string;
+}
 /** Explicit SPID SAML certificate source; never inferred from a private-key reference. */
 export interface FederationSamlRegistration {
   readonly signingCertificateRef: string;
+  /** Exact deployment-approved sources for the RP and every configured IdP; no discovery. */
+  readonly registrySources?: Readonly<Record<string, FederationSamlRegistrySource>>;
 }
 /** Application-owned registration information; never populated from a login request. */
 export interface FederationOidcRegistration {

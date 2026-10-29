@@ -125,7 +125,9 @@ export function captureProfile(
   if (value.protocol === 'oidc-federation' && !clientId) throw failure();
   const entityId = url(value.entityId),
     signingKeyRef = text(value.signingKeyRef),
-    maxBytes = integer(metadata.maxBytes);
+    maxBytes = integer(metadata.maxBytes),
+    expectedIssuers = strings(value.expectedIssuers, url),
+    approvedMetadataEndpoints = strings(metadata.approvedMetadataEndpoints, url);
   if (value.protocol !== 'oidc-federation' && value.oidcRegistration !== undefined) throw failure();
   const oidcRegistration =
     value.oidcRegistration === undefined
@@ -138,7 +140,11 @@ export function captureProfile(
   const samlRegistration =
     value.samlRegistration === undefined
       ? undefined
-      : captureSamlRegistration(value.samlRegistration, signingKeyRef);
+      : captureSamlRegistration(value.samlRegistration, signingKeyRef, {
+          entityId,
+          expectedIssuers,
+          approvedMetadataEndpoints,
+        });
   return freezeData({
     schemaVersion: '1.0.0',
     profileId: text(value.profileId),
@@ -148,11 +154,11 @@ export function captureProfile(
     ...(clientId ? { clientId } : {}),
     redirectUri: url(value.redirectUri),
     signingKeyRef,
-    expectedIssuers: strings(value.expectedIssuers, url),
+    expectedIssuers,
     allowedAssurance: assurance as readonly FederationAssurance[],
     metadata: {
       trustAnchors: anchors,
-      approvedMetadataEndpoints: strings(metadata.approvedMetadataEndpoints, url),
+      approvedMetadataEndpoints,
       maxBytes,
       refreshIntervalSeconds: integer(metadata.refreshIntervalSeconds),
       maxChainDepth: integer(metadata.maxChainDepth),

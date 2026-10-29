@@ -103,6 +103,201 @@ test('SPID SAML captures a separate immutable certificate reference without prov
   assert.equal(f.calls(), 0);
 });
 
+function samlRegistryFixture() {
+  const f = fixture(),
+    issuer = f.profile.expectedIssuers[0]!,
+    entity = f.profile.entityId,
+    sources = {
+      [entity]: {
+        metadataEndpoint: 'https://anchor.example.test/sp-metadata',
+        statusEndpoint: 'https://anchor.example.test/sp-status',
+      },
+      [issuer]: {
+        metadataEndpoint: 'https://anchor.example.test/idp-metadata',
+        statusEndpoint: 'https://anchor.example.test/idp-status',
+      },
+    },
+    profile = {
+      ...f.profile,
+      protocol: 'saml2' as const,
+      metadata: {
+        ...f.profile.metadata,
+        approvedMetadataEndpoints: Object.values(sources).flatMap((source) => [
+          source.metadataEndpoint,
+          source.statusEndpoint,
+        ]),
+      },
+      samlRegistration: {
+        signingCertificateRef: 'approved-saml-certificate',
+        registrySources: sources,
+      },
+    };
+  return { f, profile, sources, issuer, entity };
+}
+
+test('SAML registry locations bind every configured role to an immutable exact-approved source without provider work', () => {
+  const { f, profile, sources, issuer, entity } = samlRegistryFixture(),
+    captured = capture({ ...f.settings, profiles: [profile] }).profiles[0]!.samlRegistration!
+      .registrySources!;
+  assert.deepEqual(Object.keys(captured), [entity, issuer]);
+  assert.ok(Object.isFrozen(captured));
+  assert.ok(Object.isFrozen(captured[issuer]));
+  sources[issuer]!.statusEndpoint = 'https://changed.example.test/status';
+  delete sources[entity];
+  assert.equal(captured[issuer]!.statusEndpoint, 'https://anchor.example.test/idp-status');
+  assert.ok(captured[entity]);
+  assert.equal(f.calls(), 0);
+});
+
+test('Missing, foreign, ambiguous and unapproved SAML registry sources fail closed before any provider access', () => {
+  const { f, profile, sources, issuer, entity } = samlRegistryFixture();
+  for (const registrySources of [
+    null,
+    [],
+    {},
+    { [entity]: sources[entity] },
+    { ...sources, 'https://foreign.example.test': sources[issuer] },
+    { ...sources, [issuer]: {} },
+    { ...sources, [issuer]: { metadataEndpoint: sources[issuer]!.metadataEndpoint } },
+    { ...sources, [issuer]: { ...sources[issuer], extra: true } },
+    {
+      ...sources,
+      [issuer]: {
+        ...sources[issuer],
+        metadataEndpoint: 'https://unapproved.example.test/metadata',
+      },
+    },
+    {
+      ...sources,
+      [issuer]: { ...sources[issuer], statusEndpoint: 'https://unapproved.example.test/status' },
+    },
+    {
+      ...sources,
+      [issuer]: { ...sources[issuer], metadataEndpoint: sources[entity]!.metadataEndpoint },
+    },
+    {
+      ...sources,
+      [issuer]: { ...sources[issuer], statusEndpoint: sources[entity]!.statusEndpoint },
+    },
+    ...[
+      'http://anchor.example.test/metadata',
+      'https://user:password@anchor.example.test/metadata',
+      'https://anchor.example.test/metadata#fragment',
+      123,
+    ].map((metadataEndpoint) => ({
+      ...sources,
+      [issuer]: { ...sources[issuer], metadataEndpoint },
+    })),
+  ])
+    assert.throws(
+      () =>
+        capture({
+          ...f.settings,
+          profiles: [
+            {
+              ...profile,
+              samlRegistration: {
+                ...profile.samlRegistration,
+                registrySources: registrySources as never,
+              },
+            },
+          ],
+        }),
+      { code: 'EK_EID_PROFILE' },
+    );
+  assert.throws(
+    () => capture({ ...f.settings, profiles: [{ ...profile, expectedIssuers: [entity] }] }),
+    { code: 'EK_EID_PROFILE' },
+  );
+  for (const field of ['metadataEndpoint', 'statusEndpoint'] as const) {
+    const alias = sources[entity]![field].replace('anchor.example.test', 'ANCHOR.EXAMPLE.TEST:443');
+    assert.throws(
+      () =>
+        capture({
+          ...f.settings,
+          profiles: [
+            {
+              ...profile,
+              metadata: {
+                ...profile.metadata,
+                approvedMetadataEndpoints: [...profile.metadata.approvedMetadataEndpoints, alias],
+              },
+              samlRegistration: {
+                ...profile.samlRegistration,
+                registrySources: { ...sources, [issuer]: { ...sources[issuer]!, [field]: alias } },
+              },
+            },
+          ],
+        }),
+      { code: 'EK_EID_PROFILE' },
+    );
+  }
+  assert.equal(f.calls(), 0);
+});
+
+test('Executable SAML registry source objects cannot run traps, getters or URL coercion hooks', () => {
+  const { f, profile, sources, issuer } = samlRegistryFixture();
+  let effects = 0;
+  const handler: ProxyHandler<object> = {
+    ownKeys() {
+      effects++;
+      return [];
+    },
+    get() {
+      effects++;
+      throw new Error('Executable registry source');
+    },
+    getPrototypeOf() {
+      effects++;
+      return Object.prototype;
+    },
+  };
+  for (const registrySources of [
+    new Proxy(sources, handler),
+    { ...sources, [issuer]: new Proxy(sources[issuer]!, handler) },
+    {
+      ...sources,
+      [issuer]: {
+        ...sources[issuer],
+        get metadataEndpoint() {
+          effects++;
+          return 'https://untrusted.example.test';
+        },
+      },
+    },
+    {
+      ...sources,
+      [issuer]: {
+        ...sources[issuer],
+        statusEndpoint: {
+          toString() {
+            effects++;
+            return 'https://untrusted.example.test';
+          },
+        },
+      },
+    },
+  ])
+    assert.throws(
+      () =>
+        capture({
+          ...f.settings,
+          profiles: [
+            {
+              ...profile,
+              samlRegistration: {
+                ...profile.samlRegistration,
+                registrySources: registrySources as never,
+              },
+            },
+          ],
+        }),
+      { code: 'EK_EID_PROFILE' },
+    );
+  assert.equal(effects, 0);
+  assert.equal(f.calls(), 0);
+});
+
 test('SAML certificate configuration rejects executable, incomplete, unknown and private/state-key references', () => {
   const f = fixture();
   let executions = 0;
