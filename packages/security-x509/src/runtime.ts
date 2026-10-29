@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
@@ -73,21 +74,30 @@ function signal(value: unknown): asserts value is AbortSignal {
   }
 }
 function providerMethod(value: unknown): MtlsTrustProvider['verifyChainAndRevocation'] {
-  if (!value || typeof value !== 'object') throw invalid();
+  if (!value || typeof value !== 'object' || types.isProxy(value)) throw invalid();
   let current: object | null = value;
-  while (current) {
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
     const field = Object.getOwnPropertyDescriptor(current, 'verifyChainAndRevocation');
     if (field) {
-      if (!('value' in field) || typeof field.value !== 'function') throw invalid();
-      return field.value.bind(value) as MtlsTrustProvider['verifyChainAndRevocation'];
+      if (!('value' in field) || typeof field.value !== 'function' || types.isProxy(field.value))
+        throw invalid();
+      const captured = field.value;
+      // Callable metadata cannot replace the configured trust verifier or its receiver.
+      return (...args: Parameters<MtlsTrustProvider['verifyChainAndRevocation']>) =>
+        Reflect.apply(captured, value, args) as ReturnType<
+          MtlsTrustProvider['verifyChainAndRevocation']
+        >;
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
   throw invalid();
 }
 function providerUsage(value: object): unknown {
+  if (types.isProxy(value)) throw invalid();
   let current: object | null = value;
-  while (current) {
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
     const field = Object.getOwnPropertyDescriptor(current, 'usage');
     if (field) {
       if (!('value' in field) || !['production', 'test-only'].includes(field.value as string))
@@ -96,6 +106,7 @@ function providerUsage(value: object): unknown {
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
+  if (current) throw invalid();
   return undefined;
 }
 export function captureSettings(input: X509PluginSettings) {

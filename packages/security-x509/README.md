@@ -39,6 +39,11 @@ Bootstrap snapshots and validates named nonempty CA sets. An expired or future c
 
 The configured `MtlsTrustProvider.verifyChainAndRevocation` independently verifies the entire path, key purpose and revocation against `policy.trustRootsRef`, binding the returned fingerprint, issuer, expiry and SANs to the supplied leaf DER. The provider receives the leaf only, as prescribed by the public contract: it must already have a trusted, bounded issuer-chain resolver or configured issuer catalogue. Caller intermediates and certificate URLs are not instructions to perform arbitrary network discovery. Configure the provider's root catalogue consistently with this plugin's CA sets. The application must review the provider implementation; a TypeScript object or a `production` label is not evidence of PKI verification.
 
+The trust method retains its captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy providers
+or callbacks, accessors and prototype traversal beyond 32 levels fail configuration
+validation; later method replacement does not alter the captured verifier.
+
 This adapter always requests `approved-online-checker`, including when `requireRevocationCheck` is false; that flag never weakens the configured verifier. An omitted hostname requests chain verification only, with an empty allowed-identity list. It does not authorize an application peer or tenant. Supplying a hostname also requires a matching DNS/IP SAN. mTLS application authorization remains a separate responsibility.
 
 Only an exact `trusted` result establishes success. Expired certificates return `expired`; invalid CA, incomplete chain, identity mismatch or mismatched provider metadata return `untrusted`. Provider denial, revocation-check outage or malformed provider output return `indeterminate`. The provider port does not expose a typed revocation-denial reason, so this adapter does not invent a definitive `revoked` classification from an exception message. Native TLS/CRL rejection is tested and never returns `trusted`. Reasons are fixed English classifications without certificate or backend details.
