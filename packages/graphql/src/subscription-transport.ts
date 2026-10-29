@@ -3,6 +3,7 @@
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { IncomingMessage } from 'node:http';
+import { AsyncResource } from 'node:async_hooks';
 import type { GraphQLSchema } from 'graphql';
 import { GraphQLError } from 'graphql';
 import type WebSocket from 'ws';
@@ -18,11 +19,17 @@ import type { SubscriptionExecution } from './subscription-execution.js';
 import { SubscriptionConnection } from './subscription-connection.js';
 import { assertMetadata } from './metadata.js';
 import { subscriptionError } from './subscription-output.js';
-import { observe } from './observation.js';
+import { observe, traceRequest } from './observation.js';
+import { traceSubscriptionScope } from './subscription-observation.js';
 
 /** Shared native upgrade dispatch receives only privately admitted requests on this application's route. */
 export class SubscriptionTransport {
   private readonly requests = new WeakMap<IncomingMessage, string>();
+  private readonly carriers = new WeakMap<
+    WebSocket,
+    Readonly<Record<string, string | string[] | undefined>>
+  >();
+  private readonly parents = new WeakMap<WebSocket, AsyncResource>();
   private readonly sockets = new WeakMap<WebSocket, SubscriptionConnection>();
   private readonly contexts = new OwnedContexts<SubscriptionConnection>();
   private readonly connections = new Set<SubscriptionConnection>();
@@ -75,14 +82,23 @@ export class SubscriptionTransport {
                   'graphql.result': result,
                 }),
               ),
+            scope: (scope) =>
+              traceSubscriptionScope(this.telemetry, this.parents.get(socket), scope),
           },
         );
         this.connections.add(connection);
         this.sockets.set(socket, connection);
+        this.carriers.set(socket, {
+          traceparent: request.headers.traceparent,
+          tracestate: request.headers.tracestate,
+        });
         this.report(connection);
         void connection.completion.then(() => {
           if (connection.stats().failed) this.degraded = true;
           this.connections.delete(connection);
+          this.parents.get(socket)?.emitDestroy();
+          this.parents.delete(socket);
+          this.carriers.delete(socket);
           this.report(connection, true);
         });
       } catch {
@@ -166,7 +182,19 @@ export class SubscriptionTransport {
   async context(socket: WebSocket) {
     const connection = this.sockets.get(socket);
     if (!connection || this.closed || this.degraded) throw failure('EK_GQL_AUTH');
-    await connection.authenticate();
+    await traceRequest(
+      { ...(this.telemetry ? { telemetry: this.telemetry } : {}), detailed: false },
+      'GET',
+      this.settings.path,
+      this.carriers.get(socket) ?? {},
+      async () => {
+        await connection.authenticate();
+        if (connection.stats().closed) throw failure('EK_GQL_AUTH');
+        if (this.telemetry)
+          this.parents.set(socket, new AsyncResource('GraphqlSubscriptionConnection'));
+      },
+    );
+    this.carriers.delete(socket);
     const context = {},
       release = this.contexts.bind(context, () => connection);
     void connection.completion.then(release);
