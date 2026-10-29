@@ -58,7 +58,7 @@ export class FederationOidcCallback {
   private readonly membership;
   private readonly transactions;
   private readonly read;
-  private readonly owned = new WeakMap<VerifiedOidcResult, () => void>();
+  readonly #owned = new WeakMap<VerifiedOidcResult, () => void>();
   constructor(
     private readonly settings: Settings,
     profileId: string,
@@ -455,7 +455,7 @@ export class FederationOidcCallback {
         Math.min(this.profile.metadata.maxBytes, this.settings.policy.maxOutputBytes ?? Infinity)
       )
         throw failure('EK_EID_FEDERATION');
-      this.owned.set(result, check);
+      this.#owned.set(result, check);
       return result;
     } catch (error) {
       if (
@@ -473,7 +473,7 @@ export class FederationOidcCallback {
     }
   }
   result(input: VerifiedOidcResult): VerifiedOidcResult {
-    const check = this.owned.get(input);
+    const check = this.#owned.get(input);
     if (!check) throw failure('EK_EID_FEDERATION');
     check();
     return input;

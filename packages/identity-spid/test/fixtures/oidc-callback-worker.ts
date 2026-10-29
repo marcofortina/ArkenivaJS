@@ -23,6 +23,7 @@ import { configurationEndpoint } from '../../dist/resolver.js';
 import { membershipFixture, op, sa, pairs, statement } from './membership.js';
 import { transactionFixture } from './transactions.js';
 import { registration } from './registration.js';
+import { checkMapping } from './mapping-checks.js';
 
 type Mode =
   | 'valid'
@@ -41,7 +42,7 @@ type Mode =
   | 'info-subject'
   | 'wrong-id-encryption'
   | 'wrong-info-encryption';
-process.once('message', (input: { certificate: string; privateKey: string }) => {
+process.once('message', (input: { certificate: string; privateKey: string; mapping?: boolean }) => {
   void run(input).then(
     () => {
       process.send?.({ ok: true });
@@ -56,8 +57,9 @@ process.once('message', (input: { certificate: string; privateKey: string }) => 
     },
   );
 });
-async function run(files: { certificate: string; privateKey: string }) {
+async function run(files: { certificate: string; privateKey: string; mapping?: boolean }) {
   const f = await transactionFixture(),
+    canonical = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }),
     rp = generateKeyPairSync('rsa', { modulusLength: 2048 }),
     encryption = generateKeyPairSync('rsa', { modulusLength: 2048 }),
     provider = generateKeyPairSync('rsa', { modulusLength: 2048 }),
@@ -92,6 +94,22 @@ async function run(files: { certificate: string; privateKey: string }) {
         void (async () => {
           let body = '';
           for await (const chunk of request) body += String(chunk);
+          if (request.url === '/accounts-jwks') {
+            response.setHeader('content-type', 'application/jwk-set+json');
+            response.end(
+              JSON.stringify({
+                keys: [
+                  {
+                    ...(await exportJWK(canonical.publicKey)),
+                    kid: 'canonical-public',
+                    alg: 'ES256',
+                    use: 'sig',
+                  },
+                ],
+              }),
+            );
+            return;
+          }
           if (request.url === '/jwks' || request.url === '/signed-jwks') {
             jwksRequests++;
             assert.equal(request.headers.authorization, undefined);
@@ -314,13 +332,16 @@ async function run(files: { certificate: string; privateKey: string }) {
     bytes: Buffer.from(encryption.privateKey.export({ format: 'pem', type: 'pkcs8' })),
     keyVersion: 'fixture',
   });
-  const begin = async (mode: Mode) => {
+  const begin = async (
+    mode: Mode,
+    tenantHint = files.mapping ? 'tenant-A' : 'unverified-tenant',
+  ) => {
     const initiated = await f.runtime.run((call) =>
         login.begin(call, {
           issuer: op,
           assurance: 'spid-l2',
           returnPath: '/private',
-          tenantHint: 'unverified-tenant',
+          tenantHint,
         }),
       ),
       request = await jwtVerify(
@@ -352,10 +373,26 @@ async function run(files: { certificate: string; privateKey: string }) {
     assert.deepEqual(result.attributes.email_verified, ['true']);
     assert.deepEqual(result.attributes.age, ['42']);
     assert.equal(result.returnPath, '/private');
-    assert.equal(result.tenantHint, 'unverified-tenant');
+    assert.equal(result.tenantHint, files.mapping ? 'tenant-A' : 'unverified-tenant');
     assert.equal('access_token' in result, false);
     assert.equal('nonce' in result, false);
     assert.equal('verifier' in result, false);
+    if (files.mapping) {
+      await checkMapping(
+        origin,
+        canonical.privateKey,
+        f.settings,
+        profile,
+        callback,
+        result,
+        f.runtime,
+        async (hint) => {
+          const target = await begin('valid', hint);
+          return f.runtime.run((call) => callback.consume(call, target.href));
+        },
+      );
+      return;
+    }
     mock.timers.enable({ apis: ['Date'], now: Date.now() });
     mock.timers.tick(40000);
     assert.throws(() => callback.result(result), { code: 'EK_EID_FEDERATION' });
