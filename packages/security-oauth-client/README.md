@@ -11,6 +11,11 @@ The five public methods are `beginAuthorization({subject?,audience,scopes,return
 
 ## Registration and authorization policy
 
+Provider methods retain their captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy providers
+or callbacks, accessors and prototype traversal beyond 32 levels fail configuration
+validation; later method replacement does not alter captured ports.
+
 Settings require a `clients` catalog, external `secretProvider`, complete distributed `stateStore`, runtime `authority`, `maxStateTtlMs`, `stateEncryptionKeyRefs` and `stateMacKeyRefs`. The separately installed crypto capability must approve the same encryption and MAC references. State encryption uses native AES-256-GCM and reference proofs use native HMAC-SHA256 through that existing capability; no proprietary cryptographic algorithm or raw database key exists.
 
 Each registration has `id`, exact trusted `issuer`, `clientId`, optional `clientSecretRef`, exact `redirectUri`, `allowedAudiences` and `allowedScopes`. A configured client secret uses native `client_secret_basic`; a registration without one supports a public interactive client. Machine grants require client authentication. Optional private-key JWT and mTLS authentication profiles are not exposed by this registration contract. Unsupported provider revocation/interactive capabilities fail explicitly.
