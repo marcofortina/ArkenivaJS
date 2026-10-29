@@ -31,6 +31,9 @@ import {
 } from './observation.js';
 import type { Observers } from './observation.js';
 import { RequestUsage } from './usage.js';
+import { SubscriptionTransport } from './subscription-transport.js';
+import { subscriptionSocket } from './subscription-socket.js';
+import type { SubscriptionExecution } from './subscription-execution.js';
 
 const AUTHORITY = Symbol('graphql.authority');
 const authority: SupportPluginFactory = (options) => {
@@ -53,6 +56,8 @@ const statuses: Readonly<Record<string, number>> = {
   EK_GQL_TIMEOUT: 504,
   EK_GQL_RESPONSE_LIMIT: 500,
   EK_GQL_EXECUTION: 500,
+  EK_GQL_BACKPRESSURE: 429,
+  EK_GQL_SUBSCRIPTION: 503,
 };
 function rejected(reply: FastifyReply, error: unknown, maximum: number) {
   const code =
@@ -66,6 +71,8 @@ function rejected(reply: FastifyReply, error: unknown, maximum: number) {
       'EK_GQL_TIMEOUT',
       'EK_GQL_RESPONSE_LIMIT',
       'EK_GQL_EXECUTION',
+      'EK_GQL_BACKPRESSURE',
+      'EK_GQL_SUBSCRIPTION',
     ].includes(error.code)
       ? error.code
       : 'EK_GQL_VALIDATION';
@@ -79,8 +86,6 @@ function rejected(reply: FastifyReply, error: unknown, maximum: number) {
 /** Register a guarded optional GraphQL endpoint on the application's existing Fastify listener. */
 export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
   const settings = capture(input);
-  // These optional transports are enabled only after their independent runtime gates pass.
-  if (settings.subscriptions) throw failure();
   const readiness = new WeakMap<object, () => boolean>();
   const instances = new WeakMap<PluginContext, { close(): Promise<void> }>();
   const plugin: ComposablePlugin = {
@@ -98,6 +103,15 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
       if (settings.security.developerIDE && context.options.service.environment === 'production')
         throw failure();
       const auth = context.require<AuthService | undefined>(AUTHORITY);
+      // Production activation requires an independently verified shared-provider policy.
+      if (
+        settings.subscriptions &&
+        (context.options.service.environment !== 'test' ||
+          context.options.http.protocol !== 'https' ||
+          !auth ||
+          !settings.security.auth.required)
+      )
+        throw failure();
       const observers = context.require<Observers>(OBSERVERS);
       if (
         (settings.security.auth.required ||
@@ -120,7 +134,9 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         ready = readiness.get(context.options);
       if (!ready) throw failure();
       const scopes = new OwnedContexts<Operation>(),
+        executions = new OwnedContexts<SubscriptionExecution>(),
         active = new Set<Operation>();
+      let transport: SubscriptionTransport | undefined;
       const counters = {
         operations: 0,
         rejected: 0,
@@ -134,6 +150,12 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
       const close = () =>
         (closing ??= (async () => {
           closed = true;
+          let subscriptionFailure: unknown;
+          try {
+            await transport?.close();
+          } catch (error) {
+            subscriptionFailure = error;
+          }
           try {
             await within(() => Promise.all([...active].map((scope) => scope.completion)), {
               timeoutMs: settings.security.limits.maxOperationMs,
@@ -141,9 +163,11 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           } catch {
             for (const scope of active) scope.abort();
           }
+          if (subscriptionFailure) throw subscriptionFailure;
         })());
       instances.set(context, { close });
       const ownership = Symbol('graphql.route.owner');
+      const nativeRoute = Symbol('graphql.route.native');
       server.addHook('onRoute', (options) => {
         if (
           (options.url === settings.path || options.url.startsWith(settings.path + '/')) &&
@@ -157,7 +181,55 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         )
       )
         throw failure();
+      if (settings.subscriptions) {
+        await subscriptionSocket(
+          server,
+          Math.min(
+            Number.MAX_SAFE_INTEGER,
+            settings.security.limits.maxDocumentBytes * 6 +
+              settings.security.limits.maxVariablesBytes * 6 +
+              8192,
+          ),
+        );
+        transport = new SubscriptionTransport(
+          server,
+          schema,
+          settings,
+          auth!,
+          owner,
+          scopes,
+          executions,
+          ready,
+          (scope) => {
+            if (closed || !ready() || active.size >= 128) throw failure('EK_GQL_BACKPRESSURE');
+            active.add(scope);
+            counters.activeOperations++;
+            void scope.completion.then(() => {
+              active.delete(scope);
+              counters.activeOperations--;
+            });
+          },
+          () => {
+            counters.operations++;
+          },
+        );
+      }
       server.register(async (child) => {
+        function guardedHttp(request: FastifyRequest, reply: FastifyReply) {
+          return inbound(request, () => handler(request, reply));
+        }
+        child.addHook('onRoute', (options) => {
+          if ((options.config as Record<symbol, unknown> | undefined)?.[nativeRoute] !== true)
+            return;
+          if (Array.isArray(options.method) && options.method.includes('QUERY'))
+            options.method = 'POST';
+          const dispatch = options.handler;
+          options.handler = function (request, reply) {
+            if (request.headers.upgrade?.toLowerCase() === 'websocket')
+              return dispatch.call(this, request, reply);
+            return guardedHttp(request, reply);
+          };
+        });
         const observed = new WeakMap<FastifyRequest, Observation>();
         const metered = new WeakMap<FastifyRequest, RequestUsage>();
         const requestBytes = new WeakMap<FastifyRequest, number>();
@@ -169,6 +241,15 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         }
         child.addHook('onRequest', async (request, reply) => {
           if (request.routeOptions.url !== settings.path) return;
+          if (request.headers.upgrade !== undefined) {
+            try {
+              if (!transport) throw failure('EK_GQL_SUBSCRIPTION');
+              transport.handshake(request);
+            } catch (error) {
+              return rejected(reply, error, settings.security.limits.maxResultBytes);
+            }
+            return;
+          }
           const observation = new Observation(observers);
           observed.set(request, observation);
           reply.raw.once('close', () => {
@@ -205,7 +286,28 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         );
         await child.register(mercurius, {
           schema,
-          routes: false,
+          routes: !!transport,
+          ...(transport
+            ? {
+                path: settings.path,
+                additionalRouteOptions: {
+                  config: { [ownership]: true, [nativeRoute]: true },
+                  schema: {},
+                  exposeHeadRoute: false,
+                  bodyLimit: Math.min(
+                    Number.MAX_SAFE_INTEGER,
+                    settings.security.limits.maxDocumentBytes * 6 +
+                      settings.security.limits.maxVariablesBytes * 6 +
+                      4096,
+                  ),
+                },
+                subscription: {
+                  fullWsTransport: false,
+                  context: (socket: Parameters<SubscriptionTransport['context']>[0]) =>
+                    transport!.context(socket),
+                },
+              }
+            : {}),
           cache: false,
           jit: 0,
           graphiql: false,
@@ -237,8 +339,9 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         installLoaders(child, settings, scopes, () => {
           counters.loaderBatches++;
         });
-        protectFields(child.graphql.schema, settings, scopes);
+        protectFields(child.graphql.schema, settings, scopes, executions);
         installMetadata();
+        transport?.install(child.graphql);
         child.graphql.addHook(
           'preExecution',
           (currentSchema, document, engineContext: object, variables: Record<string, unknown>) => {
@@ -314,6 +417,11 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
           let detach = () => {};
           try {
             if (closed || !ready() || active.size >= 128) throw failure('EK_GQL_EXECUTION');
+            if (
+              request.method !== 'POST' &&
+              !(request.method === 'GET' && settings.security.allowGetQueries)
+            )
+              throw failure('EK_GQL_VALIDATION');
             counters.operations++;
             if (request.headers.cookie || request.headers['sec-fetch-site'] === 'cross-site')
               throw failure('EK_GQL_FORBIDDEN');
@@ -492,9 +600,11 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
             scope?.end();
           }
         };
-        for (const method of settings.security.allowGetQueries
-          ? (['POST', 'GET'] as const)
-          : (['POST'] as const))
+        for (const method of transport
+          ? []
+          : settings.security.allowGetQueries
+            ? (['POST', 'GET'] as const)
+            : (['POST'] as const))
           child.route({
             method,
             url: settings.path,
@@ -510,12 +620,16 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
         loaded = true;
       });
       const service: GraphqlService = Object.freeze({
-        stats: () => Object.freeze({ ...counters }),
+        stats: () =>
+          Object.freeze({
+            ...counters,
+            activeSubscriptions: transport?.stats().activeSubscriptions ?? 0,
+          }),
         health: () =>
           Object.freeze({
-            ready: loaded && !closed && ready(),
+            ready: loaded && !closed && ready() && (!transport || transport.stats().ready),
             schemaLoaded: loaded,
-            subscriptionsReady: false,
+            subscriptionsReady: transport?.stats().ready ?? false,
           }),
         schemaSdl: () => settings.schema,
       });

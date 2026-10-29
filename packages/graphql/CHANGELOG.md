@@ -28,3 +28,4 @@
 - Bound native subscription writes by queued messages, buffered bytes and physical callback deadlines; sanitize start errors and prevent late callbacks from acknowledging abandoned connections.
 - Own authenticated native subscription connections through periodic tenant revalidation, per-operation cancellation and late source retirement; release idle execution capacity and preserve long configured deadlines without timer overflow.
 - Enforce shared-listener WSS admission and global connection capacity, retain physically pending shutdown work and quarantine provider retirement failures before accepting more clients.
+- Enable authenticated test-environment subscriptions on the public GraphQL endpoint through the native protocol, preserving guarded HTTP/HTTP2 execution and realtime coexistence while other environments remain fail-closed.

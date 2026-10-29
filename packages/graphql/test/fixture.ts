@@ -71,6 +71,7 @@ export async function fixture(
     telemetry?: ApplicationOptions['telemetry'];
     metering?: ApplicationOptions['metering'];
     authorizeTenant?: (tenantId: string) => boolean;
+    graphqlDependencies?: readonly string[];
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -123,6 +124,7 @@ export async function fixture(
   };
   try {
     const authenticated = options.authenticated ?? true;
+    const graphql = graphqlPlugin(settings);
     app = await createApplication({
       service: {
         name: 'graphql-fixture',
@@ -162,7 +164,12 @@ export async function fixture(
           ],
         }),
         ...(options.plugins ?? []),
-        graphqlPlugin(settings),
+        options.graphqlDependencies?.length
+          ? {
+              ...graphql,
+              dependencies: [...(graphql.dependencies ?? []), ...options.graphqlDependencies],
+            }
+          : graphql,
       ],
     });
     await app.start();
