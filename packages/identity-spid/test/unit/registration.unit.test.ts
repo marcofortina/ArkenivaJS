@@ -3,7 +3,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPair, SignJWT } from 'jose';
 import type {
   FederationOidcRegistration,
   FederationProfileV1,
@@ -11,39 +10,8 @@ import type {
 } from '../../dist/index.js';
 import { capture, captureProfile } from '../../dist/settings.js';
 import { transactionFixture } from '../fixtures/transactions.js';
+import { registration, signed } from '../fixtures/registration.js';
 
-const pair = await generateKeyPair('ES256');
-const signed = (entity: string, claims: Record<string, unknown> = {}) =>
-  new SignJWT({
-    iss: 'https://anchor.example.test',
-    sub: entity,
-    iat: Math.floor(Date.now() / 1000) - 1,
-    exp: Math.floor(Date.now() / 1000) + 3600,
-    id: 'https://anchor.example.test/openid_relying_party/public/',
-    ...claims,
-  })
-    .setProtectedHeader({ alg: 'ES256', kid: 'public-root', typ: 'trust-mark+jwt' })
-    .sign(pair.privateKey);
-async function registration(entity: string): Promise<FederationOidcRegistration> {
-  return {
-    authorityHints: ['https://anchor.example.test'],
-    trustMarks: [await signed(entity)],
-    organization: {
-      organizationName: 'Fixture Organization',
-      homepageUri: 'https://service.example.test',
-      policyUri: 'https://service.example.test/privacy',
-      contacts: ['office@example.test'],
-      resolveEndpoint: 'https://service.example.test/resolve',
-      logoUri: 'https://service.example.test/logo.svg',
-    },
-    signingAlgorithm: 'RS256',
-    idTokenSigningAlgorithm: 'RS512',
-    userInfoSigningAlgorithm: 'RS512',
-    decryptionKeyRef: 'oidc-decryption-ref',
-    userInfoEncryption: { algorithm: 'RSA-OAEP-256', encryption: 'A256CBC-HS512' },
-    requestedClaims: ['name', 'family_name'],
-  };
-}
 test('Typed RP registration captures immutable application-owned data without provider I/O or accreditation claims', async () => {
   const f = await transactionFixture();
   let effects = 0;

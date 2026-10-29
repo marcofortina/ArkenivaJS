@@ -17,3 +17,4 @@
 - Load approved external signing keys as non-extractable native CryptoKeys, enforce expiry and algorithm/key compatibility, and verify JOSE signatures and actual OpenID Client JAR generation with RFC 7638 public key identifiers.
 - Bind raw and policy-resolved OpenID Provider/OAuth issuer metadata to the verified Entity Identifier, rejecting missing, replaced or foreign issuers despite otherwise valid signatures.
 - Capture typed application-owned OIDC RP registration metadata, current subject-bound mark candidates, explicit algorithms and separate external decryption references without inventing registration values or claiming accreditation.
+- Import separate external RSA response-decryption keys as non-extractable native CryptoKeys, reuse guarded key import and verify prescribed JWE combinations and signed encrypted UserInfo with the selected OpenID Client.
