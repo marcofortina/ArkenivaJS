@@ -3,7 +3,7 @@
 
 import { setTimeout as delay } from 'node:timers/promises';
 import assert from 'node:assert/strict';
-import { natsSubscriptionFixture } from './nats-subscription-fixture.js';
+import { natsSubscriptionFixture, onSubscriptionFrame } from './nats-subscription-fixture.js';
 
 interface Start {
   readonly namespace: string;
@@ -38,7 +38,7 @@ process.once('message', (input: Start) => {
       ['b', input.otherAuthorization],
     ] as const) {
       const socket = await runtime.connect(authorization);
-      socket.on('message', (frame) =>
+      onSubscriptionFrame(socket, (frame) =>
         process.send?.({ kind: 'frame', tenant, frame: String(frame) }),
       );
       socket.send(

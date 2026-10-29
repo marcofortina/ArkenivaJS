@@ -303,6 +303,7 @@ export function graphqlPlugin(input: GraphqlPluginSettings): Plugin {
                 },
                 subscription: {
                   fullWsTransport: false,
+                  keepAlive: Math.min(settings.security.limits.maxOperationMs, 2147483647),
                   context: (socket: Parameters<SubscriptionTransport['context']>[0]) =>
                     transport!.context(socket),
                 },

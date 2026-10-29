@@ -34,6 +34,7 @@ export class SubscriptionConnection {
   private readonly initializer: () => void;
   private revalidation: (() => void) | undefined;
   private termination: (() => void) | undefined;
+  private heartbeat: (() => void) | undefined;
   private assertion: string | undefined;
   private principal: VerifiedTenantContext | undefined;
   private closed = false;
@@ -94,6 +95,10 @@ export class SubscriptionConnection {
   }
 
   private accept(message: Message): false | undefined {
+    if (message.type === MessageType.Pong) {
+      this.heartbeat?.();
+      this.heartbeat = undefined;
+    }
     const accepted = this.admission.accept(message);
     if (accepted === false) return false;
     if (message.type === MessageType.Subscribe)
@@ -116,7 +121,11 @@ export class SubscriptionConnection {
       this.initializer();
       this.schedule();
     } else if (message.type === MessageType.Pong) this.admission.sentPong();
-    else if (message.type === MessageType.Error || message.type === MessageType.Complete) {
+    else if (message.type === MessageType.Ping && !this.heartbeat) {
+      this.heartbeat = subscriptionTimer(this.settings.security.limits.maxOperationMs, () => {
+        void this.close();
+      });
+    } else if (message.type === MessageType.Error || message.type === MessageType.Complete) {
       this.retire(message.id);
       // Native start errors do not retire their internal subscription context until wire closure.
       if (message.type === MessageType.Error) void this.close();
@@ -281,6 +290,7 @@ export class SubscriptionConnection {
     this.assertion = undefined;
     this.initializer();
     this.revalidation?.();
+    this.heartbeat?.();
     this.owner.removeEventListener('abort', this.aborted);
     this.admission.close();
     this.controller.abort();

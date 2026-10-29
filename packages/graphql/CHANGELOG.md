@@ -32,3 +32,4 @@
 - Verify actual mTLS NATS fan-out across independent public GraphQL server processes, shared signed identity authority, tenant isolation and complete iterator retirement in the existing broker CI matrix.
 - Verify subscription process restart and native mTLS reconnection after a lost broker round trip, preserving uncertain publication outcomes without replaying business events.
 - Isolate source delivery failures after confirmed iterator retirement, retain quarantine for failed or unverifiable cleanup, and verify real paused WSS consumers cannot exhaust another tenant's connection.
+- Bound native protocol heartbeats by the existing transport deadline, preserve responsive clients and close missing acknowledgements without treating pong frames as authentication evidence.

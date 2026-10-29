@@ -7,7 +7,7 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { natsSubscriptionFixture } from '../nats-subscription-fixture.js';
+import { natsSubscriptionFixture, nextSubscriptionFrame } from '../nats-subscription-fixture.js';
 import { COMPONENTS } from '@arkenivajs/core';
 import type { AuthService } from '@arkenivajs/core';
 
@@ -62,7 +62,7 @@ test(
           messages.some((message) => message.kind === 'ready') && r.adapter.stats().acquired === 1,
       );
       await r.adapter.ready();
-      const local = once(socket, 'message');
+      const local = nextSubscriptionFrame(socket);
       await r.publish(authorization, 'tenant-a-event');
       assert.deepEqual(JSON.parse(String((await local)[0])), {
         type: 'next',
