@@ -625,6 +625,8 @@ jobs:
       - run: pnpm coverage:messaging
       - name: Verify realtime shared NATS delivery across independent processes
         run: pnpm --filter @arkenivajs/realtime test:integration:nats
+      - name: Verify authenticated GraphQL WSS delivery across independent NATS-backed processes
+        run: pnpm --filter @arkenivajs/graphql test:integration:nats
       - run: pnpm --filter @arkenivajs/example-messaging test:integration
       - run: pnpm test:packed:examples --integration messaging
       - run: pnpm test:package:messaging
