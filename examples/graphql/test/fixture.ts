@@ -13,9 +13,10 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { COMPONENTS } from '@arkenivajs/core';
 import type { ManagedApiServer } from '@arkenivajs/api';
 import { createGraphqlExample } from '../dist/main.js';
+import type { GraphqlSubscriptionPubSub } from '@arkenivajs/graphql';
 
 /** Owned loopback issuer and verified TLS listener; no external identities or persistent credentials. */
-export async function fixture() {
+export async function fixture(pubsub?: GraphqlSubscriptionPubSub) {
   const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-graphql-guide-'));
   await chmod(directory, 0o700);
   const key = join(directory, 'server.key'),
@@ -43,10 +44,14 @@ export async function fixture() {
     try {
       await example?.app.stop();
     } finally {
-      destination.destroy();
-      authority.closeAllConnections();
-      await new Promise<void>((resolve) => authority.close(() => resolve()));
-      await rm(directory, { recursive: true, force: true });
+      try {
+        await pubsub?.close();
+      } finally {
+        destination.destroy();
+        authority.closeAllConnections();
+        await new Promise<void>((resolve) => authority.close(() => resolve()));
+        await rm(directory, { recursive: true, force: true });
+      }
     }
   };
   try {
@@ -91,6 +96,19 @@ export async function fixture() {
       audience: 'api://graphql-example',
       allowInsecureLoopback: true,
       destination,
+      ...(pubsub
+        ? {
+            subscriptions: {
+              enabled: true as const,
+              pubsub,
+              maxConnections: 2,
+              maxOperationsPerConnection: 2,
+              maxQueuedEventsPerConnection: 4,
+              revalidateIntervalMs: 1000,
+              allowedOrigins: ['https://portal.example.test'],
+            },
+          }
+        : {}),
     });
     await example.app.start();
     const origin = example.app.resolve<ManagedApiServer>(COMPONENTS.api).address();
@@ -128,6 +146,8 @@ export async function fixture() {
     return {
       ...example,
       send,
+      origin,
+      ca,
       logs: () => logs,
       close,
       token: async (tenant = 'tenant-a', scope = 'example:read example:write') =>

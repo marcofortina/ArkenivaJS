@@ -402,9 +402,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/security
     devDependencies:
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
       jose:
         specifier: 6.2.13
         version: 6.2.13
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
 
   examples/grpc:
     dependencies:
