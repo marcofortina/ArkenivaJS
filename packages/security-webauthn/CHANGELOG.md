@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Verify native RSA and Ed25519 registration, self-attestation, assertions and
+  one-use service evidence, including real PostgreSQL tenant authority and shared
+  ceremony consumption through separate service instances.
 - Add browser ceremony serialization types.
 - Pin the private SimpleWebAuthn compatibility adapter with strict verification
   and bounded, sanitized input handling.

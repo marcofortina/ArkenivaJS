@@ -18,6 +18,63 @@ const hasCode = (code: string) => (error: unknown) =>
 const invalid = hasCode('EK_MFA_INVALID');
 const proof = () => randomBytes(32).toString('base64url');
 
+for (const algorithm of ['RS256', 'EdDSA'] as const)
+  test(`Native ${algorithm} credentials verify registration, self-attestation and assertions without weakening RP or signature checks`, async () => {
+    const driver = createWebAuthnDriver(settings()),
+      direct = createWebAuthnDriver({ ...settings(), attestation: 'direct' }),
+      device = authenticator(algorithm),
+      challenge = proof();
+    const registered = await driver.verifyRegistration(
+      JSON.stringify(device.registration(challenge)),
+      challenge,
+    );
+    assert.deepEqual(registered.credential.publicKey, device.publicKey);
+    assert.equal(registered.credential.id, device.id);
+    assert.equal(
+      (
+        await direct.verifyRegistration(
+          JSON.stringify(device.registration(challenge, { format: 'packed' })),
+          challenge,
+        )
+      ).credential.id,
+      device.id,
+    );
+    const stored = { ...registered.credential, counter: 0 },
+      assertion = device.authentication(challenge);
+    assert.equal(
+      (await driver.verifyAuthentication(JSON.stringify(assertion), challenge, stored)).newCounter,
+      1,
+    );
+    const corrupt = structuredClone(assertion),
+      signature = Buffer.from(corrupt.response.signature!, 'base64url');
+    signature[signature.length - 1] = signature[signature.length - 1]! ^ 1;
+    corrupt.response.signature = signature.toString('base64url');
+    await assert.rejects(
+      driver.verifyAuthentication(JSON.stringify(corrupt), challenge, stored),
+      invalid,
+    );
+    await assert.rejects(
+      driver.verifyAuthentication(JSON.stringify(assertion), challenge, {
+        ...stored,
+        publicKey: authenticator(algorithm).publicKey,
+      }),
+      invalid,
+    );
+    for (const overrides of [
+      { origin: 'https://foreign.test' },
+      { rpId: 'foreign.test' },
+      { flags: 0x01 },
+    ])
+      await assert.rejects(
+        driver.verifyAuthentication(
+          JSON.stringify(device.authentication(challenge, overrides)),
+          challenge,
+          stored,
+        ),
+        invalid,
+      );
+  });
+
 test('Direct attestation delegates valid packed self-attestation to the upstream verifier', async () => {
   const device = authenticator(),
     driver = createWebAuthnDriver({ ...settings(), attestation: 'direct' });

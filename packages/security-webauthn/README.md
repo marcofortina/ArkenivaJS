@@ -97,17 +97,22 @@ Evidence lasts one minute and remains internal to the application trust boundary
 ## Verification
 
 ```sh
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm build
 pnpm --filter @arkenivajs/security-webauthn test
 ```
 
-Tests use ephemeral P-256 authenticators with real signatures, malformed proofs,
+Tests use ephemeral P-256, RSA-2048 and Ed25519 authenticators with native signatures,
+upstream registration/self-attestation verification and malformed proofs,
 origin/RP/UP/UV failures, trusted-authority negatives, atomic simulators, counter and
 revocation races, provider outages and bounded admission. Durable database and real
 browser acceptance are separate gates. The executable
 [PostgreSQL/browser guide](../../examples/postgres/webauthn-browser.md) covers actual
 Chromium ceremonies and two full service processes contending on real SQL state.
+The PostgreSQL integration also verifies RSA and Ed25519 enrollment, altered
+signature rejection, tenant ownership, shared one-use ceremony claims, monotonic
+counter updates and consumable MFA evidence with actual signed application
+identity. These synthetic key producers do not exercise physical authenticators.
 The browser package is absent from runtime
 dependencies; USB/HID drivers and browser APIs remain outside this Node.js module.
 See [upstream documentation](https://simplewebauthn.dev/docs/packages/server) and

@@ -5,18 +5,38 @@ import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { isoCBOR } from '@simplewebauthn/server/helpers';
 
 /** Disposable authenticator producer; verification always uses the actual upstream server. */
-export function authenticator() {
-  const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+export function authenticator(algorithm: 'ES256' | 'RS256' | 'EdDSA' = 'ES256') {
+  const { publicKey, privateKey } =
+    algorithm === 'RS256'
+      ? generateKeyPairSync('rsa', { modulusLength: 2048 })
+      : algorithm === 'EdDSA'
+        ? generateKeyPairSync('ed25519')
+        : generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwk = publicKey.export({ format: 'jwk' });
   const id = randomBytes(32).toString('base64url');
+  const bytes = (value: string) => Uint8Array.from(Buffer.from(value, 'base64url'));
+  const coseAlgorithm = algorithm === 'RS256' ? -257 : algorithm === 'EdDSA' ? -8 : -7;
+  const parameters: [number, number | Uint8Array][] =
+    algorithm === 'RS256'
+      ? [
+          [1, 3],
+          [-1, bytes(jwk.n!)],
+          [-2, bytes(jwk.e!)],
+        ]
+      : algorithm === 'EdDSA'
+        ? [
+            [1, 1],
+            [-1, 6],
+            [-2, bytes(jwk.x!)],
+          ]
+        : [
+            [1, 2],
+            [-1, 1],
+            [-2, bytes(jwk.x!)],
+            [-3, bytes(jwk.y!)],
+          ];
   const cose = isoCBOR.encode(
-    new Map<number, number | Uint8Array>([
-      [1, 2],
-      [3, -7],
-      [-1, 1],
-      [-2, Uint8Array.from(Buffer.from(jwk.x!, 'base64url'))],
-      [-3, Uint8Array.from(Buffer.from(jwk.y!, 'base64url'))],
-    ]),
+    new Map<number, number | Uint8Array>([[3, coseAlgorithm], ...parameters]),
   );
   function make(
     challenge: string,
@@ -57,12 +77,12 @@ export function authenticator() {
     const common = { id, rawId: id, type: 'public-key', clientExtensionResults: {} };
     const attestationStatement = new Map<string, number | Uint8Array>();
     if (registration && overrides.format === 'packed') {
-      attestationStatement.set('alg', -7);
+      attestationStatement.set('alg', coseAlgorithm);
       attestationStatement.set(
         'sig',
         Uint8Array.from(
           sign(
-            'sha256',
+            algorithm === 'EdDSA' ? null : 'sha256',
             Buffer.concat([authData, createHash('sha256').update(clientData).digest()]),
             privateKey,
           ),
@@ -87,7 +107,7 @@ export function authenticator() {
           clientDataJSON: clientData.toString('base64url'),
           authenticatorData: authData.toString('base64url'),
           signature: sign(
-            'sha256',
+            algorithm === 'EdDSA' ? null : 'sha256',
             Buffer.concat([authData, createHash('sha256').update(clientData).digest()]),
             privateKey,
           ).toString('base64url'),
