@@ -9,6 +9,8 @@ import type { FederationCall } from './runtime.js';
 import type { Settings } from './settings.js';
 import { FederationOidcCallback } from './oidc-callback.js';
 import type { VerifiedOidcResult } from './oidc-callback.js';
+import { FederationSamlLogin } from './saml-login.js';
+import type { VerifiedSamlResult } from './saml-login.js';
 import { failure, fields, method } from './validation.js';
 
 export interface FederationTenantVerifier {
@@ -22,16 +24,24 @@ export class FederationIdentityMapping {
   constructor(
     private readonly settings: Settings,
     profileId: string,
-    callback: FederationOidcCallback,
+    callback: FederationOidcCallback | FederationSamlLogin,
     auth: FederationTenantVerifier,
   ) {
     const profile = settings.profiles.find((candidate) => candidate.profileId === profileId);
-    if (!profile || !(callback instanceof FederationOidcCallback)) throw failure('EK_EID_PROFILE');
+    const oidc = callback instanceof FederationOidcCallback,
+      saml = callback instanceof FederationSamlLogin;
+    if (!profile || (profile.protocol === 'oidc-federation' ? !oidc : !saml))
+      throw failure('EK_EID_PROFILE');
     this.profile = profile;
-    this.result = FederationOidcCallback.prototype.result.bind(callback);
+    this.result = oidc
+      ? FederationOidcCallback.prototype.result.bind(callback)
+      : FederationSamlLogin.prototype.result.bind(callback as FederationSamlLogin);
     this.verified = method<FederationTenantVerifier['isVerifiedTenant']>(auth, 'isVerifiedTenant');
   }
-  async map(call: FederationCall, input: VerifiedOidcResult): Promise<FederatedIdentity> {
+  async map(
+    call: FederationCall,
+    input: VerifiedOidcResult | VerifiedSamlResult,
+  ): Promise<FederatedIdentity> {
     try {
       call.check();
       const upstream = this.result(input);

@@ -11,6 +11,7 @@ import { capture } from '../../dist/settings.js';
 import { FederationIdentityMapping } from '../../dist/identity-mapping.js';
 import { FederationOidcCallback } from '../../dist/oidc-callback.js';
 import type { VerifiedOidcResult } from '../../dist/oidc-callback.js';
+import type { FederationSamlLogin, VerifiedSamlResult } from '../../dist/saml-login.js';
 import type { FederationRuntime } from '../../dist/runtime.js';
 
 export async function checkMapping(
@@ -18,10 +19,10 @@ export async function checkMapping(
   key: KeyObject,
   raw: ItalianEidPluginSettings,
   profile: FederationProfileV1,
-  callback: FederationOidcCallback,
-  proof: VerifiedOidcResult,
+  callback: FederationOidcCallback | FederationSamlLogin,
+  proof: VerifiedOidcResult | VerifiedSamlResult,
   runtime: FederationRuntime,
-  freshHint: (hint: string) => Promise<VerifiedOidcResult>,
+  freshHint: (hint: string) => Promise<VerifiedOidcResult | VerifiedSamlResult>,
 ) {
   const options = {
       issuer: origin + '/accounts',
@@ -209,7 +210,7 @@ export async function checkMapping(
       code: 'EK_EID_FEDERATION',
     });
     assert.equal(mappingCalls, before);
-    const fake = Object.create(FederationOidcCallback.prototype) as FederationOidcCallback;
+    const fake = Object.create(Object.getPrototypeOf(callback)) as typeof callback;
     const fabricated = { ...proof };
     Reflect.set(fake, 'owned', new WeakMap([[fabricated, () => {}]]));
     const fakeMapping = new FederationIdentityMapping(settings, profile.profileId, fake, auth);

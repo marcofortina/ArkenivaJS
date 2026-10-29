@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Bind native signed SAML callback acceptance to encrypted single-use correlation,
+  fresh RP/IdP registration and the existing canonical AuthService tenant mapping;
+  preserve owner-bound expiry and physical cancellation settlement.
 - Reuse the native SAML adapter for private SPID Redirect initiation, with current
   RP/IdP registration, per-read certificate pinning, encrypted request correlation
   and physical drain ownership. Public SAML authentication remains unavailable.
