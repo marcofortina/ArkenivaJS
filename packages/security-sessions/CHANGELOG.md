@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Capture configured provider methods without evaluating callable metadata, and
+  reject proxy callbacks and unbounded prototype traversal before session authorization.
 - Add shared-state server sessions with atomic renewal, per-owner quotas and
   monotonic global revocation epochs.
 - Require independent runtime authentication and authorization, preserving

@@ -30,6 +30,11 @@ batches, bounded owner indexes and monotonic owner epochs. The existing
 [PostgreSQL reference](../../examples/postgres/security-state.md) demonstrates
 this port. There is no in-memory production fallback.
 
+Provider methods retain their captured implementation and original receiver.
+Callable `bind`, `name` and `length` properties are never evaluated. Proxy
+providers or callbacks, accessors and prototype traversal beyond 32 levels fail
+configuration validation; later method replacement does not alter captured ports.
+
 `store.operationTimeoutMs` is an integer from 1 to 120000. The owner limit is
 an integer from 1 to 1000, scoped by issuer, subject and tenant. Policies require
 positive integer absolute and idle TTLs; absolute TTL is at most 31 days and
