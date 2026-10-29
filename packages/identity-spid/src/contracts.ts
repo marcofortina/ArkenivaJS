@@ -11,6 +11,32 @@ export type ItalianIdentitySystem = 'spid' | 'cie';
 export type FederationProtocol = 'saml2' | 'oidc-federation';
 export type FederationAssurance =
   'spid-l1' | 'spid-l2' | 'spid-l3' | 'cie-l1' | 'cie-l2' | 'cie-l3';
+export type FederationSignatureAlgorithm =
+  'RS256' | 'RS512' | 'PS256' | 'PS384' | 'PS512' | 'ES256' | 'ES384' | 'ES512';
+export interface FederationEncryptionPolicy {
+  readonly algorithm: 'RSA-OAEP' | 'RSA-OAEP-256';
+  readonly encryption: 'A128CBC-HS256' | 'A256CBC-HS512';
+}
+/** Application-owned registration information; never populated from a login request. */
+export interface FederationOidcRegistration {
+  readonly authorityHints: readonly string[];
+  readonly trustMarks: readonly string[];
+  readonly organization: {
+    readonly organizationName: string;
+    readonly homepageUri: string;
+    readonly policyUri: string;
+    readonly contacts: readonly string[];
+    readonly resolveEndpoint: string;
+    readonly logoUri?: string;
+  };
+  readonly signingAlgorithm: FederationSignatureAlgorithm;
+  readonly idTokenSigningAlgorithm: FederationSignatureAlgorithm;
+  readonly userInfoSigningAlgorithm: FederationSignatureAlgorithm;
+  readonly decryptionKeyRef: string;
+  readonly idTokenEncryption?: FederationEncryptionPolicy;
+  readonly userInfoEncryption: FederationEncryptionPolicy;
+  readonly requestedClaims: readonly string[];
+}
 export interface FederationTrustAnchor {
   readonly kid: string;
   readonly issuer: string;
@@ -44,6 +70,7 @@ export interface FederationProfileV1 {
   readonly tenantMappingId: string;
   readonly identityMappingVersion: string;
   readonly sessionTtlSeconds: number;
+  readonly oidcRegistration?: FederationOidcRegistration;
 }
 /** Approved mapping consumes only cryptographically verified upstream claims. */
 export interface FederationIdentityMapper {

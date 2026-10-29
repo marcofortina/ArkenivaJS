@@ -16,3 +16,4 @@
 - Encode login state and nonce as 64 hexadecimal characters from 32 random bytes, satisfying the Italian alphanumeric requirement while preserving URL-safe PKCE verifiers.
 - Load approved external signing keys as non-extractable native CryptoKeys, enforce expiry and algorithm/key compatibility, and verify JOSE signatures and actual OpenID Client JAR generation with RFC 7638 public key identifiers.
 - Bind raw and policy-resolved OpenID Provider/OAuth issuer metadata to the verified Entity Identifier, rejecting missing, replaced or foreign issuers despite otherwise valid signatures.
+- Capture typed application-owned OIDC RP registration metadata, current subject-bound mark candidates, explicit algorithms and separate external decryption references without inventing registration values or claiming accreditation.
