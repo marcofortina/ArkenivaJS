@@ -63,7 +63,7 @@ function anchor(input: unknown): FederationTrustAnchor {
     expiresAt,
   });
 }
-function profile(input: unknown): FederationProfileV1 {
+export function captureProfile(input: unknown): FederationProfileV1 {
   const value = fields(input, [
     'schemaVersion',
     'profileId',
@@ -151,7 +151,7 @@ export function capture(
     'authority',
     'policy',
   ]);
-  const profiles = list(value.profiles).map(profile);
+  const profiles = list(value.profiles).map(captureProfile);
   if (new Set(profiles.map((item) => item.profileId)).size !== profiles.length) throw failure();
   const mappers = fields(value.identityMappers),
     capturedMappers: Record<
