@@ -3,11 +3,170 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { transactionFixture } from '../fixtures/transactions.js';
 import { capture } from '../../dist/settings.js';
 import { FederationTransactions } from '../../dist/transactions.js';
 import type { ItalianEidPluginSettings } from '../../dist/index.js';
 import type { SealedEnvelope } from '@arkenivajs/security-crypto';
+
+test('SAML request correlation stays encrypted, protocol-bound and atomically single-use across instances', async () => {
+  const f = await transactionFixture();
+  try {
+    const profile = { ...f.profile, protocol: 'saml2' as const },
+      settings = capture({ ...f.settings, profiles: [profile] }, 'test'),
+      first = new FederationTransactions(settings, profile.profileId, f.crypto),
+      second = new FederationTransactions(settings, profile.profileId, f.crypto),
+      samlRequestId = '_' + randomBytes(20).toString('hex'),
+      created = await f.runtime.run((call) => first.create(call, { ...f.input, samlRequestId }));
+    assert.equal(created.samlRequestId, samlRequestId);
+    assert.equal(JSON.stringify([...f.rows]).includes(samlRequestId), false);
+    await assert.rejects(
+      () => f.runtime.run((call) => f.first.consume(call, created.transactionId, created.issuer)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    assert.equal(f.claims.size, 0);
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, index) =>
+        f.runtime.run((call) =>
+          (index % 2 ? first : second).consume(call, created.transactionId, created.issuer),
+        ),
+      ),
+    );
+    const successes = results.filter((result) => result.status === 'fulfilled');
+    assert.equal(successes.length, 1);
+    assert.equal(successes[0]!.value.samlRequestId, samlRequestId);
+    assert.equal(f.claims.size, 1);
+    await assert.rejects(
+      () => f.runtime.run((call) => second.consume(call, created.transactionId, created.issuer)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('Only SAML transactions accept exact native request references and malformed correlation cannot reach providers', async () => {
+  const f = await transactionFixture();
+  let work = 0,
+    hooks = 0;
+  try {
+    const profile = { ...f.profile, protocol: 'saml2' as const },
+      settings = capture({ ...f.settings, profiles: [profile] }, 'test'),
+      crypto = {
+        ...f.crypto,
+        async hmac(): Promise<Uint8Array> {
+          work++;
+          throw new Error('Invalid correlation must not load keys');
+        },
+      },
+      saml = new FederationTransactions(settings, profile.profileId, crypto),
+      oidc = new FederationTransactions(capture(f.settings, 'test'), f.profile.profileId, crypto),
+      id = '_' + randomBytes(20).toString('hex');
+    for (const value of [
+      undefined,
+      null,
+      '',
+      id + '\n',
+      id.slice(1),
+      id.toUpperCase(),
+      id + 'a',
+      {
+        toString() {
+          hooks++;
+          return id;
+        },
+      },
+    ])
+      await assert.rejects(
+        () =>
+          f.runtime.run((call) =>
+            saml.create(call, { ...f.input, samlRequestId: value as string }),
+          ),
+        { code: 'EK_EID_FEDERATION' },
+      );
+    await assert.rejects(
+      () => f.runtime.run((call) => oidc.create(call, { ...f.input, samlRequestId: id })),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    assert.equal(work, 0);
+    assert.equal(hooks, 0);
+    assert.equal(f.rows.size, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Malformed decrypted SAML correlation and OIDC field substitution fail before the one-use claim', async () => {
+  const f = await transactionFixture();
+  try {
+    const profile = { ...f.profile, protocol: 'saml2' as const },
+      settings = capture({ ...f.settings, profiles: [profile] }, 'test'),
+      saml = new FederationTransactions(settings, profile.profileId, f.crypto),
+      id = '_' + randomBytes(20).toString('hex'),
+      created = await f.runtime.run((call) => saml.create(call, { ...f.input, samlRequestId: id }));
+    for (const value of [undefined, null, 'invalid']) {
+      let returned: Buffer | undefined;
+      const modified = new FederationTransactions(settings, profile.profileId, {
+        ...f.crypto,
+        async decrypt(...args) {
+          const plain = await f.crypto.decrypt(...args);
+          try {
+            returned = Buffer.from(
+              JSON.stringify({
+                ...JSON.parse(Buffer.from(plain).toString()),
+                samlRequestId: value,
+              }),
+            );
+            return returned;
+          } finally {
+            plain.fill(0);
+          }
+        },
+      });
+      await assert.rejects(
+        () =>
+          f.runtime.run((call) => modified.consume(call, created.transactionId, created.issuer)),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      assert.ok(returned?.every((byte) => byte === 0));
+      assert.equal(f.claims.size, 0);
+    }
+    assert.equal(
+      (await f.runtime.run((call) => saml.consume(call, created.transactionId, created.issuer)))
+        .samlRequestId,
+      id,
+    );
+    const oidc = await f.runtime.run((call) => f.first.create(call, f.input)),
+      modified = new FederationTransactions(capture(f.settings, 'test'), f.profile.profileId, {
+        ...f.crypto,
+        async decrypt(...args) {
+          const plain = await f.crypto.decrypt(...args);
+          try {
+            return Buffer.from(
+              JSON.stringify({ ...JSON.parse(Buffer.from(plain).toString()), samlRequestId: id }),
+            );
+          } finally {
+            plain.fill(0);
+          }
+        },
+      });
+    await assert.rejects(
+      () => f.runtime.run((call) => modified.consume(call, oidc.transactionId, oidc.issuer)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    assert.equal(f.claims.size, 1);
+    assert.equal(
+      Object.hasOwn(
+        await f.runtime.run((call) => f.second.consume(call, oidc.transactionId, oidc.issuer)),
+        'samlRequestId',
+      ),
+      false,
+    );
+  } finally {
+    await f.close();
+  }
+});
 
 test('SPID and CIE protected transactions cannot cross identity systems even with the same profile ID, store and external keys', async () => {
   const f = await transactionFixture();

@@ -49,6 +49,12 @@ function loginReference(value: unknown): string {
     throw failure('EK_EID_FEDERATION');
   return value;
 }
+/** Match the existing native SAML adapter's request IDs without altering signed RelayState. */
+function samlReference(value: unknown): string {
+  if (typeof value !== 'string' || value.length !== 41 || !/^_[a-f0-9]{40}$/u.test(value))
+    throw failure('EK_EID_FEDERATION');
+  return value;
+}
 function envelope(value: unknown): SealedEnvelope {
   const data = fields(value, ['version', 'algorithm', 'keyId', 'nonce', 'ciphertext', 'tag']);
   if (data.version !== 1 || data.algorithm !== 'AES-256-GCM') throw failure('EK_EID_FEDERATION');
@@ -96,6 +102,7 @@ export interface LoginTransaction {
   readonly returnPath: string;
   readonly tenantHint?: string;
   readonly expiresAt: string;
+  readonly samlRequestId?: string;
 }
 /** Pre-session hints stay encrypted data; they confer neither account nor tenant authorization. */
 export class FederationTransactions {
@@ -185,15 +192,26 @@ export class FederationTransactions {
       assurance: FederationAssurance;
       returnPath: string;
       tenantHint?: string;
+      samlRequestId?: string;
     },
   ): Promise<LoginTransaction> {
     try {
       call.check();
-      const value = fields(input, ['issuer', 'assurance', 'returnPath', 'tenantHint']),
+      const value = fields(input, [
+          'issuer',
+          'assurance',
+          'returnPath',
+          'tenantHint',
+          'samlRequestId',
+        ]),
         issuer = url(value.issuer),
         assurance = value.assurance as FederationAssurance,
         path = returnPath(value.returnPath),
-        tenantHint = value.tenantHint === undefined ? undefined : text(value.tenantHint);
+        tenantHint = value.tenantHint === undefined ? undefined : text(value.tenantHint),
+        samlRequestId =
+          this.profile.protocol === 'saml2' ? samlReference(value.samlRequestId) : undefined;
+      if (this.profile.protocol !== 'saml2' && value.samlRequestId !== undefined)
+        throw failure('EK_EID_FEDERATION');
       if (
         !this.profile.expectedIssuers.includes(issuer) ||
         !this.profile.allowedAssurance.includes(assurance)
@@ -221,6 +239,7 @@ export class FederationTransactions {
             verifier,
             returnPath: path,
             ...(tenantHint === undefined ? {} : { tenantHint }),
+            ...(samlRequestId === undefined ? {} : { samlRequestId }),
           }),
         );
       try {
@@ -260,6 +279,7 @@ export class FederationTransactions {
           verifier,
           returnPath: path,
           ...(tenantHint === undefined ? {} : { tenantHint }),
+          ...(samlRequestId === undefined ? {} : { samlRequestId }),
           expiresAt,
         });
       } finally {
@@ -346,9 +366,14 @@ export class FederationTransactions {
             'verifier',
             'returnPath',
             'tenantHint',
+            'samlRequestId',
           ]);
           loginReference(data.nonce);
           base64(data.verifier, 32, 32);
+          const samlRequestId =
+            this.profile.protocol === 'saml2' ? samlReference(data.samlRequestId) : undefined;
+          if (this.profile.protocol !== 'saml2' && data.samlRequestId !== undefined)
+            throw failure('EK_EID_FEDERATION');
           const path = returnPath(data.returnPath),
             tenantHint = data.tenantHint === undefined ? undefined : text(data.tenantHint),
             claim = createHash('sha256')
@@ -379,6 +404,7 @@ export class FederationTransactions {
             verifier: data.verifier as string,
             returnPath: path,
             ...(tenantHint === undefined ? {} : { tenantHint }),
+            ...(samlRequestId === undefined ? {} : { samlRequestId }),
           });
         } finally {
           plain?.fill(0);

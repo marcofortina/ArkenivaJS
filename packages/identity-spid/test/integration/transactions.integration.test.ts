@@ -3,10 +3,86 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { securityStateFixture } from '../../../../examples/postgres/dist-test/integration/security-state-fixture.js';
 import { transactionFixture } from '../fixtures/transactions.js';
 import { capture } from '../../dist/settings.js';
 import { FederationTransactions } from '../../dist/transactions.js';
+
+test(
+  'Actual PostgreSQL keeps native SAML request correlation encrypted and single-use across independent pools',
+  { timeout: 30000 },
+  async () => {
+    const backend = await securityStateFixture(),
+      f = await transactionFixture({
+        store: backend.store,
+        securityLevel: 'test-only',
+        operationTimeoutMs: 5000,
+      });
+    try {
+      const profile = { ...f.profile, protocol: 'saml2' as const },
+        instances = [backend.store, backend.peer].map(
+          (store) =>
+            new FederationTransactions(
+              capture(
+                {
+                  ...f.settings,
+                  profiles: [profile],
+                  stateStore: { ...f.settings.stateStore, store },
+                },
+                'test',
+              ),
+              profile.profileId,
+              f.crypto,
+            ),
+        ),
+        samlRequestId = '_' + randomBytes(20).toString('hex'),
+        created = await f.runtime.run((call) =>
+          instances[0]!.create(call, { ...f.input, samlRequestId }),
+        ),
+        stored = await backend.app.sql.query<{ body: string }>('main', {
+          text: `SELECT body FROM ${backend.schema}.security_records`,
+        });
+      assert.equal(stored.rows.length, 1);
+      for (const value of [
+        samlRequestId,
+        created.transactionId,
+        created.nonce,
+        created.verifier,
+        created.tenantHint!,
+      ])
+        assert.equal(stored.rows[0]!.body.includes(value), false);
+      await assert.rejects(
+        () => f.runtime.run((call) => f.first.consume(call, created.transactionId, created.issuer)),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      const outcomes = await Promise.allSettled(
+          Array.from({ length: 8 }, (_, index) =>
+            f.runtime.run((call) =>
+              instances[index % 2]!.consume(call, created.transactionId, created.issuer),
+            ),
+          ),
+        ),
+        successes = outcomes.filter((result) => result.status === 'fulfilled');
+      assert.equal(successes.length, 1);
+      assert.equal(successes[0]!.value.samlRequestId, samlRequestId);
+      await assert.rejects(
+        () =>
+          f.runtime.run((call) =>
+            instances[1]!.consume(call, created.transactionId, created.issuer),
+          ),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      const count = await backend.app.sql.query<{ count: number }>('main', {
+        text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_claims`,
+      });
+      assert.equal(count.rows[0]!.count, 1);
+    } finally {
+      await f.close();
+      await backend.close();
+    }
+  },
+);
 
 test(
   'Actual PostgreSQL keeps SPID and CIE one-use state isolated under identical profile IDs and external keys',

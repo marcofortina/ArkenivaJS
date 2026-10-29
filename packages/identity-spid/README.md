@@ -22,6 +22,9 @@ Evidence expires at the earliest document, root, certificate or refresh boundary
 a failed refresh retires earlier evidence and prevents earlier concurrent work from
 restoring it. These technical checks do not enable the public SAML authentication
 flow or establish official interoperability.
+SAML preparation also binds the native request ID inside encrypted single-use state;
+it is not persisted in plaintext or substituted into an already signed RelayState.
+OIDC transactions reject this protocol-specific correlation field.
 
 Optional SPID OIDC federation plugin using the existing HTTP, Crypto and security services, JOSE and OpenID Client. It verifies both relying-party and provider participation before returning a login or canonical identity. SAML profiles currently fail with `EK_UNSUPPORTED_CAPABILITY`; SAML integration remains incomplete. Local technical tests do not establish official interoperability, accreditation or production certification.
 
