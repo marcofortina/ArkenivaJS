@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError } from '@arkenivajs/core';
+import { performance } from 'node:perf_hooks';
 import type { OperationOptions } from '@arkenivajs/core';
 import type { CryptoService } from '@arkenivajs/security-crypto';
 import type { ItalianFederationService, FederationAssurance } from './contracts.js';
@@ -38,7 +39,7 @@ export async function managed(
       });
     if (!profile.oidcRegistration?.approvedProtocolEndpoints) throw failure('EK_EID_PROFILE');
   }
-  const record = recorder(observers),
+  const record = recorder(observers, settings.profiles[0]!.system),
     runtime = new FederationRuntime(settings.policy, ready, owner),
     transports: Array<{ metadata: FederationHttp; protocol: FederationProtocolHttp }> = [],
     instances = new Map<
@@ -60,6 +61,7 @@ export async function managed(
     work: () => Promise<T>,
     verdict?: (result: T) => unknown,
   ): Promise<T> {
+    const began = performance.now();
     let error: unknown;
     try {
       const result = await work();
@@ -69,7 +71,7 @@ export async function managed(
       error = caught;
       throw caught;
     } finally {
-      record.complete(operation, error);
+      record.complete(operation, error, performance.now() - began);
     }
   }
   async function close(options?: OperationOptions): Promise<void> {

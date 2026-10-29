@@ -18,7 +18,7 @@ import {
 } from 'jose';
 import { calculatePKCECodeChallenge } from 'openid-client';
 import { createApplication } from '@arkenivajs/core';
-import type { Application } from '@arkenivajs/core';
+import type { Application, Plugin } from '@arkenivajs/core';
 import { HEALTH_PROBES } from '@arkenivajs/core/support';
 import type { PluginHealthProbe } from '@arkenivajs/core/support';
 import { securityPlugin } from '@arkenivajs/security';
@@ -27,27 +27,44 @@ import { telemetryPlugin } from '@arkenivajs/telemetry';
 import type { ManagedAuthService } from '@arkenivajs/security';
 import { cryptoPlugin } from '@arkenivajs/security-crypto';
 import { spidPlugin, SPID_CAPABILITY } from '../../dist/index.js';
-import type { ItalianEidPluginSettings, SpidService } from '../../dist/index.js';
+import type {
+  ItalianEidPluginSettings,
+  SpidService,
+  ItalianIdentitySystem,
+  FederationProfileV1,
+} from '../../dist/index.js';
 import { transactionFixture } from './transactions.js';
 
 interface MetricPoint {
   readonly attributes: readonly { key: string; value: { stringValue?: string } }[];
   readonly asDouble?: number;
   readonly asInt?: string;
+  readonly count?: string | number;
+  readonly sum?: number;
 }
 interface Metric {
   readonly name: string;
   readonly sum?: { dataPoints: readonly MetricPoint[] };
+  readonly histogram?: { dataPoints: readonly MetricPoint[] };
 }
 interface Envelope {
   readonly resourceMetrics?: readonly { scopeMetrics: readonly { metrics: readonly Metric[] }[] }[];
 }
 
-export async function runPublicOidc(files: {
-  certificate: string;
-  privateKey: string;
-  telemetryMode?: 'standard' | 'detailed';
-}) {
+export async function runPublicOidc(
+  files: {
+    certificate: string;
+    privateKey: string;
+    telemetryMode?: 'standard' | 'detailed';
+  },
+  adapter: {
+    system: ItalianIdentitySystem;
+    capability: symbol;
+    factory: (settings: ItalianEidPluginSettings) => Plugin;
+  } = { system: 'spid', capability: SPID_CAPABILITY, factory: spidPlugin },
+) {
+  const system = adapter.system,
+    assurance = system === 'spid' ? 'spid-l2' : 'cie-l2';
   const base = await transactionFixture(),
     rootPair = await generateKeyPair('ES256'),
     opPair = await generateKeyPair('ES256'),
@@ -280,7 +297,7 @@ export async function runPublicOidc(files: {
             response.end(
               JSON.stringify({
                 access_token: access,
-                id_token: id,
+                id_token: system === 'cie' ? await encrypt(id, 'id') : id,
                 token_type: 'Bearer',
                 expires_in: 120,
               }),
@@ -348,6 +365,12 @@ export async function runPublicOidc(files: {
               token_endpoint_auth_methods_supported: ['private_key_jwt'],
               token_endpoint_auth_signing_alg_values_supported: ['RS256'],
               id_token_signing_alg_values_supported: ['RS512'],
+              ...(system === 'cie'
+                ? {
+                    id_token_encryption_alg_values_supported: ['RSA-OAEP'],
+                    id_token_encryption_enc_values_supported: ['A128CBC-HS256'],
+                  }
+                : {}),
               userinfo_signing_alg_values_supported: ['RS512'],
               userinfo_encryption_alg_values_supported: ['RSA-OAEP-256'],
               userinfo_encryption_enc_values_supported: ['A256CBC-HS512'],
@@ -357,8 +380,10 @@ export async function runPublicOidc(files: {
         opPair.privateKey,
         'op-federation',
       ),
-    profile = {
+    profile: FederationProfileV1 = {
       ...base.profile,
+      system,
+      allowedAssurance: [assurance],
       profileId: 'public-profile',
       entityId: rp,
       clientId: rp,
@@ -397,6 +422,14 @@ export async function runPublicOidc(files: {
         idTokenSigningAlgorithm: 'RS512' as const,
         userInfoSigningAlgorithm: 'RS512' as const,
         decryptionKeyRef: 'oidc-decryption-ref',
+        ...(system === 'cie'
+          ? {
+              idTokenEncryption: {
+                algorithm: 'RSA-OAEP' as const,
+                encryption: 'A128CBC-HS256' as const,
+              },
+            }
+          : {}),
         userInfoEncryption: {
           algorithm: 'RSA-OAEP-256' as const,
           encryption: 'A256CBC-HS512' as const,
@@ -465,12 +498,12 @@ export async function runPublicOidc(files: {
       },
       authority: {
         async require(action, subject, context) {
-          if (action === 'spid.begin_authentication') {
+          if (action === system + '.begin_authentication') {
             assert.equal(subject, undefined);
             if (!state.beginAllowed) throw new Error('Anonymous ceremony denied');
             return { issuer: rp, subject: 'ceremony-policy' };
           }
-          assert.equal(action, 'spid.consume_authentication');
+          assert.equal(action, system + '.consume_authentication');
           assert.ok(subject);
           assert.ok((app!.auth as ManagedAuthService).isVerifiedTenant(context.tenant));
           assert.equal(subject.tenant, context.tenant);
@@ -487,7 +520,7 @@ export async function runPublicOidc(files: {
     keyVersion: 'fixture',
   });
   const app: Application = await createApplication({
-    service: { name: 'public-spid-fixture', version: '1.0.0', environment: 'test' },
+    service: { name: 'public-' + system + '-fixture', version: '1.0.0', environment: 'test' },
     logging: { level: 'debug' },
     telemetry: { mode: files.telemetryMode ?? 'detailed', samplingRatio: 1 },
     security: {
@@ -514,25 +547,25 @@ export async function runPublicOidc(files: {
         signingKeyRefs: base.settings.stateMacKeyRefs!,
         policy: { maxConcurrent: 32, timeoutMs: 5000, maxInputBytes: 65536, maxOutputBytes: 65536 },
       }),
-      spidPlugin(settings),
+      adapter.factory(settings),
       {
-        id: 'spid-readiness-probe',
+        id: system + '-readiness-probe',
         version: '1.0.0',
-        dependencies: ['spid'],
+        dependencies: [system],
         capabilities: new Set(['health']),
         async init(context) {
           health = context
             .require<readonly PluginHealthProbe[]>(HEALTH_PROBES)
-            .find((probe) => probe.name === 'plugin.spid');
+            .find((probe) => probe.name === 'plugin.' + system);
           assert.ok(health);
           assert.equal(await health.check({ timeoutMs: 5000 }), true);
           const service = context
-              .require<SpidService>(SPID_CAPABILITY)
+              .require<SpidService>(adapter.capability)
               .forProfile(profile.profileId),
             before = rootRequests;
           await assert.rejects(() => service.metadata(), { code: 'EK_LIFECYCLE_STATE' });
           await assert.rejects(
-            () => service.beginAuthentication({ returnPath: '/private' }, 'spid-l2'),
+            () => service.beginAuthentication({ returnPath: '/private' }, assurance),
             {
               code: 'EK_LIFECYCLE_STATE',
             },
@@ -546,18 +579,20 @@ export async function runPublicOidc(files: {
   try {
     await app.start();
     assert.ok(health);
+    if (system === 'cie')
+      assert.throws(() => app.resolve(SPID_CAPABILITY), { code: 'EK_UNSUPPORTED_CAPABILITY' });
     assert.equal(await health.check({ timeoutMs: 5000 }), true);
     base.state.storage = false;
     assert.equal(await health.check({ timeoutMs: 5000 }), false);
     base.state.storage = true;
-    const rootService = app.resolve<SpidService>(SPID_CAPABILITY),
+    const rootService = app.resolve<SpidService>(adapter.capability),
       service = rootService.forProfile(profile.profileId);
     assert.equal(service, rootService.forProfile(profile.profileId));
     assert.throws(() => rootService.forProfile('missing-profile'), { code: 'EK_EID_PROFILE' });
     await assert.rejects(() => rootService.metadata(), { code: 'EK_EID_PROFILE' });
     const before = rootRequests;
     await assert.rejects(
-      () => rootService.beginAuthentication({ returnPath: '/private' }, 'spid-l2'),
+      () => rootService.beginAuthentication({ returnPath: '/private' }, assurance),
       { code: 'EK_EID_PROFILE' },
     );
     assert.equal(rootRequests, before);
@@ -565,12 +600,12 @@ export async function runPublicOidc(files: {
       () =>
         rootService
           .forProfile('alternate-profile')
-          .beginAuthentication({ returnPath: '/private' }, 'spid-l2'),
+          .beginAuthentication({ returnPath: '/private' }, assurance),
       { code: 'EK_EID_ASSURANCE' },
     );
     state.beginAllowed = false;
     const denied = rootRequests;
-    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, 'spid-l2'), {
+    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, assurance), {
       code: 'EK_EID_FEDERATION',
     });
     assert.equal(rootRequests, denied);
@@ -587,7 +622,7 @@ export async function runPublicOidc(files: {
     const begin = async () => {
       const login = await service.beginAuthentication(
           { returnPath: '/private', tenantId: 'tenant-A', issuer: op },
-          'spid-l2',
+          assurance,
         ),
         request = await jwtVerify(
           new URL(login.redirectUrl).searchParams.get('request')!,
@@ -617,7 +652,8 @@ export async function runPublicOidc(files: {
     assert.equal(identity.issuer, origin + '/accounts');
     assert.equal(identity.subject, 'canonical-account');
     assert.equal(identity.claims.tenant_id, 'tenant-A');
-    assert.equal(identity.federationAssurance, 'spid-l2');
+    assert.equal(identity.federationAssurance, assurance);
+    assert.equal(identity.system, system);
     assert.deepEqual(identity.attributes.name, ['Public Fixture']);
     assert.equal(identity.assurance, undefined);
     assert.equal(tokenRequests, 1);
@@ -654,14 +690,14 @@ export async function runPublicOidc(files: {
     }
     state.rpActive = false;
     assert.equal(await health.check({ timeoutMs: 5000 }), false);
-    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, 'spid-l2'), {
+    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, assurance), {
       code: 'EK_EID_FEDERATION',
     });
     state.rpActive = true;
     assert.equal(await health.check({ timeoutMs: 5000 }), true);
     state.rotateSigning = true;
     state.signingReads = 0;
-    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, 'spid-l2'), {
+    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, assurance), {
       code: 'EK_EID_FEDERATION',
     });
     state.rotateSigning = false;
@@ -685,39 +721,63 @@ export async function runPublicOidc(files: {
     const metrics = envelopes
       .flatMap((envelope) => envelope.resourceMetrics ?? [])
       .flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics))
-      .filter((metric) => metric.name.startsWith('spid.'));
-    assert.deepEqual([...new Set(metrics.map((metric) => metric.name))].sort(), [
-      'spid.handshakes',
-      'spid.trust.failures',
-    ]);
-    const handshakes = metrics
-      .filter((metric) => metric.name === 'spid.handshakes')
-      .flatMap((metric) => metric.sum?.dataPoints ?? [])
-      .reduce((total, point) => total + (point.asDouble ?? Number(point.asInt ?? 0)), 0);
+      .filter((metric) => metric.name.startsWith(system + '.'));
+    const expectedMetrics =
+      system === 'spid'
+        ? ['spid.handshakes', 'spid.trust.failures']
+        : ['cie.authentication.duration', 'cie.failures', 'cie.federation.checks'];
+    assert.deepEqual([...new Set(metrics.map((metric) => metric.name))].sort(), expectedMetrics);
+    const authentication = metrics.filter(
+      (metric) =>
+        metric.name === (system === 'spid' ? 'spid.handshakes' : 'cie.authentication.duration'),
+    );
+    const observedAttempts = authentication
+      .flatMap((metric) =>
+        system === 'spid' ? (metric.sum?.dataPoints ?? []) : (metric.histogram?.dataPoints ?? []),
+      )
+      .reduce(
+        (total, point) =>
+          total +
+          (system === 'spid'
+            ? (point.asDouble ?? Number(point.asInt ?? 0))
+            : Number(point.count ?? 0)),
+        0,
+      );
     assert.equal(
-      handshakes,
+      observedAttempts,
       20,
-      'Internal federation steps cannot duplicate public handshake attempts',
+      'Internal federation steps cannot duplicate public authentication attempts',
     );
-    const points = metrics.flatMap((metric) => metric.sum?.dataPoints ?? []);
-    assert.ok(
-      points.some((point) =>
-        point.attributes.some(
-          (attribute) => attribute.key === 'spid.outcome' && attribute.value.stringValue === 'ok',
+    if (system === 'cie') {
+      assert.ok(
+        authentication
+          .flatMap((metric) => metric.histogram?.dataPoints ?? [])
+          .every((point) => typeof point.sum === 'number' && point.sum >= 0),
+      );
+      assert.equal(
+        envelopes
+          .flatMap((envelope) => envelope.resourceMetrics ?? [])
+          .flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics))
+          .some((metric) => metric.name.startsWith('spid.')),
+        false,
+      );
+    }
+    const points = metrics.flatMap((metric) => [
+      ...(metric.sum?.dataPoints ?? []),
+      ...(metric.histogram?.dataPoints ?? []),
+    ]);
+    for (const outcome of ['ok', 'federation'])
+      assert.ok(
+        points.some((point) =>
+          point.attributes.some(
+            (attribute) =>
+              attribute.key === system + '.outcome' && attribute.value.stringValue === outcome,
+          ),
         ),
-      ),
-    );
-    assert.ok(
-      points.some((point) =>
-        point.attributes.some(
-          (attribute) =>
-            attribute.key === 'spid.outcome' && attribute.value.stringValue === 'federation',
-        ),
-      ),
-    );
+      );
     for (const point of points)
       for (const attribute of point.attributes)
-        assert.ok(['spid.operation', 'spid.outcome'].includes(attribute.key));
+        assert.ok([system + '.operation', system + '.outcome'].includes(attribute.key));
     const serialized = JSON.stringify({ envelopes, logs });
     for (const marker of [
       ...markers,

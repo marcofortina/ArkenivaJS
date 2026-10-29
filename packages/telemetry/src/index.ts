@@ -118,6 +118,8 @@ const labels = new Set([
   'saml.outcome',
   'spid.operation',
   'spid.outcome',
+  'cie.operation',
+  'cie.outcome',
   'realtime.protocol',
   'realtime.reason',
   'proxy.outcome',
@@ -181,6 +183,25 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'cie.operation': [
+    'begin_authentication',
+    'consume_authentication',
+    'metadata',
+    'verify_federation_trust',
+    'health',
+    'bootstrap',
+  ],
+  'cie.outcome': [
+    'ok',
+    'federation',
+    'assurance',
+    'configuration',
+    'closed',
+    'not_ready',
+    'cancelled',
+    'timeout',
+    'unavailable',
+  ],
   'spid.operation': [
     'begin_authentication',
     'consume_authentication',
@@ -435,6 +456,9 @@ const units: Record<string, string> = {
   'saml.operations': '{operation}',
   'spid.handshakes': '{handshake}',
   'spid.trust.failures': '{failure}',
+  'cie.authentication.duration': 's',
+  'cie.federation.checks': '{check}',
+  'cie.failures': '{failure}',
   'scim.operations': '{operation}',
   'scim.operation.duration.ms': 'ms',
   'scim.operations.active': '{operation}',
@@ -650,6 +674,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       !labels.has(key) ||
       key.startsWith('routing.') ||
       key.startsWith('spid.') ||
+      key.startsWith('cie.') ||
       !Array.isArray(values) ||
       !values.length ||
       values.length > 128 ||
