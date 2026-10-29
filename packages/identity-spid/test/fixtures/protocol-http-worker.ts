@@ -36,6 +36,8 @@ async function run(origin: string) {
       '/jwks',
       '/redirect',
       '/wrong-type',
+      '/empty',
+      '/missing-type',
       '/oversized',
       '/utf8',
       '/slow',
@@ -137,8 +139,73 @@ async function run(origin: string) {
           send(endpoints.tokenEndpoint, { ...get(), method: 'POST', body: new ReadableStream() }),
         { code: 'EK_EID_FEDERATION' },
       );
+      const form = {
+        method: 'POST',
+        redirect: 'manual' as const,
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      };
+      for (const body of [
+        null,
+        {},
+        new Proxy(new URLSearchParams(), {}),
+        new URLSearchParams({ code: 'x'.repeat(8193) }),
+        new URLSearchParams({ code: 'x'.repeat(8150) }),
+      ])
+        await assert.rejects(
+          () => send(endpoints.tokenEndpoint, { ...form, body: body as URLSearchParams }),
+          { code: 'EK_EID_FEDERATION' },
+        );
+      await assert.rejects(
+        () =>
+          send(endpoints.tokenEndpoint, {
+            ...form,
+            headers: { 'content-type': 'application/json' },
+            body: new URLSearchParams({ code: 'opaque' }),
+          }),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      for (const value of [17, 'x\r\nInjected: value', '\ud800'])
+        await assert.rejects(
+          () =>
+            send(endpoints.userInfoEndpoint, {
+              ...get(),
+              headers: { ...get().headers, accept: value as string },
+            }),
+          { code: 'EK_EID_FEDERATION' },
+        );
+      await assert.rejects(
+        () => send(endpoints.userInfoEndpoint, { ...get(), body: 'unexpected' }),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      await assert.rejects(
+        () =>
+          send(endpoints.userInfoEndpoint, { ...get(), duplex: 'half' } as Parameters<
+            typeof send
+          >[1]),
+        { code: 'EK_EID_FEDERATION' },
+      );
+      for (const selection of [
+        { ...endpoints, jwksFormat: 'unknown' },
+        {
+          tokenEndpoint: endpoints.tokenEndpoint,
+          userInfoEndpoint: endpoints.userInfoEndpoint,
+          jwksFormat: 'json',
+        },
+        { ...endpoints, jwksEndpoint: endpoints.userInfoEndpoint },
+      ])
+        assert.throws(
+          () => transport.fetch(call, selection as Parameters<typeof transport.fetch>[1]),
+          { code: 'EK_EID_FEDERATION' },
+        );
     });
-    for (const path of ['/redirect', '/wrong-type', '/oversized', '/utf8'])
+    for (const path of [
+      '/redirect',
+      '/wrong-type',
+      '/empty',
+      '/missing-type',
+      '/oversized',
+      '/utf8',
+    ])
       await assert.rejects(
         () =>
           f.runtime.run((call) =>
@@ -229,6 +296,15 @@ async function run(origin: string) {
       );
     });
     assert.equal(effects, 0);
+    assert.equal(transport.stats().active, 0);
+    await transport.close({ signal: new AbortController().signal, timeoutMs: 1000 });
+    await assert.rejects(
+      () =>
+        f.runtime.run((call) =>
+          transport.fetch(call, endpoints)(endpoints.userInfoEndpoint, get()),
+        ),
+      { code: 'EK_RESOURCE_CLOSED' },
+    );
   } finally {
     await transport.close();
     await f.close();

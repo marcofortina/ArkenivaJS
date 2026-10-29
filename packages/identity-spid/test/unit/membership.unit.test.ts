@@ -375,3 +375,46 @@ test('A timed-out live status provider retains physical admission until its work
     await runtime.close();
   }
 });
+
+test('Malformed signed mark catalogs and missing OP role cannot establish participation', async () => {
+  const wrongRole = await mark(sa, op, 1, root + '/not_an_italian_role/public/');
+  for (const options of [
+    { op: { trust_marks: [{ id: types.op, trust_mark_type: types.op, trust_mark: 'ambiguous' }] } },
+    { op: { trust_marks: [{ id: types.op, trust_mark: 17 }] } },
+    { op: { trust_marks: [entry(root + '/not_an_italian_role/public/', wrongRole)] } },
+    { catalog: { [types.sa]: [root], [types.op]: [sa, sa] } },
+    { op: { metadata: { federation_entity: {} } } },
+  ]) {
+    const f = await fixture(options),
+      membership = new FederationMembership(f.profile, f.http),
+      runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 5000 });
+    try {
+      await assert.rejects(
+        () => runtime.run((call) => membership.verify(call, f.leafConfiguration)),
+        { code: 'EK_EID_FEDERATION' },
+      );
+    } finally {
+      await runtime.close();
+    }
+  }
+});
+
+test('A non-string live status response cannot become trust evidence or evade the cumulative byte budget', async () => {
+  const f = await fixture(),
+    membership = new FederationMembership(f.profile, {
+      ...f.http,
+      async trustMarkStatus() {
+        return undefined as unknown as string;
+      },
+    }),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 5000 });
+  try {
+    await assert.rejects(
+      () => runtime.run((call) => membership.verify(call, f.leafConfiguration)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    assert.equal(f.statuses.length, 0);
+  } finally {
+    await runtime.close();
+  }
+});

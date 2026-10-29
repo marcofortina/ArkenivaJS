@@ -178,6 +178,50 @@ test('SPID rejects cross-system assurance, insecure endpoints, stale roots and i
   });
   assert.equal(f.calls(), 0);
 });
+
+test('Trust root times require valid nonnegative canonical instants and a strictly increasing validity interval', () => {
+  const f = fixture(),
+    floor = Math.floor(Date.now() / 1000) * 1000,
+    anchor = f.profile.metadata.trustAnchors[0]!,
+    check = (validFrom: string, expiresAt = anchor.expiresAt) =>
+      capture({
+        ...f.settings,
+        profiles: [
+          {
+            ...f.profile,
+            metadata: {
+              ...f.profile.metadata,
+              trustAnchors: [{ ...anchor, validFrom, expiresAt }],
+            },
+          },
+        ],
+      });
+  for (const value of [
+    'not-a-date',
+    '1969-12-31T23:59:59.000Z',
+    '2026-10-29',
+    '2026-02-31T00:00:00.000Z',
+  ])
+    assert.throws(() => check(value), { code: 'EK_EID_PROFILE' });
+  assert.throws(() => check(anchor.expiresAt, anchor.validFrom), { code: 'EK_EID_PROFILE' });
+  assert.ok(
+    check(
+      new Date(floor - 60000).toISOString().replace('.000Z', 'Z'),
+      new Date(floor + 3600000).toISOString().replace('.000Z', 'Z'),
+    ),
+  );
+  const saml = { ...f.profile, protocol: 'saml2' as const };
+  Reflect.deleteProperty(saml, 'clientId');
+  const captured = capture({
+    ...f.settings,
+    profiles: [saml],
+    policy: { maxConcurrent: 1, timeoutMs: 1000 },
+  });
+  assert.equal(captured.profiles[0]!.clientId, undefined);
+  assert.equal(captured.policy.maxInputBytes, undefined);
+  assert.equal(captured.policy.maxOutputBytes, undefined);
+  assert.equal(f.calls(), 0);
+});
 test('SPID rejects executable/proxy policy without invoking traps or getters', () => {
   const f = fixture();
   let effects = 0;

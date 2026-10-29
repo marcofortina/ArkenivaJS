@@ -11,6 +11,36 @@ import { mkdtemp, readFile, rm, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { generateKeyPair, exportJWK, exportSPKI, SignJWT } from 'jose';
+import { FederationHttp } from '../../dist/metadata-http.js';
+
+test('Metadata transport construction rejects duplicate approvals, invalid environments and nonpositive budgets', () => {
+  const metadata = {
+      approvedMetadataEndpoints: ['https://metadata.example.test/document'],
+      maxBytes: 4096,
+    },
+    policy = { maxConcurrent: 1, timeoutMs: 1000 };
+  for (const value of [
+    [],
+    [...metadata.approvedMetadataEndpoints, ...metadata.approvedMetadataEndpoints],
+    ['http://metadata.example.test/document'],
+  ])
+    assert.throws(
+      () => new FederationHttp({ ...metadata, approvedMetadataEndpoints: value }, policy, 'test'),
+      { code: 'EK_EID_PROFILE' },
+    );
+  for (const mutation of [
+    { maxConcurrent: 0 },
+    { timeoutMs: 0 },
+    { maxOutputBytes: 0 },
+    { maxInputBytes: 0 },
+  ])
+    assert.throws(() => new FederationHttp(metadata, { ...policy, ...mutation }, 'test'), {
+      code: 'EK_EID_PROFILE',
+    });
+  assert.throws(() => new FederationHttp(metadata, policy, 'untrusted' as 'test'), {
+    code: 'EK_EID_PROFILE',
+  });
+});
 
 test(
   'Actual HTTPS federation documents use pinned paths, native TLS, bounded requests and signed status without forwarding credentials',
@@ -118,7 +148,15 @@ test(
             response.end('{}');
             return;
           }
+          if (path === '/missing-type') {
+            response.end(statement);
+            return;
+          }
           response.setHeader('content-type', 'application/entity-statement+jwt; charset=utf-8');
+          if (path === '/empty') {
+            response.end();
+            return;
+          }
           if (path === '/utf8') {
             response.end(Buffer.from([0xc3, 0x28]));
             return;
