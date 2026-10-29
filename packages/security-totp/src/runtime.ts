@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError } from '@arkenivajs/core';
+import { types } from 'node:util';
 import type {
   MfaManagementAuthorization,
   MfaSubjectContext,
@@ -20,7 +21,8 @@ export const storageError = () =>
 
 /** Inspect data without executing caller-controlled accessors. Preserve authority object references. */
 export function data(value: unknown, fields: readonly string[]): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw policyError();
+  if (!value || typeof value !== 'object' || types.isProxy(value) || Array.isArray(value))
+    throw policyError();
   const descriptors = Object.getOwnPropertyDescriptors(value),
     result: Record<string, unknown> = {};
   for (const name of Reflect.ownKeys(descriptors)) {
@@ -50,6 +52,7 @@ function property(object: object, name: string): unknown {
   if (!object || typeof object !== 'object') throw policyError();
   let current: object | null = object;
   while (current) {
+    if (types.isProxy(current)) throw policyError();
     const descriptor = Object.getOwnPropertyDescriptor(current, name);
     if (descriptor) {
       if (!('value' in descriptor)) throw policyError();
@@ -61,8 +64,10 @@ function property(object: object, name: string): unknown {
 }
 function method<T extends (...args: never[]) => unknown>(object: object, name: string): T {
   const value = property(object, name);
-  if (typeof value !== 'function') throw policyError();
-  return value.bind(object) as T;
+  if (typeof value !== 'function' || types.isProxy(value)) throw policyError();
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(value, object, args) as ReturnType<T>;
+  return invoke as T;
 }
 function component<T extends object>(
   value: T,
