@@ -32,12 +32,18 @@ path. Signed RelayState is preserved exactly. Private application return paths a
 tenant hints remain in the encrypted payload.
 
 POST acceptance consumes that protected state before native response/assertion
-verification, with exact issuer, requested SPID class, transient NameID qualifiers,
+verification, with exact issuer, approved SPID class, transient NameID qualifiers,
 request, audience, destination and replay checks. Only this protocol owner's live
 evidence can enter canonical AuthService tenant mapping and explicit authorization.
 Manually reconstructed objects confer no authority. An alternate `subjectClaim`
 requires exactly one verified attribute; asserted tenant attributes grant no local
 membership. Generic SAML assurance is never promoted to MFA.
+
+SAML initiation requests the selected level with `minimum` comparison. The native
+acceptance catalog contains only configured `allowedAssurance` levels at or above
+that request. A genuinely verified stronger configured level is retained in
+`federationAssurance` and passed to the canonical mapper; lower, unknown or
+unconfigured levels fail. No level order is inferred from arbitrary URI text.
 
 The documented `@arkenivajs/identity-spid/support` entry exports
 `createItalianFederationPlugin(system, capability, settings)` for trusted adapter

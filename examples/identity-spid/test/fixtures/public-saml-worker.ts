@@ -52,7 +52,8 @@ export async function runPublicSaml(files: { certificate: string; privateKey: st
     beginAllowed = true,
     consumeAllowed = true,
     wrongTenant = false,
-    downgrade = false;
+    downgrade = false,
+    higher = false;
   const server = createServer(
     { key: await readFile(files.privateKey), cert: await readFile(files.certificate) },
     (request, response) => {
@@ -116,7 +117,11 @@ export async function runPublicSaml(files: { certificate: string; privateKey: st
               SAMLResponse: material.response(
                 profile,
                 id,
-                downgrade ? 'https://www.spid.gov.it/SpidL1' : undefined,
+                higher
+                  ? 'https://www.spid.gov.it/SpidL3'
+                  : downgrade
+                    ? 'https://www.spid.gov.it/SpidL1'
+                    : undefined,
               ),
               RelayState: id,
             }),
@@ -161,7 +166,10 @@ export async function runPublicSaml(files: { certificate: string; privateKey: st
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   origin = `https://127.0.0.1:${address.port}`;
-  const profile = material.profile(origin),
+  const profile = {
+      ...material.profile(origin),
+      allowedAssurance: ['spid-l2', 'spid-l3'] as const,
+    },
     documents = { sp: material.metadata(profile, 'sp'), idp: material.metadata(profile, 'idp') };
   const settings: ItalianEidPluginSettings = {
     ...base.settings,
@@ -185,7 +193,7 @@ export async function runPublicSaml(files: { certificate: string; privateKey: st
         async map(input) {
           mapped++;
           assert.equal(input.subject, 'synthetic-upstream-account');
-          assert.equal(input.assurance, 'spid-l2');
+          assert.ok(['spid-l2', 'spid-l3'].includes(input.assurance));
           const auth = app!.auth as ManagedAuthService,
             bearer = await new SignJWT({
               tenant_id: wrongTenant ? 'tenant-B' : 'tenant-A',
@@ -226,6 +234,7 @@ export async function runPublicSaml(files: { certificate: string; privateKey: st
   };
   const app = await createApplication({
     service: { name: 'public-saml-fixture', version: '1.0.0', environment: 'test' },
+    logging: { level: 'debug' },
     security: {
       issuer: origin + '/accounts',
       audience: 'api://canonical-identity',
@@ -347,6 +356,13 @@ export async function runPublicSaml(files: { certificate: string; privateKey: st
       (await browser(profile.redirectUri, 'POST', first.cookie, first.form)).status,
       401,
     );
+    higher = true;
+    const stronger = await ceremony();
+    higher = false;
+    const elevated = await browser(profile.redirectUri, 'POST', stronger.cookie, stronger.form);
+    assert.equal(elevated.status, 200);
+    assert.equal(JSON.parse(elevated.body).federationAssurance, 'spid-l3');
+    assert.equal(JSON.parse(elevated.body).assurance, undefined);
     const left = await ceremony(),
       right = await ceremony();
     assert.equal((await browser(profile.redirectUri, 'POST', left.cookie, right.form)).status, 401);
@@ -386,6 +402,7 @@ export async function runPublicSaml(files: { certificate: string; privateKey: st
     await app.stop();
     await assert.rejects(() => service!.metadata(), { code: 'EK_RESOURCE_CLOSED' });
     const logs = messages.join('');
+    assert.equal(logs.includes('SPID operation completed'), true);
     for (const sensitive of [
       'synthetic-upstream-account',
       'synthetic-transient-subject',

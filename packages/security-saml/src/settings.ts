@@ -163,7 +163,7 @@ export function capture(input: SamlSettings) {
     if (
       profile.kind !== 'spid' ||
       !requestedAuthnContext ||
-      requestedAuthnContext.comparison !== 'exact' ||
+      !['exact', 'minimum'].includes(requestedAuthnContext.comparison) ||
       requestedAuthnContext.classReferences.length !== 1 ||
       ![
         'https://www.spid.gov.it/SpidL1',
@@ -176,6 +176,21 @@ export function capture(input: SamlSettings) {
       audience !== entityId
     )
       throw failure();
+    if (requestedAuthnContext.comparison === 'minimum') {
+      const levels = [
+          'https://www.spid.gov.it/SpidL1',
+          'https://www.spid.gov.it/SpidL2',
+          'https://www.spid.gov.it/SpidL3',
+        ],
+        requested = levels.indexOf(requestedAuthnContext.classReferences[0]!);
+      if (
+        !requestedAuthnContext.acceptedClassReferences.includes(levels[requested]!) ||
+        requestedAuthnContext.acceptedClassReferences.some(
+          (value) => levels.indexOf(value) < requested,
+        )
+      )
+        throw failure();
+    }
     // Validate an origin-only URI without changing its exact signed SAML identifier.
     url(/^https:\/\/[^/?#]+$/u.test(entityId) ? entityId + '/' : entityId, 'production');
     url(acsUrl, 'production');

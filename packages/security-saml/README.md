@@ -38,8 +38,11 @@ An optional application-owned `requestedAuthnContext` contains `classReferences`
 
 An optional `authenticationRequestProfile: { kind: 'spid', attributeConsumingServiceIndex? }`
 formats authentication requests for the SPID protocol rules. It requires explicit
-distinct signing key/certificate references and exactly one SPID L1/L2/L3 class with `exact`
-comparison. Entity and ACS identifiers must use HTTPS, and the audience must equal
+distinct signing key/certificate references and exactly one requested SPID L1/L2/L3
+class with `exact` or `minimum` comparison. With `minimum`, the explicit acceptance
+catalog must contain the requested class and only equal or higher known SPID classes;
+lower or unknown classes fail configuration. `exact` retains its equal-catalog policy.
+Entity and ACS identifiers must use HTTPS, and the audience must equal
 the entity identifier. The native SDK supplies transient NameID and ForceAuthn for L2/L3;
 the bounded adapter qualifies the issuer and removes AllowCreate before delegating
 POST XML signing or Redirect query signing to that same SDK. An optional attribute

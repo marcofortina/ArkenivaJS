@@ -29,6 +29,111 @@ const responseContext = (n: number) => (xml: string) =>
     .replace('urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport', level(n));
 
 for (const binding of ['redirect', 'post'] as const)
+  test(`Native signed SPID ${binding} minimum comparison accepts only explicitly configured equal or higher classes`, async () => {
+    const f = await fixture(binding);
+    try {
+      const certificate = await readFile(join(f.directory, 'sp.pem'), 'utf8');
+      const service = createSamlService({
+        ...f.settings,
+        authenticationRequestProfile: { kind: 'spid' },
+        requestedAuthnContext: {
+          classReferences: [level(2)],
+          comparison: 'minimum',
+          acceptedClassReferences: [level(2), level(3)],
+        },
+      });
+      for (const n of [1, 2, 3]) {
+        const login = await service.beginLogin({ returnPath: '/' }),
+          xml =
+            login.binding === 'post'
+              ? Buffer.from(login.fields.SAMLRequest, 'base64').toString()
+              : inflateRawSync(
+                  Buffer.from(
+                    new URL(login.redirectUrl).searchParams.get('SAMLRequest')!,
+                    'base64',
+                  ),
+                ).toString();
+        if (login.binding === 'post')
+          assert.ok(getVerifiedXml(xml, parse(xml).documentElement, [certificate]));
+        else {
+          const target = new URL(login.redirectUrl),
+            signed = target.search
+              .slice(1)
+              .split('&')
+              .filter((part) => !part.startsWith('Signature='))
+              .join('&');
+          assert.equal(
+            createVerify('RSA-SHA256')
+              .update(signed)
+              .verify(certificate, Buffer.from(target.searchParams.get('Signature')!, 'base64')),
+            true,
+          );
+        }
+        assert.equal(
+          one(parse(xml).documentElement, NS.protocol, 'RequestedAuthnContext').getAttribute(
+            'Comparison',
+          ),
+          'minimum',
+        );
+        const work = service.consumeResponse(
+          { inResponseTo: login.requestId, relayState: login.requestId },
+          f.response(login.requestId, { transformAssertion: responseContext(n) }),
+        );
+        if (n === 1) await assert.rejects(work, { code: 'EK_SAML_ASSERTION' });
+        else {
+          const identity = await work;
+          assert.equal((identity.claims.saml as Record<string, unknown>).authnContext, level(n));
+          assert.equal(identity.assurance, 'single-factor');
+        }
+      }
+      const restricted = createSamlService({
+          ...f.settings,
+          authenticationRequestProfile: { kind: 'spid' },
+          requestedAuthnContext: {
+            classReferences: [level(2)],
+            comparison: 'minimum',
+            acceptedClassReferences: [level(2)],
+          },
+        }),
+        login = await restricted.beginLogin({ returnPath: '/' });
+      await assert.rejects(
+        () =>
+          restricted.consumeResponse(
+            { inResponseTo: login.requestId, relayState: login.requestId },
+            f.response(login.requestId, { transformAssertion: responseContext(3) }),
+          ),
+        { code: 'EK_SAML_ASSERTION' },
+      );
+      const exact = createSamlService({
+          ...f.settings,
+          authenticationRequestProfile: { kind: 'spid' },
+          requestedAuthnContext: context(2),
+        }),
+        old = await exact.beginLogin({ returnPath: '/' }),
+        response = f.response(old.requestId, { transformAssertion: responseContext(2) });
+      await assert.rejects(
+        () =>
+          service.consumeResponse(
+            { inResponseTo: old.requestId, relayState: old.requestId },
+            response,
+          ),
+        { code: 'EK_SAML_REPLAY' },
+      );
+      assert.equal(
+        (
+          await exact.consumeResponse(
+            { inResponseTo: old.requestId, relayState: old.requestId },
+            response,
+          )
+        ).subject,
+        'synthetic-account',
+      );
+    } finally {
+      await f.close();
+    }
+  });
+
+for (const binding of ['redirect', 'post'] as const)
   test(`Origin-only SPID identifiers remain exact in native signed ${binding} requests`, async () => {
     const f = await fixture(binding);
     try {
@@ -180,7 +285,7 @@ for (const binding of ['redirect', 'post'] as const)
   );
 
 test(
-  'SPID request formatting requires explicit signed exact context and captures only immutable bounded data',
+  'SPID request formatting requires explicit signed bounded context and captures immutable policy data',
   { timeout: 15000 },
   async () => {
     const f = await fixture();
@@ -222,7 +327,29 @@ test(
         );
       for (const changed of [
         { requestedAuthnContext: undefined },
-        { requestedAuthnContext: { ...context(2), comparison: 'minimum' } },
+        { requestedAuthnContext: { ...context(2), comparison: 'maximum' } },
+        { requestedAuthnContext: { ...context(2), comparison: 'better' } },
+        {
+          requestedAuthnContext: {
+            ...context(2),
+            comparison: 'minimum',
+            acceptedClassReferences: [level(1), level(2)],
+          },
+        },
+        {
+          requestedAuthnContext: {
+            ...context(2),
+            comparison: 'minimum',
+            acceptedClassReferences: [level(3)],
+          },
+        },
+        {
+          requestedAuthnContext: {
+            ...context(2),
+            comparison: 'minimum',
+            acceptedClassReferences: [level(2), 'urn:example:foreign'],
+          },
+        },
         {
           requestedAuthnContext: {
             classReferences: [level(2), level(3)],
