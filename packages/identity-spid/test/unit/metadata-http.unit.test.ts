@@ -125,6 +125,13 @@ test(
         },
       );
       const samlMetadata = xmlSigner.getSignedXml();
+      const registryStatus = JSON.stringify({
+        entity_id: subject,
+        _deleted: 'N',
+        _disabled: 'N',
+        delete_date: null,
+        signing_certificate_x509: [],
+      });
       let rootConfiguration = '',
         delegation = '',
         federationStatus = '';
@@ -147,6 +154,34 @@ test(
               : {}),
             body: Buffer.concat(chunks).toString(),
           });
+          if (path.startsWith('/registry/')) {
+            if (path !== '/registry/missing-type')
+              response.setHeader(
+                'content-type',
+                path === '/registry/wrong-type' ? 'text/xml' : 'application/json; charset=utf-8',
+              );
+            if (
+              path === '/registry/withdrawn' ||
+              (path === '/registry/cache' && requests.filter((r) => r.path === path).length > 1)
+            )
+              response.statusCode = 410;
+            if (path === '/registry/slow') {
+              setTimeout(() => response.end(registryStatus), 250);
+              return;
+            }
+            response.end(
+              path === '/registry/empty'
+                ? ''
+                : path === '/registry/utf8'
+                  ? Buffer.from([0xc3, 0x28])
+                  : path === '/registry/oversized'
+                    ? 'x'.repeat(4097)
+                    : path === '/registry/disabled'
+                      ? registryStatus.replace('"_disabled":"N"', '"_disabled":"Y"')
+                      : registryStatus,
+            );
+            return;
+          }
           if (path.startsWith('/saml/')) {
             response.setHeader(
               'content-type',
@@ -312,12 +347,18 @@ test(
       });
       try {
         const untrustedTls = new FederationHttp(
-          { approvedMetadataEndpoints: [origin + '/saml/metadata'], maxBytes: 4096 },
+          {
+            approvedMetadataEndpoints: [origin + '/saml/metadata', origin + '/registry/status'],
+            maxBytes: 4096,
+          },
           { maxConcurrent: 1, timeoutMs: 1000 },
           'test',
         );
         try {
           await assert.rejects(() => untrustedTls.samlMetadata(origin + '/saml/metadata'), {
+            code: 'EK_EID_FEDERATION',
+          });
+          await assert.rejects(() => untrustedTls.samlRegistryStatus(origin + '/registry/status'), {
             code: 'EK_EID_FEDERATION',
           });
         } finally {
@@ -338,6 +379,7 @@ test(
           deniedConfiguration,
           membershipConfiguration,
           samlMetadata,
+          registryStatus,
           anchor: {
             kid: 'root-public',
             issuer,
@@ -379,6 +421,20 @@ test(
           ),
         );
         assert.equal(requests.filter((request) => request.path === '/saml/cache').length, 2);
+        const registryRequests = requests.filter((request) =>
+          request.path.startsWith('/registry/'),
+        );
+        assert.ok(registryRequests.length >= 8);
+        assert.ok(
+          registryRequests.every(
+            (request) =>
+              request.method === 'GET' &&
+              request.body === '' &&
+              request.cacheControl === 'no-cache, no-store' &&
+              request.accept === 'application/json',
+          ),
+        );
+        assert.equal(requests.filter((request) => request.path === '/registry/cache').length, 2);
         assert.equal(checked.method, 'POST');
         assert.equal(new URLSearchParams(checked.body).get('trust_mark'), trustMark);
         assert.equal(

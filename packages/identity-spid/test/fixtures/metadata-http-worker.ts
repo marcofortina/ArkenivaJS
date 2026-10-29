@@ -22,6 +22,7 @@ interface Input {
   deniedConfiguration: string;
   membershipConfiguration: string;
   samlMetadata: string;
+  registryStatus: string;
 }
 process.once('message', (input: Input) => {
   void run(input).then(
@@ -62,6 +63,17 @@ async function run(input: Input) {
     '/saml/slow',
     '/saml/cancel',
     '/saml/cache',
+    '/registry/status',
+    '/registry/disabled',
+    '/registry/withdrawn',
+    '/registry/empty',
+    '/registry/utf8',
+    '/registry/oversized',
+    '/registry/slow',
+    '/registry/cancel',
+    '/registry/cache',
+    '/registry/wrong-type',
+    '/registry/missing-type',
   ];
   const metadata = {
     approvedMetadataEndpoints: paths.map((path) => input.origin + path),
@@ -70,6 +82,62 @@ async function run(input: Input) {
   const policy = { maxConcurrent: 2, timeoutMs: 1000, maxInputBytes: 4096, maxOutputBytes: 4096 };
   const source = new FederationHttp(metadata, policy, 'test');
   try {
+    assert.equal(
+      await source.samlRegistryStatus(input.origin + '/registry/status'),
+      input.registryStatus,
+    );
+    const disabled = await source.samlRegistryStatus(input.origin + '/registry/disabled');
+    assert.equal(JSON.parse(disabled)._disabled, 'Y');
+    assert.equal('trusted' in JSON.parse(disabled), false);
+    for (const path of [
+      '/registry/withdrawn',
+      '/registry/empty',
+      '/registry/utf8',
+      '/registry/oversized',
+      '/redirect',
+      '/registry/wrong-type',
+      '/registry/missing-type',
+      '/not-approved',
+      '/registry/status?unapproved=yes',
+    ])
+      await assert.rejects(() => source.samlRegistryStatus(input.origin + path), {
+        code: 'EK_EID_FEDERATION',
+      });
+    assert.equal(
+      await source.samlRegistryStatus(input.origin + '/registry/cache'),
+      input.registryStatus,
+    );
+    await assert.rejects(() => source.samlRegistryStatus(input.origin + '/registry/cache'), {
+      code: 'EK_EID_FEDERATION',
+    });
+    await assert.rejects(
+      () => source.samlRegistryStatus(input.origin + '/registry/slow', { timeoutMs: 40 }),
+      { code: 'EK_TIMEOUT' },
+    );
+    await assert.rejects(
+      () =>
+        source.samlRegistryStatus(input.origin + '/registry/cancel', {
+          signal: AbortSignal.abort(),
+        }),
+      { code: 'EK_ABORTED' },
+    );
+    const registryCapacity = new FederationHttp(metadata, { ...policy, maxConcurrent: 1 }, 'test');
+    try {
+      const active = registryCapacity.samlRegistryStatus(input.origin + '/registry/slow');
+      await assert.rejects(() => registryCapacity.samlMetadata(input.origin + '/saml/metadata'), {
+        code: 'EK_BACKEND_UNAVAILABLE',
+      });
+      assert.equal(await active, input.registryStatus);
+      assert.equal(registryCapacity.stats().active, 0);
+    } finally {
+      await registryCapacity.close();
+    }
+    await assert.rejects(
+      () => registryCapacity.samlRegistryStatus(input.origin + '/registry/status'),
+      {
+        code: 'EK_RESOURCE_CLOSED',
+      },
+    );
     const samlProfile: FederationProfileV1 = {
       schemaVersion: '1.0.0',
       profileId: 'native-saml-transport',
