@@ -65,6 +65,8 @@ External PEM/PKCS#8 keys are imported as non-extractable native CryptoKeys. Publ
 
 ## Verification and deployment
 
+The [executable application and browser transaction example](../../examples/identity-spid/README.md) uses public package imports, a first-party cookie bound to protected login state, actual HTTPS callbacks and an independent packed consumer. It rejects a foreign cookie before token exchange and leaves local session creation to application policy.
+
 If the application explicitly installs telemetry or logging, the plugin borrows those existing services. SPID telemetry is limited to `spid.handshakes` and `spid.trust.failures`, with closed `spid.operation` and `spid.outcome` labels. Begin and consume attempts are counted once, including rejections; a negative public trust verdict records a failure without changing the returned result. Internal federation HTTP/JOSE steps do not duplicate handshake counts. Debug logs contain only the operation and bounded outcome. No profile, tenant, subject, endpoint, attribute, statement, OTP, token, key reference or provider error is exported. Diagnostic sink errors cannot change authentication or state-consumption outcomes. Native SDK tests inspect actual standard and detailed telemetry exports and captured log output.
 
 Tests exercise real JOSE signatures, native SDK request/token processing, encrypted ID Token and UserInfo, actual HTTPS federation and canonical JWKS, two independent canonical security services, replay and concurrent claims, revocation, key changes, profile isolation, lifecycle and production restrictions. PostgreSQL integration tests exercise shared atomic consumption and ambiguous acknowledgements. HTTPS fixtures trust their ephemeral CA only inside an isolated child process.

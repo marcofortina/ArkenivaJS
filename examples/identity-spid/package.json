@@ -1,0 +1,24 @@
+{
+  "name": "@arkenivajs/example-identity-spid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test dist-test/unit/*.test.js"
+  },
+  "dependencies": {
+    "@arkenivajs/core": "workspace:*",
+    "@arkenivajs/identity-spid": "workspace:*",
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*",
+    "@arkenivajs/security-crypto": "workspace:*",
+    "@arkenivajs/telemetry": "workspace:*"
+  },
+  "devDependencies": {
+    "jose": "6.2.13",
+    "openid-client": "6.8.8"
+  },
+  "license": "AGPL-3.0-or-later"
+}
