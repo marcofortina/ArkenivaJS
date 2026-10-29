@@ -472,6 +472,34 @@ importers:
         specifier: workspace:*
         version: link:../../packages/logging
 
+  examples/identity-cie:
+    dependencies:
+      '@arkenivajs/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@arkenivajs/identity-cie':
+        specifier: workspace:*
+        version: link:../../packages/identity-cie
+      '@arkenivajs/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+      '@arkenivajs/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@arkenivajs/security-crypto':
+        specifier: workspace:*
+        version: link:../../packages/security-crypto
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+    devDependencies:
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+      openid-client:
+        specifier: 6.8.8
+        version: 6.8.8(patch_hash=44db73c59877ea006f5685ab89cf8376825af3e19216af871aa6f07a19b2deaf)
+
   examples/identity-spid:
     dependencies:
       '@arkenivajs/core':
