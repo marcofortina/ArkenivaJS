@@ -22,6 +22,10 @@ a pool is warm. Changed values or versions retire that lane before authenticatin
 Provider byte arrays are copied; only the private copies are cleared after decoding.
 Native SMTP authentication necessarily retains strings in the active pool's memory.
 No credentials, derived values or references are persisted or logged.
+The provider method is captured with its original receiver without evaluating
+accessors or callable `bind`, `name` or `length` properties. Proxy providers,
+callbacks and prototype chains are rejected; lookup is bounded to 32 levels.
+Later method replacement cannot change the captured callback.
 
 Select a named profile with `MailOperationOptions.transport` on `send` or
 `verifyTransport`. Existing `OperationOptions` remain assignable. A single configured

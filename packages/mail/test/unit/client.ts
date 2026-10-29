@@ -1,52 +1,72 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
+import assert from 'node:assert/strict';
 import { createApplication, KitError } from '@arkenivajs/core';
 import { mailPlugin, MAIL_CAPABILITY } from '../../dist/index.js';
-import type { MailService, MailMessage } from '../../dist/index.js';
+import type { MailService, MailMessage, SecretProvider } from '../../dist/index.js';
 
 /** Only the owned SMTP fixture launches this client with an ephemeral startup trust anchor. */
 if (process.env.ARKENIVA_MAIL_DISPOSABLE !== '1')
   throw new Error('The SMTP client requires an explicitly disposable fixture');
 let version = 'one',
   unavailable = false;
-const input = JSON.parse(process.argv[2]!) as { port: number; mode: string; timeoutMs?: number },
-  app = await createApplication({
-    service: { name: 'mail-native-fixture', version: '0.1.0', environment: 'test' },
-    plugins: [
-      mailPlugin({
-        transports: [
-          {
-            name: 'local',
-            host: 'localhost',
-            port: input.port,
-            requireTls: true,
-            usernameRef: 'fixture-user',
-            passwordRef: 'fixture-password',
-            allowedFromAddresses: ['sender@example.test'],
-            maxAttachmentBytes: 65536,
-          },
-        ],
-        secretProvider: {
-          async get(reference) {
-            if (unavailable) throw new Error('The disposable provider is unavailable');
-            return {
-              bytes: Buffer.from(
-                reference === 'fixture-password' && version === 'two'
-                  ? 'fixture-password-next'
-                  : reference,
-              ),
-              keyVersion: version,
-            };
-          },
+const input = JSON.parse(process.argv[2]!) as { port: number; mode: string; timeoutMs?: number };
+const captureMode = input.mode.startsWith('provider-capture-');
+if (captureMode) input.mode = input.mode.slice('provider-capture-'.length);
+let metadataEffects = 0,
+  providerCalls = 0,
+  replacements = 0;
+const provider: SecretProvider = {
+  async get(reference) {
+    assert.equal(this, provider);
+    providerCalls++;
+    if (unavailable) throw new Error('The disposable provider is unavailable');
+    return {
+      bytes: Buffer.from(
+        reference === 'fixture-password' && version === 'two' ? 'fixture-password-next' : reference,
+      ),
+      keyVersion: version,
+    };
+  },
+};
+if (captureMode)
+  for (const key of ['bind', 'name', 'length'])
+    Object.defineProperty(provider.get, key, {
+      get() {
+        metadataEffects++;
+        throw new Error('Callable provider metadata must not execute');
+      },
+    });
+const app = await createApplication({
+  service: { name: 'mail-native-fixture', version: '0.1.0', environment: 'test' },
+  plugins: [
+    mailPlugin({
+      transports: [
+        {
+          name: 'local',
+          host: 'localhost',
+          port: input.port,
+          requireTls: true,
+          usernameRef: 'fixture-user',
+          passwordRef: 'fixture-password',
+          allowedFromAddresses: ['sender@example.test'],
+          maxAttachmentBytes: 65536,
         },
-        templates: { greeting: '<p>Hello {{person.name}}</p>' },
-        policy: { maxConcurrent: 2, timeoutMs: 5000 },
-      }),
-    ],
-  });
+      ],
+      secretProvider: provider,
+      templates: { greeting: '<p>Hello {{person.name}}</p>' },
+      policy: { maxConcurrent: 2, timeoutMs: 5000 },
+    }),
+  ],
+});
 try {
   await app.start();
+  if (captureMode)
+    provider.get = async () => {
+      replacements++;
+      throw new Error('The late provider replacement must not run');
+    };
   const mail = app.resolve<MailService>(MAIL_CAPABILITY);
   if (input.mode === 'verify') console.log(JSON.stringify(await mail.verifyTransport()));
   else {
@@ -149,5 +169,10 @@ try {
     await app.stop();
   } finally {
     if (process.connected) process.disconnect();
+    if (captureMode) {
+      assert.equal(metadataEffects, 0);
+      assert.equal(replacements, 0);
+      assert.equal(providerCalls, input.mode === 'outage' ? 3 : 4);
+    }
   }
 }

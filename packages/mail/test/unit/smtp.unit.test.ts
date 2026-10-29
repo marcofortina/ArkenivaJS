@@ -330,3 +330,24 @@ test('Aborting one admitted send preserves the other pool lane and saturation ha
     await local.close();
   }
 });
+
+test('Native SMTP preserves captured provider identity through credential rotation and a warm-pool outage', async () => {
+  for (const mode of ['rotation', 'outage']) {
+    const local = await fixture();
+    try {
+      const result = await local.client('provider-capture-' + mode);
+      if (mode === 'rotation') {
+        assert.equal(result.outcome, 'accepted');
+        assert.equal(local.state.auth, 2);
+        assert.equal(local.state.data.length, 2);
+      } else {
+        assert.equal(result.code, 'EK_MAIL_SEND');
+        assert.equal(local.state.auth, 1);
+        assert.equal(local.state.data.length, 1);
+      }
+      assert.ok(local.state.secure.every(Boolean));
+    } finally {
+      await local.close();
+    }
+  }
+});
