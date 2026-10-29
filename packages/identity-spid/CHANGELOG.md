@@ -19,3 +19,4 @@
 - Capture typed application-owned OIDC RP registration metadata, current subject-bound mark candidates, explicit algorithms and separate external decryption references without inventing registration values or claiming accreditation.
 - Import separate external RSA response-decryption keys as non-extractable native CryptoKeys, reuse guarded key import and verify prescribed JWE combinations and signed encrypted UserInfo with the selected OpenID Client.
 - Sign bounded RP Entity Configurations with native JOSE, exact immutable registration, public signing/encryption key roles and expiry limited by received marks, external key material and metadata refresh policy.
+- Compose fresh federation membership and protected transactions with native OpenID Client JAR initiation, exact issuer/assurance, S256 PKCE, matching outer request parameters and configured UserInfo claims; deny revoked trust and failed persistence before returning redirects.
