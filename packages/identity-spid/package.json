@@ -20,7 +20,8 @@
   "files": [
     "dist",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
@@ -37,7 +38,9 @@
     "@arkenivajs/security-crypto": "workspace:*",
     "jose": "6.2.13",
     "openid-client": "6.8.8",
-    "validator": "13.15.35"
+    "validator": "13.15.35",
+    "@xmldom/xmldom": "0.8.15",
+    "xml-crypto": "6.4.0"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {

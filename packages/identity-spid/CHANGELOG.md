@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Add a bounded native XML signature primitive for SPID SAML metadata, with pinned
+  current RSA roots, verified-reference extraction and wrapping/downgrade defenses.
+  Current participation and the SAML authentication flow remain independently gated.
 - Capture an explicit SPID SAML signing certificate reference, separate from
   private/state keys and unavailable to OIDC or CIE profiles. SAML runtime remains gated.
 - Expose trusted Italian adapter composition through the documented support entry while retaining the fixed SPID facade and independent CIE registration.
