@@ -25,6 +25,7 @@
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node ../../scripts/test.mjs unit",
     "test:browser": "node ../../scripts/test.mjs browser",
+    "test:integration:nats": "node --test dist-test/integration/nats.integration.test.js",
     "lint": "eslint src test browser scripts"
   },
   "dependencies": {
@@ -56,7 +57,8 @@
     "@types/pg": "8.23.1",
     "ws": "8.22.0",
     "@types/ws": "8.18.2",
-    "@arkenivajs/realtime": "workspace:*"
+    "@arkenivajs/realtime": "workspace:*",
+    "@arkenivajs/messaging": "workspace:*"
   },
   "license": "AGPL-3.0-or-later"
 }

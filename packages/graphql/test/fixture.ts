@@ -72,6 +72,7 @@ export async function fixture(
     metering?: ApplicationOptions['metering'];
     authorizeTenant?: (tenantId: string) => boolean;
     graphqlDependencies?: readonly string[];
+    issuer?: string;
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -142,7 +143,13 @@ export async function fixture(
       ...(options.metering ? { metering: options.metering } : {}),
       ...(options.databases ? { databases: options.databases } : {}),
       ...(authenticated
-        ? { security: { issuer, audience: 'api://graphql', algorithms: ['ES256'] } }
+        ? {
+            security: {
+              issuer: options.issuer ?? issuer,
+              audience: 'api://graphql',
+              algorithms: ['ES256'],
+            },
+          }
         : {}),
       plugins: [
         loggingPlugin({ destination: sink }),
@@ -182,18 +189,26 @@ export async function fixture(
       api,
       service,
       origin,
+      issuer: options.issuer ?? issuer,
       logs: () => logs,
       close,
-      token: async (tenant = 'tenant-a', scope = 'graphql:read') =>
-        'Bearer ' +
-        (await new SignJWT({ tenant_id: tenant, scope })
-          .setProtectedHeader({ alg: 'ES256', kid: 'graphql-fixture', typ: 'JWT' })
-          .setIssuer(issuer)
-          .setAudience('api://graphql')
-          .setSubject('graphql-user')
-          .setIssuedAt()
-          .setExpirationTime('5m')
-          .sign(pair.privateKey)),
+      token: async (tenant = 'tenant-a', scope = 'graphql:read') => {
+        if (options.issuer)
+          throw new Error(
+            'External fixture credentials must come from their actual signing authority',
+          );
+        return (
+          'Bearer ' +
+          (await new SignJWT({ tenant_id: tenant, scope })
+            .setProtectedHeader({ alg: 'ES256', kid: 'graphql-fixture', typ: 'JWT' })
+            .setIssuer(issuer)
+            .setAudience('api://graphql')
+            .setSubject('graphql-user')
+            .setIssuedAt()
+            .setExpirationTime('5m')
+            .sign(pair.privateKey))
+        );
+      },
     };
   } catch (error) {
     await close();

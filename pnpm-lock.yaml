@@ -1442,6 +1442,9 @@ importers:
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../logging
+      '@arkenivajs/messaging':
+        specifier: workspace:*
+        version: link:../messaging
       '@arkenivajs/metering':
         specifier: workspace:*
         version: link:../metering
