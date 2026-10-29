@@ -12,7 +12,7 @@ import { realtimePlugin } from '@arkenivajs/realtime';
 import type { GraphqlPluginSettings, GraphqlSubscriptionPubSub } from '../../dist/index.js';
 import { fixture, tlsFiles, send } from '../fixture.js';
 
-function settings(options: { allowGet?: boolean } = {}) {
+function settings(options: { allowGet?: boolean; deadlineMs?: number } = {}) {
   let authority: AuthService | undefined,
     effects = 0,
     acquired = 0,
@@ -115,6 +115,7 @@ function settings(options: { allowGet?: boolean } = {}) {
       auth: { required: true, scopes: ['graphql:read'] },
       authorizeField: ({ field }) => field.fieldName !== 'private',
       ...(options.allowGet ? { allowGetQueries: true } : {}),
+      ...(options.deadlineMs ? { limits: { maxOperationMs: options.deadlineMs } } : {}),
     },
     subscriptions: {
       enabled: true,
@@ -138,7 +139,12 @@ function settings(options: { allowGet?: boolean } = {}) {
   };
 }
 async function runtime(
-  options: { allowGet?: boolean; http2?: boolean; realtimeOrder?: 'before' | 'after' } = {},
+  options: {
+    allowGet?: boolean;
+    http2?: boolean;
+    realtimeOrder?: 'before' | 'after';
+    deadlineMs?: number;
+  } = {},
 ) {
   const tls = await tlsFiles(),
     config = settings(options);
@@ -419,3 +425,58 @@ for (const realtimeOrder of ['before', 'after'] as const)
       }
     },
   );
+
+test(
+  'Public native protocol heartbeats retain responsive clients and retire a missing pong without granting identity',
+  { timeout: 10000 },
+  async () => {
+    const r = await runtime({ deadlineMs: 250 });
+    let untrusted: WebSocket | undefined;
+    try {
+      const responsive = await r.connect();
+      let pings = 0;
+      responsive.on('message', (frame) => {
+        const message = JSON.parse(String(frame));
+        if (message.type === 'ping') {
+          pings++;
+          responsive.send('{"type":"pong"}');
+        }
+      });
+      const unresponsive = await r.connect(),
+        closed = once(unresponsive, 'close');
+      await closed;
+      assert.ok(pings >= 1);
+      assert.equal(responsive.readyState, WebSocket.OPEN);
+      assert.equal(r.config.acquired(), 0);
+      assert.equal(r.f.service.health().subscriptionsReady, true);
+      untrusted = new WebSocket(
+        r.f.origin.replace('https:', 'wss:') + '/graphql',
+        'graphql-transport-ws',
+        { ca: r.tls.ca, origin: 'https://portal.example.test' },
+      );
+      await once(untrusted, 'open');
+      const rejected = once(untrusted, 'close');
+      untrusted.send('{"type":"pong"}');
+      start(untrusted, 'forged');
+      await rejected;
+      assert.equal(r.config.acquired(), 0);
+      const result = new Promise<unknown>((resolve) =>
+        responsive.on('message', (frame) => {
+          const message = JSON.parse(String(frame));
+          if (message.type === 'next') resolve(message);
+        }),
+      );
+      start(responsive, 'live');
+      await until(() => r.config.acquired() === 1);
+      await r.publish('tenant-a', 'still-authorized');
+      assert.deepEqual(await result, {
+        type: 'next',
+        id: 'live',
+        payload: { data: { notice: 'still-authorized' } },
+      });
+    } finally {
+      untrusted?.terminate();
+      await r.close();
+    }
+  },
+);

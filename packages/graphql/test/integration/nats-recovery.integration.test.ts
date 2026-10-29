@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { COMPONENTS, KitError } from '@arkenivajs/core';
 import type { AuthService, MessageBus } from '@arkenivajs/core';
 import { natsNetworkProxy } from '../../../messaging/dist-test/fixtures/network-proxy.js';
-import { natsSubscriptionFixture } from '../nats-subscription-fixture.js';
+import { natsSubscriptionFixture, onSubscriptionFrame } from '../nats-subscription-fixture.js';
 
 async function eventually(check: () => boolean | Promise<boolean>) {
   const deadline = performance.now() + 5000;
@@ -106,7 +106,7 @@ test(
       const authorization = await runtime.f.token(),
         socket = await runtime.connect(authorization);
       const frames: unknown[] = [];
-      socket.on('message', (frame) => frames.push(JSON.parse(String(frame))));
+      onSubscriptionFrame(socket, (frame) => frames.push(JSON.parse(String(frame))));
       socket.send('{"type":"subscribe","id":"one","payload":{"query":"subscription { notice }"}}');
       await eventually(() => runtime!.adapter.stats().acquired === 1);
       await runtime.adapter.ready();

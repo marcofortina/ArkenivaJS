@@ -4,11 +4,53 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import WebSocket from 'ws';
+import type { RawData } from 'ws';
+import { MessageType, parseMessage } from 'graphql-ws';
 import { COMPONENTS } from '@arkenivajs/core';
 import type { AuthService, MessageBus } from '@arkenivajs/core';
 import { messagingPlugin } from '@arkenivajs/messaging';
 import { fixture, tlsFiles } from './fixture.js';
 import { NatsPubSubFixture } from './nats-pubsub.js';
+
+/** Protocol controls are not application deliveries; every other native frame remains visible. */
+export function onSubscriptionFrame(socket: WebSocket, receive: (frame: RawData) => void) {
+  const message = (frame: RawData) => {
+    assert.ok(Buffer.isBuffer(frame));
+    const parsed = parseMessage(frame.toString());
+    if (parsed.type === MessageType.Ping || parsed.type === MessageType.Pong) return;
+    assert.ok(
+      parsed.type === MessageType.Next ||
+        parsed.type === MessageType.Error ||
+        parsed.type === MessageType.Complete,
+    );
+    receive(frame);
+  };
+  socket.on('message', message);
+  return () => socket.off('message', message);
+}
+export function nextSubscriptionFrame(socket: WebSocket): Promise<readonly [RawData]> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      remove();
+      socket.off('error', failed);
+      socket.off('close', closed);
+    };
+    const failed = () => {
+      cleanup();
+      reject(new Error('The subscription transport failed before delivery'));
+    };
+    const closed = () => {
+      cleanup();
+      reject(new Error('The subscription transport closed before delivery'));
+    };
+    const remove = onSubscriptionFrame(socket, (frame) => {
+      cleanup();
+      resolve([frame]);
+    });
+    socket.once('error', failed);
+    socket.once('close', closed);
+  });
+}
 
 export async function natsSubscriptionFixture(
   namespace: string,
@@ -84,6 +126,11 @@ export async function natsSubscriptionFixture(
         );
         wires.add(socket);
         await once(socket, 'open');
+        socket.on('message', (frame) => {
+          assert.ok(Buffer.isBuffer(frame));
+          if (parseMessage(frame.toString()).type === MessageType.Ping)
+            socket.send(JSON.stringify({ type: MessageType.Pong }));
+        });
         const ack = Promise.race([
           once(socket, 'message'),
           once(socket, 'close').then(() => {
