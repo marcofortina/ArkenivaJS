@@ -11,6 +11,69 @@ import type { HttpObservation } from '@arkenivajs/http';
 
 const code = (value: string) => (error: unknown) =>
   error instanceof KitError && error.code === value;
+
+test('EK-HTTP-002 public IPv4 remains admissible independently of mapped IPv6 exclusions without opening a connection', async () => {
+  for (const origin of ['https://11.0.0.1', 'https://8.8.8.8', 'https://[2606:4700:4700::1111]']) {
+    const boundary = new KitError({ code: 'EK_AUTH_INVALID', message: 'Stop before network I/O' });
+    let reached = 0;
+    const client = createHttpClient({
+      allowedOrigins: [origin],
+      serviceToken: async (destination) => {
+        assert.equal(destination, origin);
+        reached++;
+        throw boundary;
+      },
+    });
+    try {
+      await assert.rejects(client.get(origin), (error: unknown) => error === boundary);
+      assert.equal(reached, 1);
+      assert.equal(client.stats().active, 0);
+    } finally {
+      await client.close();
+    }
+  }
+});
+
+test('EK-HTTP-002 private, reserved and mapped address forms still fail before credentials or connection acquisition', async () => {
+  for (const address of [
+    '0.0.0.1',
+    '10.0.0.1',
+    '100.64.0.1',
+    '127.0.0.1',
+    '169.254.169.254',
+    '172.16.0.1',
+    '192.0.0.1',
+    '192.0.2.1',
+    '192.168.0.1',
+    '198.18.0.1',
+    '198.51.100.1',
+    '203.0.113.1',
+    '224.0.0.1',
+    '[::1]',
+    '[::ffff:11.0.0.1]',
+    '[::ffff:127.0.0.1]',
+    '[fc00::1]',
+    '[fe80::1]',
+    '[2001:db8::1]',
+    '[2002::1]',
+  ]) {
+    let reached = 0;
+    const origin = 'https://' + address;
+    const client = createHttpClient({
+      allowedOrigins: [origin],
+      serviceToken: async () => {
+        reached++;
+        return 'unreachable';
+      },
+    });
+    try {
+      await assert.rejects(client.get(origin), code('EK_CONFIG_INVALID'));
+      assert.equal(reached, 0);
+    } finally {
+      await client.close();
+    }
+  }
+});
 async function endpoint(handler: RequestListener) {
   const server = createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
