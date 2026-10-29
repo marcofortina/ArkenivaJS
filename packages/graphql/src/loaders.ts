@@ -32,7 +32,7 @@ interface RequestState {
 export function installLoaders(
   server: FastifyInstance,
   settings: CapturedSettings,
-  scopes: WeakMap<object, Operation>,
+  scopes: Pick<WeakMap<object, Operation>, 'get'>,
   observed: () => void,
 ) {
   if (!settings.loaders) return;

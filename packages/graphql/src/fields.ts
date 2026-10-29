@@ -108,7 +108,7 @@ export async function authorizedField(
 export function protectFields(
   schema: GraphQLSchema,
   settings: CapturedSettings,
-  scopes: WeakMap<object, Operation>,
+  scopes: Pick<WeakMap<object, Operation>, 'get'>,
 ) {
   for (const type of Object.values(schema.getTypeMap())) {
     if (!isObjectType(type) || type.name.startsWith('__')) continue;

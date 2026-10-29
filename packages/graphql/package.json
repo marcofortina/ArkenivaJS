@@ -52,7 +52,9 @@
     "@arkenivajs/security": "workspace:*",
     "jose": "6.2.13",
     "pg": "8.23.1",
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "ws": "8.22.0",
+    "@types/ws": "8.18.2"
   },
   "license": "AGPL-3.0-or-later"
 }
