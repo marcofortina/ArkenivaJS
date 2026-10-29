@@ -164,7 +164,7 @@ try {
       (await readFile(join(directory, 'pnpm-workspace.yaml'), 'utf8')) +
         "allowBuilds:\n  '@confluentinc/kafka-javascript@1.11.0': true\n",
     );
-    execute('pnpm', ['rebuild', '@confluentinc/kafka-javascript'], directory, 600000, {
+    execute('pnpm', ['rebuild', '@confluentinc/kafka-javascript'], directory, 1200000, {
       ...process.env,
       MAKEFLAGS: '-j2',
       npm_config_jobs: '2',

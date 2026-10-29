@@ -10,6 +10,8 @@ The correction preserves exact signed 64-bit offsets, nullable/empty binary head
 
 Source compilation requires a C++20 compiler, Python and make. Build jobs are bounded. Linux/glibc x64 Node 22.23.4, 24.22.1 and 26.12.1 have executable native fixtures; Node 26 uses a source build. Node-independent, hash-reviewed bundled C/C++ libraries may be cached while each Node binding is compiled separately. Other operating systems and architectures require their own native compatibility evidence.
 
+The reviewed build correction binds configuration output and compilation input to the same source file. Fresh parallel builds must succeed without a preexisting `config.h` or native build cache.
+
 ## Startup configuration
 
 Each `KafkaClusterConfig` supplies a unique `name`, explicit `brokers`, `clientId`, exact `topics`, `maxBufferedMessages`, `maxMessageBytes`, `acks: 'all'` and `idempotentProducer: true`. Reliability cannot silently downgrade. Bootstrap reads metadata and rejects missing topics; framework methods never create topics, groups or ACLs administratively.
