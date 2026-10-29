@@ -31,7 +31,8 @@
     "@arkenivajs/http": "workspace:*",
     "@arkenivajs/security-apikey": "workspace:*",
     "@arkenivajs/security-crypto": "workspace:*",
-    "jose": "6.2.13"
+    "jose": "6.2.13",
+    "openid-client": "6.8.8"
   },
   "license": "AGPL-3.0-or-later"
 }
