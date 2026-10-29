@@ -17,6 +17,10 @@ export interface FederationEncryptionPolicy {
   readonly algorithm: 'RSA-OAEP' | 'RSA-OAEP-256';
   readonly encryption: 'A128CBC-HS256' | 'A256CBC-HS512';
 }
+/** Explicit SPID SAML certificate source; never inferred from a private-key reference. */
+export interface FederationSamlRegistration {
+  readonly signingCertificateRef: string;
+}
 /** Application-owned registration information; never populated from a login request. */
 export interface FederationOidcRegistration {
   readonly authorityHints: readonly string[];
@@ -74,6 +78,7 @@ export interface FederationProfileV1 {
   readonly identityMappingVersion: string;
   readonly sessionTtlSeconds: number;
   readonly oidcRegistration?: FederationOidcRegistration;
+  readonly samlRegistration?: FederationSamlRegistration;
 }
 /** Approved mapping consumes only cryptographically verified upstream claims. */
 export interface FederationIdentityMapper {

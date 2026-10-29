@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Capture an explicit SPID SAML signing certificate reference, separate from
+  private/state keys and unavailable to OIDC or CIE profiles. SAML runtime remains gated.
 - Expose trusted Italian adapter composition through the documented support entry while retaining the fixed SPID facade and independent CIE registration.
 - Keep CIE duration/check/failure observations separate from SPID counters and prevent executable error properties from entering diagnostic classification.
 

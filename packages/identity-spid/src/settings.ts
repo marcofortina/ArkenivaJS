@@ -12,6 +12,7 @@ import type {
 } from './contracts.js';
 import { failure, fields, integer, list, method, property, text, url } from './validation.js';
 import { captureRegistration } from './registration.js';
+import { captureSamlRegistration } from './saml-registration.js';
 import { assuranceLevels } from './assurance.js';
 
 function strings(input: unknown, convert: (value: unknown) => string = text) {
@@ -87,6 +88,7 @@ export function captureProfile(
     'identityMappingVersion',
     'sessionTtlSeconds',
     'oidcRegistration',
+    'samlRegistration',
   ]);
   const system = expectedSystem === undefined ? value.system : expectedSystem;
   if (system !== 'spid' && system !== 'cie') throw failure();
@@ -131,6 +133,12 @@ export function captureProfile(
       : captureRegistration(value.oidcRegistration, entityId, signingKeyRef, maxBytes);
   if (oidcRegistration && (clientId !== entityId || new URL(entityId).search)) throw failure();
   if (system === 'spid' && oidcRegistration?.idTokenEncryption) throw failure();
+  if (value.samlRegistration !== undefined && (system !== 'spid' || value.protocol !== 'saml2'))
+    throw failure();
+  const samlRegistration =
+    value.samlRegistration === undefined
+      ? undefined
+      : captureSamlRegistration(value.samlRegistration, signingKeyRef);
   return freezeData({
     schemaVersion: '1.0.0',
     profileId: text(value.profileId),
@@ -156,6 +164,7 @@ export function captureProfile(
     identityMappingVersion: text(value.identityMappingVersion),
     sessionTtlSeconds: integer(value.sessionTtlSeconds),
     ...(oidcRegistration ? { oidcRegistration } : {}),
+    ...(samlRegistration ? { samlRegistration } : {}),
   });
 }
 /** Capture immutable policy and bound provider methods without performing secret or network I/O. */
@@ -192,6 +201,7 @@ export function capture(
       [
         profile.signingKeyRef,
         ...(profile.oidcRegistration ? [profile.oidcRegistration.decryptionKeyRef] : []),
+        ...(profile.samlRegistration ? [profile.samlRegistration.signingCertificateRef] : []),
       ].some((reference) => [...encryptionRefs, ...macRefs].includes(reference)),
     )
   )
