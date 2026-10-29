@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { createSamlService, samlPlugin } from '../../dist/index.js';
+import { createManagedSamlAdapter } from '../../dist/support.js';
 import type {
   SamlSettings,
   SamlLoginRequest,
@@ -10,6 +11,15 @@ import type {
 } from '../../dist/index.js';
 
 export function contract(settings: SamlSettings, identity: SamlVerifiedIdentity): void {
+  const managed = createManagedSamlAdapter(settings, new AbortController().signal, () => true);
+  void managed.bootstrap();
+  void managed.service.createMetadata();
+  void managed.close();
+  void managed.drain();
+  // @ts-expect-error Composition requires native lifecycle authority, never a cancellation lookalike.
+  createManagedSamlAdapter(settings, {}, () => true);
+  // @ts-expect-error Readiness is an explicit synchronous predicate.
+  createManagedSamlAdapter(settings, new AbortController().signal, async () => true);
   const service = createSamlService(settings);
   samlPlugin(settings);
   void service.beginLogin({ returnPath: '/app' }, { timeoutMs: 4000 });

@@ -4,6 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSamlService } from '@arkenivajs/security-saml';
+import { createManagedSamlAdapter } from '@arkenivajs/security-saml/support';
+import type { ManagedSamlAdapter } from '@arkenivajs/security-saml/support';
 import { createAuthService } from '@arkenivajs/security';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Identity } from '@arkenivajs/core';
@@ -29,6 +31,7 @@ for (const requestProfile of [false, true])
           authorizeTenant: (_identity, tenant) => ['tenant-a', 'tenant-b'].includes(tenant),
         });
         const current = new AsyncLocalStorage<Identity>();
+        let managed: ManagedSamlAdapter | undefined;
         try {
           const local = await auth.verifyBearer(await issuer.bearer({ scope: 'saml:logout' })),
             canonicalTenant = auth.tenantFrom(local);
@@ -102,8 +105,20 @@ for (const requestProfile of [false, true])
                         )
                     : xml,
               }),
-            first = createSamlService({ ...settings, authority }),
-            second = createSamlService({ ...settings, replayStore: backend.peer, authority });
+            owner = new AbortController(),
+            first = createSamlService({ ...settings, authority });
+          let ready = false;
+          managed = createManagedSamlAdapter(
+            { ...settings, replayStore: backend.peer, authority },
+            owner.signal,
+            () => ready,
+          );
+          await managed.bootstrap();
+          await assert.rejects(() => managed!.service.createMetadata(), {
+            code: 'EK_LIFECYCLE_STATE',
+          });
+          ready = true;
+          const second = managed.service;
           const request = await first.beginLogin({ returnPath: '/app' }),
             response = respond(request.requestId),
             expected = { inResponseTo: request.requestId, relayState: request.requestId };
@@ -170,7 +185,12 @@ for (const requestProfile of [false, true])
             ),
             { code: 'EK_SAML_REPLAY' },
           );
+          owner.abort();
+          await assert.rejects(() => second.createMetadata(), { code: 'EK_RESOURCE_CLOSED' });
+          await managed.drain();
+          assert.ok((await first.createMetadata()).includes('EntityDescriptor'));
         } finally {
+          await managed?.drain();
           await auth.close();
           await issuer.close();
           await f.close();

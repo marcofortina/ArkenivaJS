@@ -18,6 +18,22 @@ export async function begin(settings: SamlSettings) {
 
 `samlPlugin(settings)` provides `SAML_CAPABILITY` after application startup. It shares readiness, shutdown and optional logging/telemetry ownership with the application. A plugin definition can be reused by independent application instances. Standalone calls own temporary native workers and leave no listener or background timer after completion.
 
+Trusted framework adapters can import `createManagedSamlAdapter` from
+`@arkenivajs/security-saml/support`. Supply captured `SamlSettings`, a genuine owner
+`AbortSignal` and a synchronous readiness predicate. `bootstrap()` checks external
+signing material before readiness; normal service calls require readiness exactly
+`true`. Invalid lifecycle inputs and callback failures deny work without retaining
+provider diagnostics. The returned service uses the same native workers, durable
+state and admission bounds as the ordinary factory.
+
+`close()` stops admission immediately and waits at most five seconds. A deadline
+failure does not prove that an external provider has settled. `drain()` also stops
+admission irreversibly and returns the actual provider/worker settlement promise,
+without a public deadline. Composing adapters must retain physical capacity until
+that promise settles, including after returning a timeout to their callers. Closing
+one adapter never aborts its owner's signal or another adapter. These deployment
+lifecycle inputs must never come from protocol callbacks or request objects.
+
 An optional application-owned `requestedAuthnContext` contains `classReferences`, the native SAML `comparison` (`exact`, `minimum`, `maximum` or `better`) and an explicit `acceptedClassReferences` catalog. Node-SAML places the requested classes and comparison in the signed AuthnRequest. After native signature validation, exactly one returned authentication class must belong to the captured acceptance catalog. URI text does not establish class ordering; a scheme adapter must define its approved higher/lower classes explicitly. For `exact`, the requested and accepted sets must be equal. Each catalog is nonempty, unique and limited to eight absolute HTTPS or URN references, each at most 2048 bytes. Missing or unexpected classes fail closed. The policy is immutable and contributes to the durable transaction namespace, so a different context policy cannot consume an older request. Omission preserves existing generic SDK behavior. This option supplies protocol policy, not SPID federation registration, trust or certification.
 
 An optional `authenticationRequestProfile: { kind: 'spid', attributeConsumingServiceIndex? }`
