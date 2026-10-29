@@ -27,7 +27,7 @@ jobs:
           node-version: '24.22.1'
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify dependency-graph and private-output failure guards
         run: pnpm test:supply-chain
       - name: Retain exact dependency inventory and per-project SPDX documents
@@ -99,7 +99,7 @@ jobs:
           queries: security-extended
       - run: npm install --global corepack@0.36.0
       - run: corepack enable && corepack install
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: javascript-typescript
