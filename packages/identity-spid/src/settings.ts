@@ -150,9 +150,25 @@ export function capture(
     'secretProvider',
     'authority',
     'policy',
+    'stateEncryptionKeyRefs',
+    'stateMacKeyRefs',
   ]);
   const profiles = list(value.profiles).map(captureProfile);
   if (new Set(profiles.map((item) => item.profileId)).size !== profiles.length) throw failure();
+  const encryptionRefs =
+      value.stateEncryptionKeyRefs === undefined
+        ? Object.freeze([] as string[])
+        : Object.freeze(list(value.stateEncryptionKeyRefs, 8).map((item) => text(item))),
+    macRefs =
+      value.stateMacKeyRefs === undefined
+        ? Object.freeze([] as string[])
+        : Object.freeze(list(value.stateMacKeyRefs, 8).map((item) => text(item)));
+  if (
+    (encryptionRefs.length === 0) !== (macRefs.length === 0) ||
+    new Set([...encryptionRefs, ...macRefs]).size !== encryptionRefs.length + macRefs.length ||
+    profiles.some((profile) => [...encryptionRefs, ...macRefs].includes(profile.signingKeyRef))
+  )
+    throw failure();
   const mappers = fields(value.identityMappers),
     capturedMappers: Record<
       string,
@@ -196,6 +212,8 @@ export function capture(
   ]);
   return Object.freeze({
     profiles: Object.freeze(profiles),
+    encryptionRefs,
+    macRefs,
     identityMappers: Object.freeze(capturedMappers),
     stateStore: Object.freeze({
       store: capturedStore,
