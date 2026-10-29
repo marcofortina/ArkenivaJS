@@ -184,14 +184,14 @@ def create_evidence(destination):
             raise ValueError("Package lifecycle hooks require an explicit execution review")
     output.mkdir(mode=0o700)
 
-    def execute(arguments, filename):
+    def execute(arguments, filename, timeout=300):
         with (output / filename).open("xb") as log:
             os.chmod(log.name, 0o600)
-            result = subprocess.run(arguments, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=300)
+            result = subprocess.run(arguments, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
         if result.returncode != 0:
             raise ValueError("Package verification failed; inspect the private command log")
 
-    execute(["pnpm", "build"], "build.log")
+    execute(["pnpm", "build"], "build.log", timeout=1200)
     results = []
     license_bytes = (ROOT / "LICENSE").read_bytes()
     for index, (location, manifest) in enumerate(manifests):
