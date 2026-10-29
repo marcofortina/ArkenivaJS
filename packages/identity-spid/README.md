@@ -45,6 +45,14 @@ that request. A genuinely verified stronger configured level is retained in
 `federationAssurance` and passed to the canonical mapper; lower, unknown or
 unconfigured levels fail. No level order is inferred from arbitrary URI text.
 
+The signed assertion must use the entity issuer format, include both Conditions
+time boundaries and omit Advice. The response issuer format may be absent or the
+entity format. SessionIndex is required for actual level 1 and forbidden for actual
+levels 2/3, including when a higher level satisfies a lower request. These checks
+use facts retained by the native verifier, before owned evidence can enter mapping.
+A failure after native persistence still returns no SPID identity and cannot retry
+the spent protected transaction. Generic SAML policy remains independent.
+
 The documented `@arkenivajs/identity-spid/support` entry exports
 `createItalianFederationPlugin(system, capability, settings)` for trusted adapter
 composition over this native backend. The separate CIE package uses it with its

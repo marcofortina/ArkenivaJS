@@ -37,6 +37,11 @@ export function samlResponse(
     signedResponse?: boolean;
     foreignKey?: boolean;
     attributes?: Readonly<Record<string, readonly string[]>>;
+    assertionIssuerFormat?: string | null;
+    responseIssuerFormat?: string | null;
+    conditionsNotBefore?: boolean;
+    advice?: boolean;
+    sessionIndex?: string | null;
   } = {},
 ) {
   const target = new URL(login.redirectUrl),
@@ -74,16 +79,16 @@ export function samlResponse(
       fiscalNumber: ['synthetic-account'],
       tenant_id: ['untrusted-tenant'],
     };
-  let assertion = `<saml:Assertion xmlns:saml="${assertionNamespace}" ID="_${randomUUID().replaceAll('-', '')}" Version="2.0" IssueInstant="${now}"><saml:Issuer>${escape(issuer)}</saml:Issuer><saml:Subject><saml:NameID Format="${escape(changes.nameIDFormat ?? 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient')}"${changes.nameQualifier === null ? '' : ` NameQualifier="${escape(changes.nameQualifier ?? issuer)}"`} SPNameQualifier="${escape(changes.spNameQualifier ?? audience)}">${escape(changes.subject ?? 'synthetic-transient-subject')}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${escape(correlation)}" Recipient="${escape(recipient)}" NotOnOrAfter="${expires}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${before}" NotOnOrAfter="${expires}"><saml:AudienceRestriction><saml:Audience>${escape(audience)}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="${now}" SessionIndex="synthetic-session" SessionNotOnOrAfter="${expires}"><saml:AuthnContext><saml:AuthnContextClassRef>${escape(changes.context ?? 'https://www.spid.gov.it/SpidL2')}</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement>${Object.entries(
+  let assertion = `<saml:Assertion xmlns:saml="${assertionNamespace}" ID="_${randomUUID().replaceAll('-', '')}" Version="2.0" IssueInstant="${now}"><saml:Issuer${changes.assertionIssuerFormat === null ? '' : ` Format="${escape(changes.assertionIssuerFormat ?? 'urn:oasis:names:tc:SAML:2.0:nameid-format:entity')}"`}>${escape(issuer)}</saml:Issuer><saml:Subject><saml:NameID Format="${escape(changes.nameIDFormat ?? 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient')}"${changes.nameQualifier === null ? '' : ` NameQualifier="${escape(changes.nameQualifier ?? issuer)}"`} SPNameQualifier="${escape(changes.spNameQualifier ?? audience)}">${escape(changes.subject ?? 'synthetic-transient-subject')}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${escape(correlation)}" Recipient="${escape(recipient)}" NotOnOrAfter="${expires}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions${changes.conditionsNotBefore === false ? '' : ` NotBefore="${before}"`} NotOnOrAfter="${expires}"><saml:AudienceRestriction><saml:Audience>${escape(audience)}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="${now}" ${changes.sessionIndex === null ? '' : changes.sessionIndex !== undefined ? `SessionIndex="${escape(changes.sessionIndex)}" ` : changes.context === 'https://www.spid.gov.it/SpidL1' ? 'SessionIndex="synthetic-session" ' : ''}SessionNotOnOrAfter="${expires}"><saml:AuthnContext><saml:AuthnContextClassRef>${escape(changes.context ?? 'https://www.spid.gov.it/SpidL2')}</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement>${Object.entries(
     attributes,
   )
     .map(
       ([name, values]) =>
         `<saml:Attribute Name="${escape(name)}">${values.map((value) => `<saml:AttributeValue>${escape(value)}</saml:AttributeValue>`).join('')}</saml:Attribute>`,
     )
-    .join('')}</saml:AttributeStatement></saml:Assertion>`;
+    .join('')}</saml:AttributeStatement>${changes.advice ? '<saml:Advice/>' : ''}</saml:Assertion>`;
   if (changes.signedAssertion !== false) assertion = sign(assertion, 'Assertion');
-  let xml = `<samlp:Response xmlns:samlp="${protocolNamespace}" xmlns:saml="${assertionNamespace}" ID="_${randomUUID().replaceAll('-', '')}" Version="2.0" IssueInstant="${now}" InResponseTo="${escape(correlation)}" Destination="${escape(recipient)}"><saml:Issuer>${escape(issuer)}</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>${assertion}</samlp:Response>`;
+  let xml = `<samlp:Response xmlns:samlp="${protocolNamespace}" xmlns:saml="${assertionNamespace}" ID="_${randomUUID().replaceAll('-', '')}" Version="2.0" IssueInstant="${now}" InResponseTo="${escape(correlation)}" Destination="${escape(recipient)}"><saml:Issuer${changes.responseIssuerFormat === null ? '' : ` Format="${escape(changes.responseIssuerFormat ?? 'urn:oasis:names:tc:SAML:2.0:nameid-format:entity')}"`}>${escape(issuer)}</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>${assertion}</samlp:Response>`;
   if (changes.signedResponse !== false) xml = sign(xml, 'Response');
   return {
     transactionId: login.transactionId,

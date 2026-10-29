@@ -34,6 +34,12 @@ export interface NativeRequest {
   readonly response?: string;
   readonly profile?: LogoutProfile;
 }
+export interface VerifiedAssertionProfile {
+  readonly assertionIssuerFormat?: string;
+  readonly responseIssuerFormat?: string;
+  readonly conditionsNotBeforePresent: boolean;
+  readonly advicePresent: boolean;
+}
 export interface VerifiedAssertion {
   readonly issuer: string;
   readonly subject: string;
@@ -47,6 +53,7 @@ export interface VerifiedAssertion {
   readonly sessionIndex?: string;
   readonly sessionExpiresAt: string;
   readonly verificationExpiresAt: string;
+  readonly profile: VerifiedAssertionProfile;
 }
 export type NativeResult =
   | Readonly<{ kind: 'redirect'; url: string; createdAt: string }>

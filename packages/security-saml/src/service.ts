@@ -14,6 +14,7 @@ import type {
   NativeRequest,
   NativeResult,
   VerifiedAssertion,
+  VerifiedAssertionProfile,
   LogoutProfile,
 } from './backend-contracts.js';
 import type { Settings } from './settings.js';
@@ -49,6 +50,34 @@ const instant = (value: unknown): string => {
     throw failure('EK_SAML_REPLAY');
   return value;
 };
+/** Retain bounded protocol facts from native verification without treating them as local authorization. */
+function assertionProfile(input: unknown): VerifiedAssertionProfile {
+  try {
+    const value = fields(input, [
+      'assertionIssuerFormat',
+      'responseIssuerFormat',
+      'conditionsNotBeforePresent',
+      'advicePresent',
+    ]);
+    if (
+      typeof value.conditionsNotBeforePresent !== 'boolean' ||
+      typeof value.advicePresent !== 'boolean'
+    )
+      throw failure('EK_SAML_ASSERTION');
+    return Object.freeze({
+      ...(value.assertionIssuerFormat === undefined
+        ? {}
+        : { assertionIssuerFormat: text(value.assertionIssuerFormat, 2048, true) }),
+      ...(value.responseIssuerFormat === undefined
+        ? {}
+        : { responseIssuerFormat: text(value.responseIssuerFormat, 2048, true) }),
+      conditionsNotBeforePresent: value.conditionsNotBeforePresent,
+      advicePresent: value.advicePresent,
+    });
+  } catch {
+    throw failure('EK_SAML_ASSERTION');
+  }
+}
 interface RequestRecord {
   readonly kind: 'login' | 'logout';
   readonly id: string;
@@ -308,6 +337,7 @@ export function managed(
         saml: {
           transactionId: id,
           verificationExpiresAt,
+          profile: assertionProfile(input.profile),
           nameIDFormat: input.nameIDFormat,
           ...(input.authnContext ? { authnContext: input.authnContext } : {}),
           ...(input.nameQualifier ? { nameQualifier: input.nameQualifier } : {}),
@@ -347,12 +377,14 @@ export function managed(
         'nameQualifier',
         'spNameQualifier',
         'verificationExpiresAt',
+        'profile',
       ]);
     requestId(saml.transactionId);
     text(saml.nameIDFormat, 2048);
     if (saml.authnContext !== undefined) text(saml.authnContext, 2048);
     if (saml.nameQualifier !== undefined) text(saml.nameQualifier, 2048);
     if (saml.spNameQualifier !== undefined) text(saml.spNameQualifier, 2048);
+    if (saml.profile !== undefined) saml.profile = assertionProfile(saml.profile);
     if (saml.verificationExpiresAt !== undefined) {
       const expiry = saml.verificationExpiresAt;
       // Original assertion expiry never substitutes for the separate authorization of logout.

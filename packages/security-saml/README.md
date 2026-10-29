@@ -68,6 +68,14 @@ replay and session writes; expiration during persistence returns no identity and
 does not make the consumed response reusable. This assertion deadline does not
 replace the separate authorization and session receipt required for later logout.
 
+`claims.saml.profile` retains bounded facts from the actually verified protocol
+elements: optional assertion/response issuer formats, whether Conditions supplied
+its checked NotBefore, and whether Advice was present. Generic SAML does not infer
+a federation policy from these facts. A composing scheme adapter must apply its
+own normative checks before mapping identity. Older persisted logout identities
+without this optional metadata remain subject to the same independent authority
+and exact durable session receipt; stripping it from a newer identity fails.
+
 Replay state uses durable atomic `claimOnce` and compare-and-set calls across pods. Records contain correlation data and a digest of the verified session, without raw assertions, NameID, session index or signing keys. The native SDK cache is only an operation-local view of an already loaded durable request; it never replaces shared replay protection. Storage failures return no identity. A late persistence failure may consume the transaction and require a fresh login; it cannot authorize a retry. This is fail-closed one-use acceptance, not an exactly-once response-delivery guarantee.
 
 Operations default to a five-second deadline, with a 30-second maximum and eight physically outstanding operations per service. Aborts terminate native XML workers; a provider ignoring cancellation retains its capacity until it settles. Plugin drain waits up to five seconds for actual work. Shared quota claims limit verification attempts to at most 1000 per profile and minute; bounded random slot contention may reject earlier. Five-minute requests and additional replay retention prevent a delayed duplicate from reusing a live transaction. There is no automatic retry of authentication work.

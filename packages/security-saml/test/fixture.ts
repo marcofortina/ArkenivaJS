@@ -144,6 +144,7 @@ export async function fixture(
           issuer?: string;
           signedAssertion?: boolean;
           transformAssertion?: (xml: string) => string;
+          transformResponse?: (xml: string) => string;
           signedResponse?: boolean;
         } = {},
       ) {
@@ -157,6 +158,7 @@ export async function fixture(
         if (changes.transformAssertion) assertion = changes.transformAssertion(assertion);
         if (changes.signedAssertion !== false) assertion = sign(assertion, 'Assertion');
         let xml = `<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_${randomUUID().replaceAll('-', '')}" Version="2.0" IssueInstant="${now}" InResponseTo="${id}" Destination="${escapeXml(destination)}"><saml:Issuer>${escapeXml(issuer)}</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>${assertion}</samlp:Response>`;
+        if (changes.transformResponse) xml = changes.transformResponse(xml);
         if (changes.signedResponse !== false) xml = sign(xml, 'Response');
         return Buffer.from(xml).toString('base64');
       },
