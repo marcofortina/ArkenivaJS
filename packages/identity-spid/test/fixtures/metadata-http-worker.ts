@@ -12,6 +12,7 @@ import { FederationRuntime } from '../../dist/runtime.js';
 import { FederationMembership } from '../../dist/membership.js';
 import { verifySamlMetadataSignature } from '../../dist/saml-metadata-signature.js';
 import { FederationSamlSignatures } from '../../dist/saml-signatures.js';
+import { FederationSamlRegistry } from '../../dist/saml-registry.js';
 
 interface Input {
   origin: string;
@@ -75,6 +76,8 @@ async function run(input: Input) {
     '/registry/cache',
     '/registry/wrong-type',
     '/registry/missing-type',
+    '/registry/application-status',
+    '/saml/application-metadata',
   ];
   const metadata = {
     approvedMetadataEndpoints: paths.map((path) => input.origin + path),
@@ -178,6 +181,39 @@ async function run(input: Input) {
       }
     } finally {
       await signatureRuntime.close();
+    }
+    const registryProfile: FederationProfileV1 = {
+        ...samlProfile,
+        samlRegistration: {
+          signingCertificateRef: 'application-certificate',
+          registrySources: {
+            [samlProfile.entityId]: {
+              metadataEndpoint: input.origin + '/saml/application-metadata',
+              statusEndpoint: input.origin + '/registry/application-status',
+            },
+            [input.subject]: {
+              metadataEndpoint: input.origin + '/saml/metadata',
+              statusEndpoint: input.origin + '/registry/status',
+            },
+          },
+        },
+        metadata: {
+          ...samlProfile.metadata,
+          maxBytes: 8192,
+          trustAnchors: [{ ...input.anchor, issuer: input.origin }],
+        },
+      },
+      registry = new FederationSamlRegistry(registryProfile, source),
+      registryRuntime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 5000 });
+    try {
+      const evidence = await registryRuntime.run((call) =>
+        registry.verify(call, input.subject, 'idp'),
+      );
+      assert.equal(registry.result(evidence).issuer, input.subject);
+      assert.equal(evidence.certificates.length, 1);
+      assert.equal('trusted' in evidence, false);
+    } finally {
+      await registryRuntime.close();
     }
     for (const path of [
       '/saml/withdrawn',

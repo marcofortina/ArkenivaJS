@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, X509Certificate } from 'node:crypto';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
@@ -15,6 +15,8 @@ import { once } from 'node:events';
 import { setImmediate } from 'node:timers/promises';
 import { verifySamlMetadataSignature } from '../../dist/saml-metadata-signature.js';
 import { FederationSamlSignatures } from '../../dist/saml-signatures.js';
+import { verifySamlRegistryDocument } from '../../dist/saml-registry-document.js';
+import { FederationSamlRegistry } from '../../dist/saml-registry.js';
 import { FederationCall, FederationRuntime } from '../../dist/runtime.js';
 import type { FederationProfileV1 } from '../../dist/index.js';
 
@@ -68,6 +70,8 @@ function signed(
     algorithm?: string;
     digest?: string;
     key?: typeof root.privateKey;
+    descriptorAttributes?: string;
+    descriptorContent?: string;
   } = {},
 ) {
   const role = options.role ?? 'idp',
@@ -79,7 +83,7 @@ function signed(
         ? ''
         : ` validUntil="${options.expiry ?? new Date(Date.now() + 60000).toISOString()}"`,
     descriptor = role === 'idp' ? 'IDPSSODescriptor' : 'SPSSODescriptor',
-    xml = `<md:EntityDescriptor xmlns:md="${md}" ID="metadata_root" entityID="${issuer}"${expiry}><md:${descriptor} protocolSupportEnumeration="${protocol}"/>${options.extra ?? ''}</md:EntityDescriptor>`,
+    xml = `<md:EntityDescriptor xmlns:md="${md}" ID="metadata_root" entityID="${issuer}"${expiry}><md:${descriptor} protocolSupportEnumeration="${protocol}"${options.descriptorAttributes ?? ''}>${options.descriptorContent ?? ''}</md:${descriptor}>${options.extra ?? ''}</md:EntityDescriptor>`,
     signer = new SignedXml({
       privateKey: options.key ?? root.privateKey,
       signatureAlgorithm: options.algorithm ?? 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
@@ -97,6 +101,454 @@ function signed(
   });
   return signer.getSignedXml();
 }
+
+async function prepareRegistry() {
+  const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-saml-registry-'));
+  try {
+    async function certificate(name: string, key: typeof root.privateKey) {
+      const keyPath = join(directory, name + '-key.pem'),
+        certPath = join(directory, name + '-cert.pem');
+      await writeFile(keyPath, key.export({ format: 'pem', type: 'pkcs8' }), { mode: 0o600 });
+      await writeFile(certPath, '', { mode: 0o600 });
+      await promisify(execFile)(
+        'openssl',
+        [
+          'req',
+          '-x509',
+          '-key',
+          keyPath,
+          '-out',
+          certPath,
+          '-days',
+          '1',
+          '-subj',
+          '/CN=Registry Public Fixture',
+        ],
+        { timeout: 10000 },
+      );
+      const pem = await readFile(certPath, 'utf8');
+      return { pem, encoded: new X509Certificate(pem).raw.toString('base64') };
+    }
+    const first = await certificate('first', foreign.privateKey),
+      second = await certificate('second', root.privateKey),
+      ec = await certificate(
+        'ec',
+        generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey,
+      ),
+      weak = await certificate(
+        'weak',
+        generateKeyPairSync('rsa', { modulusLength: 1024 }).privateKey,
+      ),
+      p = profile(),
+      entity = p.entityId,
+      issuer = p.expectedIssuers[0]!,
+      registrySources = {
+        [entity]: {
+          metadataEndpoint: 'https://registry.example.test/sp',
+          statusEndpoint: 'https://registry.example.test/sp-status',
+        },
+        [issuer]: {
+          metadataEndpoint: 'https://registry.example.test/idp',
+          statusEndpoint: 'https://registry.example.test/idp-status',
+        },
+      },
+      configured: FederationProfileV1 = {
+        ...p,
+        metadata: {
+          ...p.metadata,
+          approvedMetadataEndpoints: Object.values(registrySources).flatMap((source) => [
+            source.metadataEndpoint,
+            source.statusEndpoint,
+          ]),
+        },
+        samlRegistration: { ...p.samlRegistration!, registrySources },
+      },
+      descriptor = (encoded = first.encoded) =>
+        `<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>${encoded}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>`,
+      consumer = `<md:AssertionConsumerService index="0" isDefault="true" Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="${p.redirectUri}"/>`,
+      xml = (role: 'idp' | 'sp', options: Parameters<typeof signed>[0] = {}) =>
+        signed({
+          role,
+          descriptorAttributes:
+            role === 'sp' ? ' AuthnRequestsSigned="true"' : ' WantAuthnRequestsSigned="true"',
+          descriptorContent:
+            descriptor() +
+            (role === 'sp'
+              ? consumer
+              : '<md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.test/login"/>'),
+          ...options,
+        }),
+      status = (role: 'idp' | 'sp', changes: Record<string, unknown> = {}) =>
+        JSON.stringify({
+          entity_id: role === 'sp' ? entity : issuer,
+          _deleted: 'N',
+          _disabled: 'N',
+          delete_date: null,
+          signing_certificate_x509: [first.encoded],
+          ...changes,
+        });
+    return {
+      directory,
+      profile: configured,
+      entity,
+      issuer,
+      first,
+      second,
+      ec,
+      weak,
+      descriptor,
+      consumer,
+      xml,
+      status,
+    };
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true });
+    throw error;
+  }
+}
+let registryData: ReturnType<typeof prepareRegistry> | undefined;
+const registry = () => (registryData ??= prepareRegistry());
+after(async () => {
+  if (registryData) await rm((await registryData).directory, { recursive: true, force: true });
+});
+
+test('Registry documents bind current RP and IdP status, root authority and native signing certificates', async () => {
+  const f = await registry();
+  for (const role of ['idp', 'sp'] as const) {
+    const evidence = verifySamlRegistryDocument(f.xml(role), f.status(role), f.profile, role);
+    assert.equal(evidence.issuer, role === 'sp' ? f.entity : f.issuer);
+    assert.equal(evidence.signerIssuer, 'https://registry.example.test');
+    assert.deepEqual(evidence.certificates, [f.first.pem]);
+    assert.ok(Object.isFrozen(evidence.certificates));
+    assert.ok(Date.parse(evidence.expiresAt) <= Date.now() + 60000);
+    assert.equal('trusted' in evidence, false);
+    const rotated = verifySamlRegistryDocument(
+      f.xml(role, {
+        descriptorContent:
+          f.descriptor() + f.descriptor(f.second.encoded) + (role === 'sp' ? f.consumer : ''),
+      }),
+      f.status(role, { signing_certificate_x509: [f.second.encoded, f.first.encoded] }),
+      f.profile,
+      role,
+    );
+    assert.deepEqual(rotated.certificates, [f.first.pem, f.second.pem]);
+  }
+});
+
+test('Missing, disabled, withdrawn, foreign and malformed registry state cannot authorize signed metadata', async () => {
+  const f = await registry(),
+    xml = f.xml('idp');
+  for (const change of [
+    { entity_id: f.entity },
+    { entity_id: undefined },
+    { _deleted: 'Y' },
+    { _disabled: 'Y' },
+    { _disabled: undefined },
+    { _deleted: false },
+    { delete_date: undefined },
+    { delete_date: '' },
+    { delete_date: '2026-01-01' },
+    { signing_certificate_x509: [] },
+    { signing_certificate_x509: undefined },
+    { signing_certificate_x509: [f.first.encoded, f.first.encoded] },
+    { signing_certificate_x509: [f.second.encoded] },
+    { signing_certificate_x509: [f.ec.encoded] },
+    { signing_certificate_x509: [f.weak.encoded] },
+    { signing_certificate_x509: ['not-a-certificate'] },
+    { signing_certificate_x509: [null] },
+    { signing_certificate_x509: ['x'.repeat(16385)] },
+    { signing_certificate_x509: ['YWJj'] },
+    { signing_certificate_x509: [f.first.encoded + 'AAAA'] },
+    { signing_certificate_x509: Array(9).fill(f.first.encoded) },
+    Object.fromEntries(Array.from({ length: 65 }, (_, index) => ['extra' + index, 'x'])),
+  ])
+    assert.throws(
+      () => verifySamlRegistryDocument(xml, f.status('idp', change), f.profile, 'idp'),
+      { code: 'EK_EID_FEDERATION' },
+    );
+  for (const status of ['', '{', 'null', '[]', '\ud800', 'x'.repeat(65537), {}])
+    assert.throws(() => verifySamlRegistryDocument(xml, status as string, f.profile, 'idp'), {
+      code: 'EK_EID_FEDERATION',
+    });
+  assert.throws(
+    () =>
+      verifySamlRegistryDocument(
+        f.xml('idp', { key: foreign.privateKey }),
+        f.status('idp'),
+        f.profile,
+        'idp',
+      ),
+    { code: 'EK_EID_FEDERATION' },
+  );
+  const wrongAuthority = {
+    ...f.profile,
+    metadata: {
+      ...f.profile.metadata,
+      trustAnchors: f.profile.metadata.trustAnchors.map((anchor) => ({
+        ...anchor,
+        issuer: 'https://foreign.example.test',
+      })),
+    },
+  };
+  assert.throws(() => verifySamlRegistryDocument(xml, f.status('idp'), wrongAuthority, 'idp'), {
+    code: 'EK_EID_FEDERATION',
+  });
+});
+
+test('Signed metadata must bind exact signing keys, explicit request signatures and the registered POST ACS', async () => {
+  const f = await registry();
+  for (const content of [
+    '',
+    f.descriptor(f.ec.encoded),
+    f.descriptor() + f.descriptor(),
+    f.descriptor().replace('use="signing"', 'use="unknown"'),
+    f.descriptor().replace('use="signing"', 'use="encryption"'),
+    f.descriptor().replace('</ds:X509Certificate>', '<ds:Other/></ds:X509Certificate>'),
+    f.descriptor().replace(f.first.encoded, ''),
+    Array(9).fill(f.descriptor()).join(''),
+  ])
+    assert.throws(
+      () =>
+        verifySamlRegistryDocument(
+          f.xml('idp', { descriptorContent: content }),
+          f.status('idp'),
+          f.profile,
+          'idp',
+        ),
+      { code: 'EK_EID_FEDERATION' },
+    );
+  for (const role of ['idp', 'sp'] as const)
+    assert.throws(
+      () =>
+        verifySamlRegistryDocument(
+          f.xml(role, { descriptorAttributes: '' }),
+          f.status(role),
+          f.profile,
+          role,
+        ),
+      { code: 'EK_EID_FEDERATION' },
+    );
+  for (const consumer of [
+    '',
+    f.consumer.replace(f.profile.redirectUri, 'https://foreign.example.test/acs'),
+    f.consumer.replace('index="0"', 'index="1"'),
+    f.consumer.replace('index="0"', 'index="65536"'),
+    f.consumer.replace('index="0"', 'index="invalid"'),
+    f.consumer.replace('index="0"', ''),
+    f.consumer.replace('index="0"', 'index="9007199254740992"'),
+    f.consumer.replace('isDefault="true"', 'isDefault="false"'),
+    f.consumer.replace('HTTP-POST', 'HTTP-Redirect'),
+    f.consumer + f.consumer,
+    f.consumer + f.consumer.replace('index="0"', 'index="1"'),
+    Array(65).fill(f.consumer).join(''),
+  ])
+    assert.throws(
+      () =>
+        verifySamlRegistryDocument(
+          f.xml('sp', { descriptorContent: f.descriptor() + consumer }),
+          f.status('sp'),
+          f.profile,
+          'sp',
+        ),
+      { code: 'EK_EID_FEDERATION' },
+    );
+});
+
+test('Registry certificates retain native validity and optional metadata expiry never extends refresh policy', async (context) => {
+  const f = await registry(),
+    configuration = {
+      ...f.profile,
+      metadata: {
+        ...f.profile.metadata,
+        trustAnchors: f.profile.metadata.trustAnchors.map((anchor) => ({
+          ...anchor,
+          expiresAt: new Date(Date.now() + 4 * 86400000).toISOString(),
+        })),
+      },
+    },
+    xml = f.xml('idp', { expiry: new Date(Date.now() + 3 * 86400000).toISOString() }),
+    certificate = new X509Certificate(f.first.pem);
+  let now = Date.now();
+  const clock = context.mock.method(Date, 'now', () => now);
+  for (const instant of [Date.parse(certificate.validFrom) - 1, Date.parse(certificate.validTo)]) {
+    now = instant;
+    assert.throws(() => verifySamlRegistryDocument(xml, f.status('idp'), configuration, 'idp'), {
+      code: 'EK_EID_FEDERATION',
+    });
+  }
+  clock.mock.restore();
+  const optional = verifySamlRegistryDocument(
+    f.xml('idp', { expiry: null, descriptorContent: f.descriptor().replace(' use="signing"', '') }),
+    f.status('idp'),
+    f.profile,
+    'idp',
+  );
+  assert.equal(optional.validUntil, undefined);
+  assert.ok(Date.parse(optional.expiresAt) <= Date.now() + 60000);
+  for (const defaultValue of ['', ' isDefault="false"', ' isDefault="0"']) {
+    const extra = f.consumer
+      .replace('index="0"', 'index="1"')
+      .replace(' isDefault="true"', defaultValue)
+      .replace(f.profile.redirectUri, 'https://application.example.test/other-acs');
+    assert.equal(
+      verifySamlRegistryDocument(
+        f.xml('sp', { descriptorContent: f.descriptor() + f.consumer + extra }),
+        f.status('sp'),
+        f.profile,
+        'sp',
+      ).issuer,
+      f.entity,
+    );
+  }
+});
+
+test('The existing native worker verifies registry bindings and rejects signature-only or copied membership evidence', async () => {
+  const f = await registry(),
+    signatures = new FederationSamlSignatures(f.profile),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 });
+  try {
+    for (const role of ['idp', 'sp'] as const) {
+      const evidence = await runtime.run((call) =>
+        signatures.verifyRegistry(call, f.xml(role), f.status(role), role),
+      );
+      assert.equal(signatures.registryResult(evidence), evidence);
+      assert.ok(Object.isFrozen(evidence.certificates));
+      assert.throws(() => signatures.registryResult({ ...evidence }), {
+        code: 'EK_EID_FEDERATION',
+      });
+    }
+    const signature = await runtime.run((call) => signatures.verify(call, f.xml('idp'), 'idp'));
+    assert.throws(() => signatures.registryResult(signature), { code: 'EK_EID_FEDERATION' });
+    await assert.rejects(
+      () =>
+        runtime.run((call) =>
+          signatures.verifyRegistry(call, f.xml('idp'), f.status('idp', { _disabled: 'Y' }), 'idp'),
+        ),
+      { code: 'EK_EID_FEDERATION' },
+    );
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Registry composition refreshes both exact sources and never falls back after withdrawal', async () => {
+  const f = await registry(),
+    paths: string[] = [],
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 });
+  let disabled = false;
+  const transport = {
+      async samlMetadata(endpoint: string) {
+        paths.push(endpoint);
+        return f.xml(endpoint.endsWith('/sp') ? 'sp' : 'idp');
+      },
+      async samlRegistryStatus(endpoint: string) {
+        paths.push(endpoint);
+        return f.status(
+          endpoint.endsWith('/sp-status') ? 'sp' : 'idp',
+          disabled ? { _disabled: 'Y' } : {},
+        );
+      },
+    },
+    verifier = new FederationSamlRegistry(f.profile, transport),
+    foreignOwner = new FederationSamlRegistry(f.profile, transport);
+  try {
+    const evidence = await runtime.run((call) => verifier.verify(call, f.issuer, 'idp'));
+    assert.equal(verifier.result(evidence), evidence);
+    assert.throws(() => verifier.result({ ...evidence }), { code: 'EK_EID_FEDERATION' });
+    assert.throws(() => foreignOwner.result(evidence), { code: 'EK_EID_FEDERATION' });
+    disabled = true;
+    await assert.rejects(() => runtime.run((call) => verifier.verify(call, f.issuer, 'idp')), {
+      code: 'EK_EID_FEDERATION',
+    });
+    assert.deepEqual(paths, [
+      'https://registry.example.test/idp',
+      'https://registry.example.test/idp-status',
+      'https://registry.example.test/idp',
+      'https://registry.example.test/idp-status',
+    ]);
+    const before = paths.length;
+    for (const [entity, role] of [
+      [f.issuer, 'sp'],
+      [f.entity, 'idp'],
+      ['https://foreign.example.test', 'idp'],
+    ] as const)
+      await assert.rejects(() => runtime.run((call) => verifier.verify(call, entity, role)), {
+        code: 'EK_EID_FEDERATION',
+      });
+    assert.equal(paths.length, before);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Registry expiry, invalid roles and failed sources cannot create reusable membership evidence', async (context) => {
+  const f = await registry(),
+    runtime = new FederationRuntime({ maxConcurrent: 1, timeoutMs: 10000 });
+  let now = Date.now(),
+    failed = false,
+    advanced = false,
+    reads = 0;
+  context.mock.method(Date, 'now', () => now);
+  const transport = {
+      async samlMetadata() {
+        reads++;
+        if (failed) throw new Error('Private registry transport diagnostic');
+        return f.xml('idp');
+      },
+      async samlRegistryStatus() {
+        reads++;
+        if (advanced) now += 2000;
+        return f.status('idp');
+      },
+    },
+    verifier = new FederationSamlRegistry(f.profile, transport),
+    signatures = new FederationSamlSignatures(f.profile);
+  try {
+    const evidence = await runtime.run((call) => verifier.verify(call, f.issuer, 'idp'));
+    now = Date.parse(evidence.expiresAt);
+    assert.throws(() => verifier.result(evidence), { code: 'EK_EID_FEDERATION' });
+    assert.throws(() => verifier.result(null), { code: 'EK_EID_FEDERATION' });
+    now = Date.now() - 61000;
+    failed = true;
+    await assert.rejects(() => runtime.run((call) => verifier.verify(call, f.issuer, 'idp')), {
+      code: 'EK_EID_FEDERATION',
+    });
+    failed = false;
+    advanced = true;
+    const short = new FederationSamlRegistry(
+      { ...f.profile, metadata: { ...f.profile.metadata, refreshIntervalSeconds: 1 } },
+      transport,
+    );
+    await assert.rejects(() => runtime.run((call) => short.verify(call, f.issuer, 'idp')), {
+      code: 'EK_EID_FEDERATION',
+    });
+    const before = reads;
+    await assert.rejects(
+      () => runtime.run((call) => verifier.verify(call, f.issuer, 'unknown' as never)),
+      { code: 'EK_EID_FEDERATION' },
+    );
+    assert.equal(reads, before);
+    for (const status of [undefined, null, '', '\ud800', 'x'.repeat(65537)])
+      await assert.rejects(
+        () =>
+          runtime.run((call) =>
+            signatures.verifyRegistry(call, f.xml('idp'), status as string, 'idp'),
+          ),
+        { code: 'EK_EID_FEDERATION' },
+      );
+    await assert.rejects(
+      () =>
+        runtime.run((call) =>
+          signatures.verifyRegistry(call, f.xml('idp'), f.status('idp'), 'unknown' as never),
+        ),
+      { code: 'EK_EID_PROFILE' },
+    );
+    const missing = { ...f.profile, samlRegistration: { signingCertificateRef: 'certificate' } };
+    assert.throws(() => new FederationSamlRegistry(missing, transport), { code: 'EK_EID_PROFILE' });
+  } finally {
+    await runtime.close();
+  }
+});
 
 test('The actual metadata worker entry returns native signature results and fixed failure messages', async () => {
   for (const accepted of [true, false]) {
@@ -128,6 +580,86 @@ test('The actual metadata worker entry returns native signature results and fixe
     } finally {
       await worker.terminate();
     }
+  }
+});
+
+test('The actual registry worker entry preserves both current-state success and fixed rejection messages', async () => {
+  const f = await registry();
+  for (const accepted of [true, false]) {
+    const worker = new Worker(new URL('../../dist/saml-signature-worker.js', import.meta.url), {
+      workerData: {
+        xml: f.xml('idp'),
+        profile: f.profile,
+        role: 'idp',
+        status: f.status('idp', accepted ? {} : { _deleted: 'Y' }),
+      },
+      env: {
+        NODE_ENV: 'production',
+        ...(process.env.NODE_V8_COVERAGE ? { NODE_V8_COVERAGE: process.env.NODE_V8_COVERAGE } : {}),
+      },
+      stdout: true,
+      stderr: true,
+    });
+    worker.stdout.resume();
+    worker.stderr.resume();
+    try {
+      const received = once(worker, 'message'),
+        exited = once(worker, 'exit'),
+        [value] = await received;
+      if (accepted) {
+        assert.equal(value.ok, true);
+        assert.equal(value.result.issuer, f.issuer);
+        assert.deepEqual(value.result.certificates, [f.first.pem]);
+      } else assert.deepEqual(value, { ok: false });
+      assert.equal((await exited)[0], 0);
+    } finally {
+      await worker.terminate();
+    }
+  }
+});
+
+test('Observed withdrawal invalidates old receipts and prevents earlier concurrent work from restoring them', async () => {
+  const f = await registry(),
+    runtime = new FederationRuntime({ maxConcurrent: 2, timeoutMs: 10000 });
+  let reads = 0,
+    release!: () => void,
+    entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    reached = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+  const verifier = new FederationSamlRegistry(f.profile, {
+    async samlMetadata() {
+      return f.xml('idp');
+    },
+    async samlRegistryStatus() {
+      const selected = ++reads;
+      if (selected === 2) {
+        entered();
+        await held;
+      }
+      return f.status('idp', selected === 3 ? { _disabled: 'Y' } : {});
+    },
+  });
+  try {
+    const old = await runtime.run((call) => verifier.verify(call, f.issuer, 'idp'));
+    const earlier = runtime.run((call) => verifier.verify(call, f.issuer, 'idp')),
+      rejected = assert.rejects(earlier, { code: 'EK_EID_FEDERATION' });
+    await reached;
+    await assert.rejects(() => runtime.run((call) => verifier.verify(call, f.issuer, 'idp')), {
+      code: 'EK_EID_FEDERATION',
+    });
+    assert.throws(() => verifier.result(old), { code: 'EK_EID_FEDERATION' });
+    release();
+    await rejected;
+    const fresh = await runtime.run((call) => verifier.verify(call, f.issuer, 'idp'));
+    assert.equal(verifier.result(fresh), fresh);
+    assert.throws(() => verifier.result(old), { code: 'EK_EID_FEDERATION' });
+  } finally {
+    release();
+    await runtime.close();
   }
 });
 

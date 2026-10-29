@@ -5,11 +5,14 @@ import { Worker } from 'node:worker_threads';
 import type { FederationProfileV1 } from './contracts.js';
 import type { FederationCall } from './runtime.js';
 import type { verifySamlMetadataSignature } from './saml-metadata-signature.js';
+import type { verifySamlRegistryDocument } from './saml-registry-document.js';
 import { captureProfile } from './settings.js';
 import { failure } from './validation.js';
 
 type SignatureEvidence = ReturnType<typeof verifySamlMetadataSignature>;
-type VerificationMessage = { ok: true; result: SignatureEvidence } | { ok: false };
+type RegistryEvidence = ReturnType<typeof verifySamlRegistryDocument>;
+type VerificationMessage =
+  { ok: true; result: SignatureEvidence | RegistryEvidence } | { ok: false };
 
 /** The returned promise settles only after the actual native worker has terminated. */
 async function native(
@@ -17,10 +20,11 @@ async function native(
   profile: FederationProfileV1,
   role: 'idp' | 'sp',
   signal: AbortSignal,
-): Promise<SignatureEvidence> {
+  status?: string,
+): Promise<SignatureEvidence | RegistryEvidence> {
   if (signal.aborted) throw failure('EK_ABORTED');
   const worker = new Worker(new URL('./saml-signature-worker.js', import.meta.url), {
-    workerData: { xml, profile, role },
+    workerData: { xml, profile, role, ...(status === undefined ? {} : { status }) },
     env: { NODE_ENV: 'production' },
     stdout: true,
     stderr: true,
@@ -28,7 +32,7 @@ async function native(
   });
   worker.stdout.resume();
   worker.stderr.resume();
-  return new Promise<SignatureEvidence>((resolve, reject) => {
+  return new Promise<SignatureEvidence | RegistryEvidence>((resolve, reject) => {
     let settled = false,
       exited!: () => void;
     const physicalExit = new Promise<void>((resolve) => {
@@ -72,6 +76,7 @@ async function native(
 export class FederationSamlSignatures {
   private readonly profile: FederationProfileV1;
   readonly #owned = new WeakSet<SignatureEvidence>();
+  readonly #registrations = new WeakSet<RegistryEvidence>();
   constructor(profile: FederationProfileV1) {
     this.profile = captureProfile(profile, 'spid');
     if (this.profile.protocol !== 'saml2') throw failure('EK_EID_PROFILE');
@@ -90,6 +95,43 @@ export class FederationSamlSignatures {
       evidence = Object.freeze(verified);
     this.#owned.add(evidence);
     this.result(evidence);
+    return evidence;
+  }
+  async verifyRegistry(
+    call: FederationCall,
+    xml: string,
+    status: string,
+    role: 'idp' | 'sp',
+  ): Promise<RegistryEvidence> {
+    call.check();
+    if (!['idp', 'sp'].includes(role)) throw failure('EK_EID_PROFILE');
+    if (
+      typeof xml !== 'string' ||
+      !xml ||
+      typeof status !== 'string' ||
+      !status ||
+      Buffer.byteLength(xml) + Buffer.byteLength(status) >
+        Math.min(this.profile.metadata.maxBytes, 65536) ||
+      Buffer.from(xml).toString('utf8') !== xml ||
+      Buffer.from(status).toString('utf8') !== status
+    )
+      throw failure('EK_EID_FEDERATION');
+    const verified = (await call.step((options) =>
+        native(xml, this.profile, role, options.signal, status),
+      )) as RegistryEvidence,
+      evidence = Object.freeze({
+        ...verified,
+        certificates: Object.freeze([...verified.certificates]),
+      });
+    this.#owned.add(evidence);
+    this.#registrations.add(evidence);
+    this.registryResult(evidence);
+    return evidence;
+  }
+  registryResult(input: unknown): RegistryEvidence {
+    if (!this.#registrations.has(input as RegistryEvidence)) throw failure('EK_EID_FEDERATION');
+    const evidence = this.result(input) as RegistryEvidence;
+    if (Date.parse(evidence.expiresAt) <= Date.now()) throw failure('EK_EID_FEDERATION');
     return evidence;
   }
   /** Structural objects, copied results and results from another owner grant no signature authority. */

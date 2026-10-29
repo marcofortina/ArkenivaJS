@@ -4,10 +4,19 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import type { FederationProfileV1 } from './contracts.js';
 import { verifySamlMetadataSignature } from './saml-metadata-signature.js';
+import { verifySamlRegistryDocument } from './saml-registry-document.js';
 
-const input = workerData as { xml: string; profile: FederationProfileV1; role: 'idp' | 'sp' };
+const input = workerData as {
+  xml: string;
+  profile: FederationProfileV1;
+  role: 'idp' | 'sp';
+  status?: string;
+};
 try {
-  const result = verifySamlMetadataSignature(input.xml, input.profile, input.role);
+  const result =
+    input.status === undefined
+      ? verifySamlMetadataSignature(input.xml, input.profile, input.role)
+      : verifySamlRegistryDocument(input.xml, input.status, input.profile, input.role);
   parentPort!.postMessage({ ok: true, result });
 } catch {
   parentPort!.postMessage({ ok: false });

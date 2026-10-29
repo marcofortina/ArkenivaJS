@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { generateKeyPair, exportJWK, exportSPKI, exportPKCS8, SignJWT } from 'jose';
 import { SignedXml } from 'xml-crypto';
+import { X509Certificate } from 'node:crypto';
 import { FederationHttp } from '../../dist/metadata-http.js';
 
 test('Metadata transport construction rejects duplicate approvals, invalid environments and nonpositive budgets', () => {
@@ -117,8 +118,11 @@ test(
         transforms: ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', canonical],
         digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256',
       });
+      const protocolCertificate = new X509Certificate(await readFile(certificate)).raw.toString(
+        'base64',
+      );
       xmlSigner.computeSignature(
-        `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" ID="native_metadata" entityID="${subject}" validUntil="${new Date(Date.now() + 60000).toISOString()}"><md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"/></md:EntityDescriptor>`,
+        `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" ID="native_metadata" entityID="${subject}" validUntil="${new Date(Date.now() + 60000).toISOString()}"><md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol" WantAuthnRequestsSigned="true"><md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>${protocolCertificate}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor></md:IDPSSODescriptor></md:EntityDescriptor>`,
         {
           prefix: 'ds',
           location: { reference: "/*[local-name(.)='EntityDescriptor']", action: 'prepend' },
@@ -130,7 +134,7 @@ test(
         _deleted: 'N',
         _disabled: 'N',
         delete_date: null,
-        signing_certificate_x509: [],
+        signing_certificate_x509: [protocolCertificate],
       });
       let rootConfiguration = '',
         delegation = '',
