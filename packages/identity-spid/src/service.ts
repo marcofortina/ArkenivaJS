@@ -17,6 +17,8 @@ import { FederationOidcCallback } from './oidc-callback.js';
 import { FederationIdentityMapping } from './identity-mapping.js';
 import { FederationTransactions, returnPath } from './transactions.js';
 import { failure, fields, text, url } from './validation.js';
+import { recorder } from './observation.js';
+import type { Observers, Operation } from './observation.js';
 
 /** One shared admission/lifecycle owner; profile views never create independent authority. */
 export async function managed(
@@ -25,6 +27,7 @@ export async function managed(
   auth: FederationTenantVerifier,
   owner?: AbortSignal,
   ready: () => boolean = () => true,
+  observers: Observers = {},
 ) {
   if (!settings.encryptionRefs.length || !settings.macRefs.length) throw failure('EK_EID_PROFILE');
   for (const profile of settings.profiles) {
@@ -35,7 +38,8 @@ export async function managed(
       });
     if (!profile.oidcRegistration?.approvedProtocolEndpoints) throw failure('EK_EID_PROFILE');
   }
-  const runtime = new FederationRuntime(settings.policy, ready, owner),
+  const record = recorder(observers),
+    runtime = new FederationRuntime(settings.policy, ready, owner),
     transports: Array<{ metadata: FederationHttp; protocol: FederationProtocolHttp }> = [],
     instances = new Map<
       string,
@@ -51,6 +55,23 @@ export async function managed(
     >(),
     views = new Map<string, ItalianFederationService>();
   let closed: Promise<void> | undefined;
+  async function observe<T>(
+    operation: Operation,
+    work: () => Promise<T>,
+    verdict?: (result: T) => unknown,
+  ): Promise<T> {
+    let error: unknown;
+    try {
+      const result = await work();
+      error = verdict?.(result);
+      return result;
+    } catch (caught) {
+      error = caught;
+      throw caught;
+    } finally {
+      record.complete(operation, error);
+    }
+  }
   async function close(options?: OperationOptions): Promise<void> {
     return (closed ??= (async () => {
       const results = await Promise.allSettled([
@@ -103,7 +124,7 @@ export async function managed(
       const key = id ?? '';
       const cached = views.get(key);
       if (cached) return cached;
-      const service = Object.freeze<ItalianFederationService>({
+      const methods = Object.freeze<ItalianFederationService>({
         forProfile(profileId) {
           return bind(text(profileId));
         },
@@ -193,6 +214,20 @@ export async function managed(
           });
         },
       });
+      const service = Object.freeze<ItalianFederationService>({
+        ...methods,
+        beginAuthentication: (...args) =>
+          observe('begin_authentication', () => methods.beginAuthentication(...args)),
+        consumeAuthentication: (...args) =>
+          observe('consume_authentication', () => methods.consumeAuthentication(...args)),
+        metadata: () => observe('metadata', () => methods.metadata()),
+        verifyFederationTrust: (...args) =>
+          observe(
+            'verify_federation_trust',
+            () => methods.verifyFederationTrust(...args),
+            (result) => (result.trusted ? undefined : failure('EK_EID_FEDERATION')),
+          ),
+      });
       views.set(key, service);
       return service;
     };
@@ -200,28 +235,32 @@ export async function managed(
       service: bind(),
       close,
       async bootstrap() {
-        await runtime.run(
-          async (call) => {
-            for (const instance of instances.values()) {
-              await instance.transactions.probe(call);
-              await instance.rp.verify(call);
-            }
-          },
-          undefined,
-          true,
-        );
-      },
-      async health(options: OperationOptions) {
-        try {
-          await runtime.run(
+        await observe('bootstrap', () =>
+          runtime.run(
             async (call) => {
               for (const instance of instances.values()) {
                 await instance.transactions.probe(call);
                 await instance.rp.verify(call);
               }
             },
-            options,
+            undefined,
             true,
+          ),
+        );
+      },
+      async health(options: OperationOptions) {
+        try {
+          await observe('health', () =>
+            runtime.run(
+              async (call) => {
+                for (const instance of instances.values()) {
+                  await instance.transactions.probe(call);
+                  await instance.rp.verify(call);
+                }
+              },
+              options,
+              true,
+            ),
           );
           return true;
         } catch {

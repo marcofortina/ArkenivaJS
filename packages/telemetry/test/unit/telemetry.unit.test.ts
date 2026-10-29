@@ -15,6 +15,44 @@ const service = { name: 'telemetry-test', version: '1.0.0', environment: 'test' 
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
 
+test('SPID dimensions remain closed and cannot carry federation identities or provider errors', async () => {
+  const target = await receiver(),
+    telemetry = createTelemetry(options(target.endpoint));
+  try {
+    telemetry.addCounter('spid.handshakes', 1, {
+      'spid.operation': 'begin_authentication',
+      'spid.outcome': 'ok',
+    });
+    telemetry.addCounter('spid.trust.failures', 1, {
+      'spid.operation': 'verify_federation_trust',
+      'spid.outcome': 'federation',
+    });
+    for (const attributes of [
+      { 'spid.operation': 'private-profile' },
+      { 'spid.outcome': 'Private provider failure' },
+      { 'spid.subject': 'private-subject' },
+      { 'spid.issuer': 'https://private.example.test' },
+      { 'spid.tenant': 'private-tenant' },
+      { 'spid.statement': 'private-statement' },
+    ])
+      assert.throws(
+        () => telemetry.addCounter('spid.handshakes', 1, attributes),
+        code('EK_CONFIG_INVALID'),
+      );
+    assert.throws(
+      () =>
+        createTelemetry({
+          ...options(target.endpoint),
+          labelValues: { 'spid.outcome': ['Private provider failure'] },
+        }),
+      code('EK_CONFIG_INVALID'),
+    );
+  } finally {
+    await telemetry.close();
+    await target.close();
+  }
+});
+
 test('Private routing identities are restricted to routing spans and cannot become metric or configured dimensions', async () => {
   const target = await receiver(),
     telemetry = createTelemetry(options(target.endpoint));

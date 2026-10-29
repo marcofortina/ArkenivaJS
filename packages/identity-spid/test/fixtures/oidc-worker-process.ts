@@ -9,7 +9,10 @@ import { mkdtemp, rm, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-export async function runOidcWorker(mapping: boolean | 'public' = false) {
+export async function runOidcWorker(
+  mapping: boolean | 'public' = false,
+  telemetryMode: 'standard' | 'detailed' = 'detailed',
+) {
   const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-eid-callback-')),
     certificate = join(directory, 'certificate.pem'),
     privateKey = join(directory, 'key.pem');
@@ -59,6 +62,7 @@ export async function runOidcWorker(mapping: boolean | 'public' = false) {
         privateKey,
         mapping: mapping === true,
         public: mapping === 'public',
+        telemetryMode,
       });
       assert.deepEqual((await evidence)[0], {
         ok: true,

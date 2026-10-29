@@ -3,7 +3,7 @@
 
 import { APPLICATION_SIGNAL, COMPONENTS } from '@arkenivajs/core';
 import type { Plugin } from '@arkenivajs/core';
-import { PREPARE_PLUGIN, DRAIN_PLUGIN } from '@arkenivajs/core/support';
+import { PREPARE_PLUGIN, DRAIN_PLUGIN, SUPPORT_PLUGINS } from '@arkenivajs/core/support';
 import type { ComposablePlugin } from '@arkenivajs/core/support';
 import { CRYPTO_CAPABILITY } from '@arkenivajs/security-crypto';
 import type { CryptoService } from '@arkenivajs/security-crypto';
@@ -12,6 +12,8 @@ import type { FederationTenantVerifier } from './identity-mapping.js';
 import { capture } from './settings.js';
 import { managed } from './service.js';
 import { failure } from './validation.js';
+import { observations, OBSERVATION } from './observation.js';
+import type { Observers } from './observation.js';
 
 export type * from './contracts.js';
 export type { OperationOptions } from '@arkenivajs/core';
@@ -26,7 +28,8 @@ export function spidPlugin(input: ItalianEidPluginSettings): Plugin {
     id: 'spid',
     version: '0.1.0',
     capabilities: new Set(['spid']),
-    dependencies: ['security', 'crypto'],
+    [SUPPORT_PLUGINS]: [observations],
+    dependencies: ['security', 'crypto', 'spid-observation'],
     [PREPARE_PLUGIN](context) {
       prepared.set(context.options, () => context.state() === 'READY');
       return new Map();
@@ -42,6 +45,7 @@ export function spidPlugin(input: ItalianEidPluginSettings): Plugin {
           context.require<FederationTenantVerifier>(COMPONENTS.auth),
           context.require<AbortSignal>(APPLICATION_SIGNAL),
           ready,
+          context.require<Observers>(OBSERVATION),
         );
       instances.set(context, instance);
       try {

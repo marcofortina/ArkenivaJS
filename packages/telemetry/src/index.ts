@@ -116,6 +116,8 @@ const labels = new Set([
   'scim.outcome',
   'saml.operation',
   'saml.outcome',
+  'spid.operation',
+  'spid.outcome',
   'realtime.protocol',
   'realtime.reason',
   'proxy.outcome',
@@ -179,6 +181,25 @@ const labels = new Set([
   'operation',
 ]);
 const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
+  'spid.operation': [
+    'begin_authentication',
+    'consume_authentication',
+    'metadata',
+    'verify_federation_trust',
+    'health',
+    'bootstrap',
+  ],
+  'spid.outcome': [
+    'ok',
+    'federation',
+    'assurance',
+    'configuration',
+    'closed',
+    'not_ready',
+    'cancelled',
+    'timeout',
+    'unavailable',
+  ],
   'routing.kind': ['handler', 'http', 'discovery', 'unselected'],
   'routing.outcome': ['ok', 'rejected', 'error', 'timeout', 'aborted'],
   'routing.match': ['matched', 'unmatched'],
@@ -412,6 +433,8 @@ const units: Record<string, string> = {
   'realtime.disconnects': '{connection}',
   'magiclink.operations': '{operation}',
   'saml.operations': '{operation}',
+  'spid.handshakes': '{handshake}',
+  'spid.trust.failures': '{failure}',
   'scim.operations': '{operation}',
   'scim.operation.duration.ms': 'ms',
   'scim.operations.active': '{operation}',
@@ -626,6 +649,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     if (
       !labels.has(key) ||
       key.startsWith('routing.') ||
+      key.startsWith('spid.') ||
       !Array.isArray(values) ||
       !values.length ||
       values.length > 128 ||

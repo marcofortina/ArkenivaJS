@@ -1580,6 +1580,9 @@ importers:
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../security
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       '@types/validator':
         specifier: 13.15.10
         version: 13.15.10
