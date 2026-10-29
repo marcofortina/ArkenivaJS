@@ -115,7 +115,8 @@ export function method<T>(value: unknown, key: PropertyKey, required = true): T 
         types.isProxy(descriptor.value)
       )
         throw failure();
-      return descriptor.value.bind(value) as T;
+      const callback = descriptor.value;
+      return ((...args: unknown[]) => Reflect.apply(callback, value, args)) as T;
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
