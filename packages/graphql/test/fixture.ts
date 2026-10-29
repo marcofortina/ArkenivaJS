@@ -70,6 +70,7 @@ export async function fixture(
     port?: number;
     telemetry?: ApplicationOptions['telemetry'];
     metering?: ApplicationOptions['metering'];
+    authorizeTenant?: (tenantId: string) => boolean;
   } = {},
 ) {
   const pair = await generateKeyPair('ES256'),
@@ -143,7 +144,16 @@ export async function fixture(
         : {}),
       plugins: [
         loggingPlugin({ destination: sink }),
-        ...(authenticated ? [securityPlugin({ allowInsecureLoopback: true })] : []),
+        ...(authenticated
+          ? [
+              securityPlugin({
+                allowInsecureLoopback: true,
+                ...(options.authorizeTenant
+                  ? { authorizeTenant: (_identity, tenantId) => options.authorizeTenant!(tenantId) }
+                  : {}),
+              }),
+            ]
+          : []),
         apiPlugin({
           dependencies: [
             ...(authenticated ? ['security'] : []),

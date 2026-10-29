@@ -138,3 +138,18 @@ test('Close and late failed callbacks settle each owned write once without expos
   assert.equal(w.notices.length, 0);
   for (const error of errors) assert.doesNotMatch(error.message, /Private|driver detail/);
 });
+
+test('Long native write deadlines preserve queued ownership without overflowing the Node timer delay', async () => {
+  const w = wire({ timeoutMs: 2147483648 });
+  let complete = 0;
+  w.socket.send('{"type":"connection_ack"}', (error) => {
+    assert.equal(error, undefined);
+    complete++;
+  });
+  await delay(20);
+  assert.equal(w.terminations(), 0);
+  assert.equal(w.egress.stats().pendingWrites, 1);
+  w.callbacks[0]!();
+  assert.equal(complete, 1);
+  assert.equal(w.egress.stats().pendingWrites, 0);
+});
