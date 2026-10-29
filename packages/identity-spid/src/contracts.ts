@@ -36,6 +36,8 @@ export interface FederationOidcRegistration {
   readonly idTokenEncryption?: FederationEncryptionPolicy;
   readonly userInfoEncryption: FederationEncryptionPolicy;
   readonly requestedClaims: readonly string[];
+  /** Exact approved token, UserInfo and JWK-set URLs for credential-bearing protocol operations. */
+  readonly approvedProtocolEndpoints?: readonly string[];
 }
 export interface FederationTrustAnchor {
   readonly kid: string;

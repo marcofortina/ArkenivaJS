@@ -24,4 +24,13 @@ const wrong: FederationOidcRegistration = {
   // @ts-expect-error Requested claim catalogs contain names, not arbitrary application objects.
   requestedClaims: [123],
 };
-void [configured, encrypted, invalid, wrong];
+const network: FederationOidcRegistration = {
+  ...registration,
+  approvedProtocolEndpoints: ['https://idp.example.test/token'],
+};
+const invalidNetwork: FederationOidcRegistration = {
+  ...registration,
+  // @ts-expect-error Protocol destination catalogs contain explicit HTTPS URL strings.
+  approvedProtocolEndpoints: [123],
+};
+void [configured, encrypted, invalid, wrong, network, invalidNetwork];

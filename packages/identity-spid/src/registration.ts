@@ -67,6 +67,7 @@ export function captureRegistration(
         'idTokenEncryption',
         'userInfoEncryption',
         'requestedClaims',
+        'approvedProtocolEndpoints',
       ]),
       organization = fields(value.organization, [
         'organizationName',
@@ -128,6 +129,11 @@ export function captureRegistration(
         : { idTokenEncryption: encryption(value.idTokenEncryption) }),
       userInfoEncryption: encryption(value.userInfoEncryption),
       requestedClaims,
+      ...(value.approvedProtocolEndpoints === undefined
+        ? {}
+        : {
+            approvedProtocolEndpoints: strings(value.approvedProtocolEndpoints, url),
+          }),
     });
     if (Buffer.byteLength(JSON.stringify(result)) > maxBytes) throw failure();
     return result;
