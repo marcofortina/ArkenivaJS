@@ -594,3 +594,81 @@ test('Unverified subject proxy input is rejected without invoking traps or the i
   assert.equal(traps, 0);
   assert.equal(resolutions, 0);
 });
+
+test('Operation options reject executable properties and unbranded cancellation before any work', async () => {
+  const f = fixture(),
+    runtime = createTotpRuntime(f.options);
+  let traps = 0,
+    work = 0;
+  const handler: ProxyHandler<object> = {
+    get(target, name, receiver) {
+      traps++;
+      return Reflect.get(target, name, receiver) as unknown;
+    },
+    getPrototypeOf(target) {
+      traps++;
+      return Reflect.getPrototypeOf(target);
+    },
+    getOwnPropertyDescriptor(target, name) {
+      traps++;
+      return Reflect.getOwnPropertyDescriptor(target, name);
+    },
+    ownKeys(target) {
+      traps++;
+      return Reflect.ownKeys(target);
+    },
+  };
+  const shadowed = new AbortController().signal;
+  Object.defineProperty(shadowed, 'aborted', {
+    get() {
+      traps++;
+      return false;
+    },
+  });
+  const inherited = new AbortController().signal;
+  Object.setPrototypeOf(inherited, new Proxy(AbortSignal.prototype, handler));
+  const revoked = Proxy.revocable(new AbortController().signal, handler);
+  revoked.revoke();
+  for (const options of [
+    null,
+    { unknown: true },
+    new Proxy({}, handler),
+    Object.defineProperty({}, 'timeoutMs', {
+      get() {
+        traps++;
+        return 30000;
+      },
+    }),
+    Object.defineProperty({}, 'signal', {
+      get() {
+        traps++;
+        return new AbortController().signal;
+      },
+    }),
+    { signal: {} },
+    { signal: Object.create(AbortSignal.prototype) },
+    { signal: new Proxy(new AbortController().signal, handler) },
+    { signal: revoked.proxy },
+    { signal: shadowed },
+    { signal: inherited },
+  ]) {
+    await assert.rejects(
+      runtime.run(options as never, async () => {
+        work++;
+      }),
+      hasCode('EK_MFA_POLICY'),
+    );
+    assert.equal(traps, 0, 'Executable option metadata must not run');
+    assert.equal(work, 0, 'Invalid operation options must not reach authority or storage');
+  }
+  const controller = new AbortController();
+  await runtime
+    .run({ signal: controller.signal, timeoutMs: 1000 }, async (call) => {
+      assert.notEqual(call.options.signal, controller.signal);
+      controller.abort();
+      assert.equal(call.options.signal!.aborted, true);
+    })
+    .catch((error) => {
+      assert.ok(hasCode('EK_ABORTED')(error));
+    });
+});

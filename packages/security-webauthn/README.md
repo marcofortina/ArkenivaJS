@@ -79,6 +79,9 @@ installed by this package; the application supplies and owns its providers.
 
 - Challenge TTL defaults to 300,000 ms; accepted integer range is 1..300,000.
 - Calls default to 30,000 ms; explicit timeouts are integer milliseconds 1..120,000.
+- Operation options must use data properties and a genuine native `AbortSignal`
+  without shadowed lifecycle hooks. Accessors, Proxy wrappers and structural
+  cancellation lookalikes fail with `EK_MFA_POLICY` before ceremony work.
 - Thirty-two service operations and eight native verifications may be in flight per
   instance. Excess work is rejected immediately. Pending work retains its slot until
   it actually settles, including after caller timeout.
