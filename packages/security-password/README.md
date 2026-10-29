@@ -33,6 +33,11 @@ require `secretProvider`, `resetHmacKeyRef`, `authority`, explicit `policy`,
 Providers explicitly marked test-only are rejected outside the test environment.
 A production label does not prove a provider secure.
 
+Configured methods retain their original receiver and implementation. Callable
+`bind`, `name` and `length` properties are never evaluated. Proxy providers or
+callbacks, accessors and prototype traversal beyond 32 levels fail configuration
+validation; later method replacement does not change captured providers.
+
 `resetCommitter.commitReset` is mandatory. This typed completion supplies the
 atomic persistence already required by reset semantics: the exact live reset
 version must be consumed, the account's password replaced and its prescribed
