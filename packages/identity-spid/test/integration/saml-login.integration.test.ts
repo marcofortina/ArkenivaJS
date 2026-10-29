@@ -10,8 +10,99 @@ import {
 import { samlLoginFixture } from '../fixtures/saml-login.js';
 import { closeRegistryFixture } from '../fixtures/saml-metadata.js';
 import { FederationTransactions } from '../../dist/transactions.js';
+import { FederationSamlLogin } from '../../dist/saml-login.js';
+import { samlResponse } from '../fixtures/saml-response.js';
 
 after(closeRegistryFixture);
+
+test(
+  'Actual signed SPID SAML callback has one identity winner across independent PostgreSQL pools',
+  { timeout: 30000 },
+  async () => {
+    const backend = await securityStateFixture(),
+      peer = await independentSecurityStatePeer(backend.schema),
+      f = await samlLoginFixture({
+        store: backend.store,
+        securityLevel: 'test-only',
+        operationTimeoutMs: 5000,
+      });
+    try {
+      const other = new FederationSamlLogin(
+          { ...f.settings, stateStore: { ...f.settings.stateStore, store: peer.store } },
+          f.document.profile.profileId,
+          f.transport,
+          f.crypto,
+        ),
+        login = await f.runtime.run((call) => f.login.begin(call, f.input)),
+        response = samlResponse(f, login),
+        outcomes = await Promise.allSettled(
+          Array.from({ length: 8 }, (_, index) =>
+            f.runtime.run((call) => (index % 2 ? other : f.login).consume(call, response)),
+          ),
+        ),
+        winners = outcomes.filter((result) => result.status === 'fulfilled');
+      assert.equal(winners.length, 1);
+      assert.equal(winners[0]!.value.returnPath, f.input.returnPath);
+      assert.equal(winners[0]!.value.tenantHint, f.input.tenantHint);
+      assert.equal(winners[0]!.value.subject, 'synthetic-transient-subject');
+      await assert.rejects(() => f.runtime.run((call) => other.consume(call, response)), {
+        code: 'EK_EID_FEDERATION',
+      });
+      const persisted = await peer.app.sql.query<{ count: number }>('main', {
+        text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_records WHERE namespace LIKE :kind`,
+        bindings: { kind: '%:sessions' },
+      });
+      assert.equal(persisted.rows[0]!.count, 1);
+    } finally {
+      await f.close();
+      await peer.close();
+      await backend.close();
+    }
+  },
+);
+
+test(
+  'A lost actual PostgreSQL SAML session acknowledgement returns no identity and denies retry',
+  { timeout: 30000 },
+  async () => {
+    const backend = await securityStateFixture();
+    let writes = 0;
+    const f = await samlLoginFixture({
+      store: {
+        ...backend.store,
+        async compareAndSet(...args) {
+          const receipt = await backend.store.compareAndSet(...args);
+          if (args[0].endsWith(':sessions') && receipt.committed) {
+            writes++;
+            throw new Error('The disposable session acknowledgement was lost');
+          }
+          return receipt;
+        },
+      },
+      securityLevel: 'test-only',
+      operationTimeoutMs: 5000,
+    });
+    try {
+      const login = await f.runtime.run((call) => f.login.begin(call, f.input)),
+        response = samlResponse(f, login);
+      await assert.rejects(() => f.runtime.run((call) => f.login.consume(call, response)), {
+        code: 'EK_BACKEND_UNAVAILABLE',
+      });
+      assert.equal(writes, 1);
+      await assert.rejects(() => f.runtime.run((call) => f.login.consume(call, response)), {
+        code: 'EK_EID_FEDERATION',
+      });
+      const persisted = await backend.app.sql.query<{ count: number }>('main', {
+        text: `SELECT count(*)::integer AS count FROM ${backend.schema}.security_records WHERE namespace LIKE :kind`,
+        bindings: { kind: '%:sessions' },
+      });
+      assert.equal(persisted.rows[0]!.count, 1);
+    } finally {
+      await f.close();
+      await backend.close();
+    }
+  },
+);
 
 test(
   'Native signed SPID login persists private correlation and has one winner through separate PostgreSQL pools',

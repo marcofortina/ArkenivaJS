@@ -29,8 +29,14 @@ the encrypted eID payload. The signed RelayState is preserved exactly. OIDC
 transactions reject the SAML correlation field.
 Internal Redirect initiation reuses the native SAML adapter and checks each loaded
 SP certificate against current RP registration, including rotation between reads.
-The public service continues to reject SAML profiles until response verification
-and canonical identity mapping are integrated.
+Internal POST acceptance consumes the encrypted transaction before native assertion
+verification and requires the exact native RelayState, selected issuer and requested
+assurance. Fresh RP and IdP checks surround native verification and subsequent
+canonical mapping. Only this protocol owner's live evidence can enter the same
+AuthService tenant and authority checks used by OIDC; reconstructed objects confer
+no authority. Private return paths and tenant hints come only from protected state.
+The public service continues to reject SAML profiles until browser POST ACS binding
+and public service composition are integrated and verified.
 
 Optional SPID OIDC federation plugin using the existing HTTP, Crypto and security services, JOSE and OpenID Client. It verifies both relying-party and provider participation before returning a login or canonical identity. SAML profiles currently fail with `EK_UNSUPPORTED_CAPABILITY`; SAML integration remains incomplete. Local technical tests do not establish official interoperability, accreditation or production certification.
 
