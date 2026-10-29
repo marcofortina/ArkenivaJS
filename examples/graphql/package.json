@@ -9,14 +9,16 @@
     "test": "node --test dist-test/*.test.js"
   },
   "dependencies": {
-    "@arkenivajs/core": "workspace:*",
     "@arkenivajs/api": "workspace:*",
+    "@arkenivajs/core": "workspace:*",
     "@arkenivajs/graphql": "workspace:*",
-    "@arkenivajs/security": "workspace:*",
-    "@arkenivajs/logging": "workspace:*"
+    "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/security": "workspace:*"
   },
   "devDependencies": {
-    "jose": "6.2.13"
+    "@types/ws": "8.18.2",
+    "jose": "6.2.13",
+    "ws": "8.22.0"
   },
   "license": "AGPL-3.0-or-later"
 }

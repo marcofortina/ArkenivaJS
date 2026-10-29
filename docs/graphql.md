@@ -90,6 +90,11 @@ Transport health does not certify broker connectivity; inspect its owning
 plugin separately. Delivery is best effort without separately configured backend
 durability, and an uncertain publication must not be replayed automatically.
 
+The [executable subscription example](../examples/graphql/README.md) demonstrates
+the authenticated wire exchange, mutation-triggered events, tenant isolation and
+iterator retirement through independently installed public package artifacts.
+Its explicitly local test provider does not establish distributed durability.
+
 See the [package reference](../packages/graphql/README.md) for exact contracts
 and the isolated production integration command. Federation, remote SDL,
 automatic database exposure and GraphQL file uploads are outside the approved

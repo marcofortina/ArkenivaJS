@@ -16,7 +16,7 @@ node scripts/check-packed-examples.mjs --example graphql
 ```
 
 The last command installs real framework archives in a private temporary
-consumer, recompiles the example and executes both tests through public exports.
+consumer, recompiles the example and executes all three tests through public exports.
 No database, container engine, external identity provider or environment values
 are required. Temporary keys, files and listeners close in `finally`; bearer
 assertions and private keys are never printed.
@@ -39,4 +39,42 @@ enabled by the fixture. Deploy approved HTTPS identity and shared business
 storage while retaining verified tenant predicates, per-field permissions and
 cancel propagation. Register routes before startup and always await `app.stop()`.
 See the [GraphQL guide](../../docs/graphql.md) for limits and operational policy.
-Subscriptions stay disabled in this application.
+Subscriptions are disabled unless `createGraphqlExample()` receives explicit
+`subscriptions` settings. The subscription test supplies a bounded local provider
+with `distribution: 'process'` and `securityLevel: 'test-only'`. It verifies every
+publish and subscribe against the actual application's `AuthService`; copying a
+tenant object cannot create trusted provenance. This memory fixture is unsuitable
+for production or cross-pod delivery.
+
+With subscriptions enabled, connect a certificate-verified WSS client to
+`/graphql` using the exact `graphql-transport-ws` subprotocol and the configured
+browser origin. Send `{"type":"connection_init","payload":{"authorization":"Bearer ..."}}`
+and wait for `connection_ack` before sending an operation:
+
+```json
+{
+  "type": "subscribe",
+  "id": "counter",
+  "payload": {
+    "query": "subscription { counterChanged(tenantHint: \"tenant-b\") }"
+  }
+}
+```
+
+The hint is deliberately ignored. An authorized tenant-a `mutation { increment }`
+returns `{"data":{"increment":1}}` and delivers
+`{"type":"next","id":"counter","payload":{"data":{"counterChanged":1}}}`
+only to tenant-a subscribers. Tenant-b receives its own event after its own
+mutation. Answer protocol `ping` messages with `pong`; heartbeat responses do not
+replace identity revalidation. Disconnect returns the owned iterator, and
+application shutdown retires all remaining iterators before the fixture closes
+its provider.
+
+The demonstration counter update and publication are separate operations. A
+publication error can occur after the counter changes; never blindly retry the
+mutation. A real application must choose its own transactional/outbox and delivery
+guarantees. For production, supply an independently reviewed shared provider with
+explicit shared/production classification and real tenant enforcement. Labels
+cannot turn this local fixture into a shared broker. See the
+[package reference](../../packages/graphql/README.md) for production policy and
+native mTLS NATS interoperability checks.

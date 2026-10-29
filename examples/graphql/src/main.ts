@@ -5,7 +5,7 @@ import { createApplication } from '@arkenivajs/core';
 import type { ApplicationOptions } from '@arkenivajs/core';
 import { apiPlugin } from '@arkenivajs/api';
 import { graphqlPlugin, GRAPHQL_CAPABILITY } from '@arkenivajs/graphql';
-import type { GraphqlService } from '@arkenivajs/graphql';
+import type { GraphqlService, GraphqlSubscriptionSettings } from '@arkenivajs/graphql';
 import { securityPlugin } from '@arkenivajs/security';
 import { loggingPlugin } from '@arkenivajs/logging';
 import type { Writable } from 'node:stream';
@@ -18,6 +18,7 @@ export async function createGraphqlExample(options: {
   readonly audience: string;
   readonly allowInsecureLoopback?: boolean;
   readonly destination?: Writable;
+  readonly subscriptions?: GraphqlSubscriptionSettings;
 }) {
   const counters = new Map([
     ['tenant-a', 0],
@@ -41,6 +42,7 @@ export async function createGraphqlExample(options: {
           type Customer { id: ID! label: String! privateNote: String }
           type Query { tenant: String! counter: Int! customer(id: ID!): Customer }
           type Mutation { increment: Int! }
+          ${options.subscriptions ? 'type Subscription { counterChanged(tenantHint: String): Int! }' : ''}
         `,
         resolvers: {
           Query: {
@@ -64,14 +66,31 @@ export async function createGraphqlExample(options: {
             },
           },
           Mutation: {
-            increment: (_parent, _args, context) => {
+            increment: async (_parent, _args, context) => {
               const tenant = context.auth!.tenantId,
                 next = counters.get(tenant)! + 1;
               counters.set(tenant, next);
+              await options.subscriptions?.pubsub.publish('counter', next, context.auth!, {
+                signal: context.signal,
+              });
               return next;
             },
           },
+          ...(options.subscriptions
+            ? {
+                Subscription: {
+                  counterChanged: {
+                    subscribe: (_parent, _args, context) =>
+                      options.subscriptions!.pubsub.subscribe('counter', context.auth!, {
+                        signal: context.signal,
+                      }),
+                    resolve: (value) => value,
+                  },
+                },
+              }
+            : {}),
         },
+        ...(options.subscriptions ? { subscriptions: options.subscriptions } : {}),
         security: {
           auth: { required: true, scopes: ['example:read'] },
           authorizeField: ({ context, field }) =>
