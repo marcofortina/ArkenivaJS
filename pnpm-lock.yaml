@@ -1411,6 +1411,9 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../core
+      '@fastify/websocket':
+        specifier: 11.3.4
+        version: 11.3.4
       fastify:
         specifier: 5.12.7
         version: 5.12.7
@@ -1442,6 +1445,9 @@ importers:
       '@arkenivajs/metering':
         specifier: workspace:*
         version: link:../metering
+      '@arkenivajs/realtime':
+        specifier: workspace:*
+        version: link:../realtime
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../security

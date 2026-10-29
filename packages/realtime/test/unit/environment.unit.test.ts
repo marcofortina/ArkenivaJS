@@ -8,7 +8,7 @@ import { PREPARE_PLUGIN } from '@arkenivajs/core/support';
 import type { ComposablePlugin } from '@arkenivajs/core/support';
 import { realtimePlugin } from '../../dist/index.js';
 
-test('Production and development reject explicitly test-only realtime providers before acquiring transport capabilities', () => {
+test('Production and development reject explicitly test-only realtime providers before acquiring transport capabilities', async () => {
   for (const environment of ['production', 'development'] as const)
     for (const component of ['source', 'authority'] as const) {
       const settings = {
@@ -52,7 +52,7 @@ test('Production and development reject explicitly test-only realtime providers 
           throw new Error('Transport acquisition must not run');
         },
       } as unknown as PluginContext;
-      assert.throws(() => plugin.init(context), { code: 'EK_CONFIG_INVALID' });
+      await assert.rejects(async () => plugin.init(context), { code: 'EK_CONFIG_INVALID' });
       assert.equal(acquired, 0);
     }
 });
