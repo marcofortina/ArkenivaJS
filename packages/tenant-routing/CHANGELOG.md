@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Enforce real HTTP, root-owned file and PostgreSQL registry integrations in the existing main-only CI matrices with owned disposable filesystem cleanup.
 - Provide the installed offline registry validator with bounded private-file checks, strict deployment options and sanitized exit codes.
 - Add opt-in schema-validated supplementary routing event batches with fixed queue bounds, physical exporter ownership, explicit quality/drop reporting and a separate public schema module.
 - Correlate verified tenant HTTP and logical usage sessions, retain physical accounting after timeout, and observe distinct upstream quantities without changing metering event v1.
