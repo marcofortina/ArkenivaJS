@@ -8,6 +8,8 @@
 
 ## 0.1.0
 
+- Admit only fixed SPID operation/outcome dimensions and the required handshake/trust-failure counter units; reject private federation labels and arbitrary outcome values.
+
 - Add fixed routing metric categories and narrowly scoped private routing-span identities while rejecting those identities from every metric path.
 - Export messaging publication, subscription, health and processing durations in seconds with explicit buckets.
 

@@ -4,8 +4,9 @@
 import { test } from 'node:test';
 import { runOidcWorker } from '../fixtures/oidc-worker-process.js';
 
-test(
-  'Public application SPID OIDC verifies real federation, canonical identity, profile isolation and lifecycle',
-  { timeout: 30000 },
-  () => runOidcWorker('public'),
-);
+for (const mode of ['standard', 'detailed'] as const)
+  test(
+    `Public application SPID OIDC verifies federation, canonical identity, lifecycle and private ${mode} SDK observations`,
+    { timeout: 30000 },
+    () => runOidcWorker('public', mode),
+  );

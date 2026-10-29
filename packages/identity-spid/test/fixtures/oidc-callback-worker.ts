@@ -45,7 +45,13 @@ type Mode =
   | 'wrong-info-encryption';
 process.once(
   'message',
-  (input: { certificate: string; privateKey: string; mapping?: boolean; public?: boolean }) => {
+  (input: {
+    certificate: string;
+    privateKey: string;
+    mapping?: boolean;
+    public?: boolean;
+    telemetryMode?: 'standard' | 'detailed';
+  }) => {
     void (input.public ? runPublicOidc(input) : run(input)).then(
       (result) => {
         process.send?.({

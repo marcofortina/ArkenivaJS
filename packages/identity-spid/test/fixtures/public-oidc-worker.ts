@@ -4,6 +4,8 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { createServer } from 'node:https';
+import { createServer as createCollector } from 'node:http';
+import { Writable } from 'node:stream';
 import { readFile } from 'node:fs/promises';
 import {
   generateKeyPair,
@@ -21,13 +23,31 @@ import { HEALTH_PROBES } from '@arkenivajs/core/support';
 import type { PluginHealthProbe } from '@arkenivajs/core/support';
 import { securityPlugin } from '@arkenivajs/security';
 import { loggingPlugin } from '@arkenivajs/logging';
+import { telemetryPlugin } from '@arkenivajs/telemetry';
 import type { ManagedAuthService } from '@arkenivajs/security';
 import { cryptoPlugin } from '@arkenivajs/security-crypto';
 import { spidPlugin, SPID_CAPABILITY } from '../../dist/index.js';
 import type { ItalianEidPluginSettings, SpidService } from '../../dist/index.js';
 import { transactionFixture } from './transactions.js';
 
-export async function runPublicOidc(files: { certificate: string; privateKey: string }) {
+interface MetricPoint {
+  readonly attributes: readonly { key: string; value: { stringValue?: string } }[];
+  readonly asDouble?: number;
+  readonly asInt?: string;
+}
+interface Metric {
+  readonly name: string;
+  readonly sum?: { dataPoints: readonly MetricPoint[] };
+}
+interface Envelope {
+  readonly resourceMetrics?: readonly { scopeMetrics: readonly { metrics: readonly Metric[] }[] }[];
+}
+
+export async function runPublicOidc(files: {
+  certificate: string;
+  privateKey: string;
+  telemetryMode?: 'standard' | 'detailed';
+}) {
   const base = await transactionFixture(),
     rootPair = await generateKeyPair('ES256'),
     opPair = await generateKeyPair('ES256'),
@@ -61,7 +81,26 @@ export async function runPublicOidc(files: { certificate: string; privateKey: st
       use: 'sig',
     },
     decKid = await calculateJwkThumbprint(await exportJWK(decryptPair.publicKey)),
-    codes = new Map<string, { nonce: string; challenge: string; used: boolean }>();
+    codes = new Map<string, { nonce: string; challenge: string; used: boolean }>(),
+    envelopes: Envelope[] = [],
+    logs: string[] = [],
+    markers: string[] = [],
+    destination = new Writable({
+      write(chunk: Buffer, _encoding, done) {
+        logs.push(chunk.toString('utf8'));
+        done();
+      },
+    }),
+    collector = createCollector(async (request, response) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      envelopes.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Envelope);
+      response.setHeader('content-type', 'application/json');
+      response.end('{}');
+    });
+  await new Promise<void>((resolve) => collector.listen(0, '127.0.0.1', resolve));
+  const collectorAddress = collector.address();
+  assert.ok(collectorAddress && typeof collectorAddress === 'object');
   let origin = '',
     root = '',
     op = '',
@@ -447,13 +486,21 @@ export async function runPublicOidc(files: { certificate: string; privateKey: st
   });
   const app: Application = await createApplication({
     service: { name: 'public-spid-fixture', version: '1.0.0', environment: 'test' },
+    logging: { level: 'debug' },
+    telemetry: { mode: files.telemetryMode ?? 'detailed', samplingRatio: 1 },
     security: {
       issuer: origin + '/accounts',
       audience: 'api://canonical-identity',
       algorithms: ['ES256'],
     },
     plugins: [
-      loggingPlugin(),
+      loggingPlugin({ destination }),
+      telemetryPlugin({
+        endpoint: 'http://127.0.0.1:' + collectorAddress.port,
+        allowInsecureLoopback: true,
+        exportIntervalMs: 60000,
+        exportTimeoutMs: 1000,
+      }),
       securityPlugin({
         jwksUrl: origin + '/canonical-jwks',
         allowedJwksOrigins: [origin],
@@ -552,6 +599,12 @@ export async function runPublicOidc(files: { certificate: string; privateKey: st
         challenge: String(request.payload.code_challenge),
         used: false,
       });
+      markers.push(
+        code,
+        login.transactionId,
+        String(request.payload.nonce),
+        new URL(login.redirectUrl).searchParams.get('request')!,
+      );
       target.searchParams.set('code', code);
       target.searchParams.set('state', login.transactionId);
       target.searchParams.set('iss', op);
@@ -604,6 +657,61 @@ export async function runPublicOidc(files: { certificate: string; privateKey: st
       );
     assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
     assert.equal(serverFailure, undefined);
+    await app.telemetry.flush();
+    await app.logger.flush();
+    const metrics = envelopes
+      .flatMap((envelope) => envelope.resourceMetrics ?? [])
+      .flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics))
+      .filter((metric) => metric.name.startsWith('spid.'));
+    assert.deepEqual([...new Set(metrics.map((metric) => metric.name))].sort(), [
+      'spid.handshakes',
+      'spid.trust.failures',
+    ]);
+    const handshakes = metrics
+      .filter((metric) => metric.name === 'spid.handshakes')
+      .flatMap((metric) => metric.sum?.dataPoints ?? [])
+      .reduce((total, point) => total + (point.asDouble ?? Number(point.asInt ?? 0)), 0);
+    assert.equal(
+      handshakes,
+      20,
+      'Internal federation steps cannot duplicate public handshake attempts',
+    );
+    const points = metrics.flatMap((metric) => metric.sum?.dataPoints ?? []);
+    assert.ok(
+      points.some((point) =>
+        point.attributes.some(
+          (attribute) => attribute.key === 'spid.outcome' && attribute.value.stringValue === 'ok',
+        ),
+      ),
+    );
+    assert.ok(
+      points.some((point) =>
+        point.attributes.some(
+          (attribute) =>
+            attribute.key === 'spid.outcome' && attribute.value.stringValue === 'federation',
+        ),
+      ),
+    );
+    for (const point of points)
+      for (const attribute of point.attributes)
+        assert.ok(['spid.operation', 'spid.outcome'].includes(attribute.key));
+    const serialized = JSON.stringify({ envelopes, logs });
+    for (const marker of [
+      ...markers,
+      rp,
+      root,
+      op,
+      profile.profileId,
+      'tenant-A',
+      'canonical-account',
+      'upstream-subject',
+      '/private',
+      'signing-ref',
+      'oidc-decryption-ref',
+      'BEGIN PRIVATE KEY',
+      metadata,
+    ])
+      assert.equal(serialized.includes(marker), false, 'Sensitive federation data was exported');
     await app.stop();
     await assert.rejects(() => service.metadata(), { code: 'EK_RESOURCE_CLOSED' });
     return { publicFlow: true as const };
@@ -611,6 +719,9 @@ export async function runPublicOidc(files: { certificate: string; privateKey: st
     await app.stop();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    collector.closeAllConnections();
+    await new Promise<void>((resolve) => collector.close(() => resolve()));
+    destination.end();
     await base.close();
   }
 }
