@@ -95,6 +95,60 @@ test('AMQP validates timeout and signal brands before operation work begins', ()
   assert.throws(() => operation({ signal }), code('EK_CONFIG_INVALID'));
   assert.equal(calls, 0);
 });
+test('AMQP task cancellation retains owned cleanup after caller hook replacement', async () => {
+  for (const cancelled of [false, true]) {
+    const controller = new AbortController();
+    let effects = 0,
+      release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const task = new Task(
+      { signal: controller.signal },
+      new AbortController().signal,
+      () => undefined,
+      async () => {
+        await hold;
+        return true;
+      },
+    );
+    Object.defineProperty(controller.signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+    try {
+      if (cancelled) {
+        controller.abort();
+        await assert.rejects(task.result, code('EK_ABORTED'));
+      }
+      release();
+      if (!cancelled) assert.equal(await task.result, true);
+      await task.done;
+      assert.equal(effects, 0);
+    } finally {
+      release();
+      await task.done;
+    }
+  }
+});
+test('AMQP rejects proxy operation controls and excessive signal prototype traversal without evaluating traps', () => {
+  let effects = 0;
+  const trap = () => {
+    effects++;
+    throw new Error('Operation control traps must not execute');
+  };
+  assert.throws(
+    () => operation(new Proxy({}, { getPrototypeOf: trap, ownKeys: trap }) as never),
+    code('EK_CONFIG_INVALID'),
+  );
+  assert.equal(effects, 0);
+  const signal = new AbortController().signal;
+  let prototype: object = AbortSignal.prototype;
+  for (let depth = 0; depth < 65; depth++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(signal, prototype);
+  assert.throws(() => operation({ signal }), code('EK_CONFIG_INVALID'));
+});
 test('An aborted submitted publication reports unknown and retains started work until actual settlement', async () => {
   let release!: () => void, entered!: () => void;
   const hold = new Promise<void>((resolve) => {

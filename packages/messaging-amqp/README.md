@@ -63,6 +63,10 @@ Shutdown stops new admission, cancels consumers, drains active handlers and clos
 owned connections. A deadline closes transport and returns an explicit error;
 already running handlers or uncooperative secret providers remain owned until
 they actually settle. A subsequent close may observe completed cleanup.
+Operation cancellation captures a native signal before admission. Later caller
+hook replacement cannot change success or abort cleanup; proxy controls, shadowed
+signal hooks and prototype traversal beyond 64 levels fail with
+`EK_CONFIG_INVALID` before native work begins.
 `native(name)` returns the actual approved SDK model as `unknown` for trusted
 application integrations, whose native operations require explicit instrumentation.
 Built-in diagnostics contain only fixed operation/outcome labels and numeric

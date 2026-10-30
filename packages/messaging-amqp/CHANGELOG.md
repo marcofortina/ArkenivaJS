@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Capture operation cancellation into owned native signals; reject proxy controls and excessive prototype depth before task admission and preserve physical settlement on abort.
 - Add the opt-in AMQPS plugin with verified TLS, secret references and bounded native recovery.
 - Complete the required typed trusted topology and publisher-routing catalog.
 - Normalize bounded header values through the pinned native codec with lossless int64 handling.
