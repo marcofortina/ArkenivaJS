@@ -8,6 +8,30 @@ const inputId = 'comparison.input.v1',
   outputId = 'comparison.output.v1',
   mappingId = 'comparison.projection.v1';
 const plain = (value) => JSON.parse(JSON.stringify(value));
+export const jsonIterations = 100;
+export const jsonWarmupIterations = 20;
+const workloads = new WeakMap();
+
+function corpus(fixture) {
+  return {
+    id: '001',
+    profile: { label: fixture.marker },
+    enabled: 'true',
+    aliases: [{ value: '007' }, { value: '008' }],
+    nullable: null,
+  };
+}
+
+function projection(fixture) {
+  return {
+    code: '001',
+    display: 'Name:' + fixture.marker,
+    active: true,
+    aliases: ['007', '008'],
+    nullable: null,
+    fallback: 'fallback',
+  };
+}
 
 export function jsonSettings() {
   const mapping = {
@@ -145,13 +169,7 @@ export function nativeJson() {
 }
 
 export function verifyJson(service, fixture) {
-  const input = {
-    id: '001',
-    profile: { label: fixture.marker },
-    enabled: 'true',
-    aliases: [{ value: '007' }, { value: '008' }],
-    nullable: null,
-  };
+  const input = corpus(fixture);
   const source = JSON.stringify(input),
     parsed = service.parse(source);
   assert.deepEqual(plain(parsed), input);
@@ -162,14 +180,7 @@ export function verifyJson(service, fixture) {
   assert.equal(invalid.valid, false);
   assert.deepEqual([...new Set(invalid.errors.map((error) => error.path))], ['/id']);
   const transformed = service.transform(parsed, mappingId);
-  const expected = {
-    code: '001',
-    display: 'Name:' + fixture.marker,
-    active: true,
-    aliases: ['007', '008'],
-    nullable: null,
-    fallback: 'fallback',
-  };
+  const expected = projection(fixture);
   assert.deepEqual(plain(transformed), expected);
   assert.equal(Object.hasOwn(transformed, 'omitted'), false);
   assert.equal(Object.hasOwn(transformed, 'nullable'), true);
@@ -194,4 +205,69 @@ export function verifyJson(service, fixture) {
     inputUnchanged: true,
     deterministicSerializationVerified: true,
   };
+}
+
+/** Keep the finite identical corpus and completed results outside the public service. */
+export function jsonWorkload(service, fixture) {
+  assert.equal(workloads.has(service), false);
+  const input = corpus(fixture),
+    source = JSON.stringify(input),
+    results = { parse: [], stringify: [], validate: [], transform: [] };
+  workloads.set(service, { input, source, results });
+  const capture = (operation, value) => {
+    assert.ok(results[operation].length < jsonIterations + jsonWarmupIterations);
+    results[operation].push(value);
+    return value;
+  };
+  return {
+    parse: () => capture('parse', service.parse(source)),
+    stringify: () => capture('stringify', service.stringify(input)),
+    validate: () => capture('validate', service.validate(input, inputId)),
+    transform: () => capture('transform', service.transform(input, mappingId)),
+  };
+}
+
+/** Reconcile every actual callback and validate all outputs after the measurement window. */
+export function completeJsonWorkload(service, { fixture, measure, records }) {
+  const state = workloads.get(service);
+  try {
+    if (!measure) {
+      assert.equal(state, undefined);
+      assert.deepEqual(records, []);
+      return { sampledOperations: 0, warmupOperations: 0, checkedResults: 0 };
+    }
+    assert.ok(state);
+    assert.deepEqual(
+      records.map((record) => record.operation),
+      Object.keys(state.results),
+    );
+    const input = corpus(fixture),
+      expected = projection(fixture);
+    assert.equal(JSON.stringify(state.input), state.source);
+    assert.deepEqual(state.input, input);
+    for (const record of records) {
+      assert.equal(record.sampleCount, jsonIterations);
+      assert.equal(record.warmupIterations, jsonWarmupIterations);
+      const results = state.results[record.operation];
+      assert.equal(results.length, record.sampleCount + record.warmupIterations);
+      for (const result of results) {
+        if (record.operation === 'stringify') assert.equal(result, state.source);
+        else if (record.operation === 'validate') {
+          assert.equal(result.valid, true);
+          assert.deepEqual(plain(result.value), input);
+          assert.deepEqual(plain(result.errors), []);
+        } else assert.deepEqual(plain(result), record.operation === 'parse' ? input : expected);
+      }
+    }
+    return {
+      sampledOperations: 4 * jsonIterations,
+      warmupOperations: 4 * jsonWarmupIterations,
+      checkedResults: 4 * (jsonIterations + jsonWarmupIterations),
+      inputUnchanged: true,
+      exactProjectionVerified: true,
+      boundedRetainedResults: true,
+    };
+  } finally {
+    workloads.delete(service);
+  }
 }

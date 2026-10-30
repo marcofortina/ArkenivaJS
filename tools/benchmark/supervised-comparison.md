@@ -6,8 +6,8 @@
 A trusted comparison definition may declare the own data property
 `superviseProcessTree:true`. The flag is captured once and applies to all four
 measured profiles. Only opt-in `--smoke` dynamically loads the Linux supervisor.
-Existing definitions and every `--verify` invocation retain the original direct
-fork and report shape. This step enables no existing adapter automatically.
+Definitions without that opt-in and every `--verify` invocation retain the original
+direct fork and report shape. Each adapter documents its explicitly enabled scope.
 
 For opt-in measurements, each row appends `processTreeResource` while `resource`
 continues to describe the original measured-window worker observations. The separate

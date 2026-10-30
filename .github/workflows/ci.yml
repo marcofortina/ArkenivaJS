@@ -44,6 +44,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test
       - name: Verify opt-in native descendant resource accounting
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:supervised
+      - name: Verify measured JSON operations and complete result accounting
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:json
+        env:
+          ARKENIVA_BENCHMARK_DISPOSABLE: '1'
       - name: Verify bounded SMTP acceptance and independent MIME receipts
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:mail
         env:

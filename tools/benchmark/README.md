@@ -135,7 +135,9 @@ The [XML interoperability verification](xml.md) checks ordered mixed content,
 namespace prefixes, native writer roundtrips and actual SDK privacy.
 
 The [JSON workflow verification](json.md) checks native schemas, actual declarative
-mapping semantics, deterministic serialization and missing/null distinctions.
+mapping semantics, deterministic serialization and missing/null distinctions. Its
+bounded smoke reconciles every result with retained raw latency and separately
+reports supervised whole-lifecycle resources.
 
 The [SOAP HTTPS verification](soap.md) checks actual native WSDL interoperability,
 server-observed calls, explicit TLS trust and real SDK privacy.
