@@ -103,6 +103,9 @@ mapping semantics, deterministic serialization and missing/null distinctions.
 The [SOAP HTTPS verification](soap.md) checks actual native WSDL interoperability,
 server-observed calls, explicit TLS trust and real SDK privacy.
 
+The [gRPC mTLS verification](grpc.md) checks native unary/streaming protobuf fidelity,
+independent server counts and actual framework chain/revocation checks.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
