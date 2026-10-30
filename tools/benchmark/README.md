@@ -64,6 +64,9 @@ directory lookups without claiming incomplete native child resource measurements
 The [OAuth machine-grant verification](oauth.md) checks actual HTTPS token requests,
 persisted SQL grant budgets and private SDK exports in four isolated profiles.
 
+The [XLSX verification](xlsx.md) exchanges native/public typed and styled workbooks,
+one-shot sources and awaited targets without claiming incomplete child measurements.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.
