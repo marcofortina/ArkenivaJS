@@ -200,8 +200,11 @@ jobs:
       - name: Create isolated directory credentials and TLS fixtures
         run: python3 packages/security-ldap/test/fixtures/prepare.py --github-env "$GITHUB_ENV"
       - run: pnpm --filter '@arkenivajs/example-ldap...' build
+      - run: pnpm --filter '@arkenivajs/telemetry...' build
       - name: Verify real LDAPS, STARTTLS, pagination, injection and connection ownership
         run: pnpm --filter @arkenivajs/security-ldap test:integration
+      - name: Verify four actual LDAPS comparison profiles and SDK privacy
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:ldap
       - run: pnpm --filter @arkenivajs/example-ldap test:integration
       - name: Verify the public LDAP consumer using packed artifacts
         run: pnpm test:packed:examples --integration ldap
