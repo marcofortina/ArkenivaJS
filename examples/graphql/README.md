@@ -78,3 +78,73 @@ explicit shared/production classification and real tenant enforcement. Labels
 cannot turn this local fixture into a shared broker. See the
 [package reference](../../packages/graphql/README.md) for production policy and
 native mTLS NATS interoperability checks.
+
+## Shared counter delivery with Core NATS
+
+[`SharedCounterProvider`](src/shared-counter.ts) is an application-owned adapter
+over the public `MessageBus` contract. Supply an actual authenticated
+`createNatsBus()` client and bind the provider to the example application's actual
+`AuthService` after startup. An unbound provider refuses operations. All pods use
+the same deployment-owned 24-character lowercase hexadecimal namespace, issuer
+and broker account. Keep that namespace in trusted startup configuration.
+The broker's TLS URL must use private certificate files and least-privileged
+subject permissions, as described in the [messaging example](../messaging/README.md).
+Client input never selects the broker account, namespace or tenant subject.
+
+```typescript
+import { COMPONENTS } from '@arkenivajs/core';
+import type { AuthService } from '@arkenivajs/core';
+import { createNatsBus } from '@arkenivajs/messaging';
+import { SharedCounterProvider } from './src/shared-counter.js';
+
+const provider = new SharedCounterProvider(deployment.counterNamespace);
+const bus = await createNatsBus({
+  connectionStringEnv: 'ARKENIVA_NATS_URL',
+  async onError() {
+    throw new Error('The shared counter broker failed');
+  },
+});
+// Pass provider.port in the explicit subscriptions settings of createGraphqlExample().
+// Start the application, then bind its actual authority and the owned client.
+provider.bind(example.app.resolve<AuthService>(COMPONENTS.auth), bus);
+```
+
+This wiring fragment uses the deployment and example settings described above.
+The executable fixture supplies them in full. Bind before advertising application
+readiness; a request during the startup gap fails closed. The provider checks
+`authority.tenantFrom(identity) === tenant` on every publish and subscribe.
+Namespaces use a SHA-256 digest of the verified issuer and tenant, without wire
+tenant metadata. Only nonnegative GraphQL Int counter values are accepted.
+There are at most four active sources and four buffered events per source;
+overflow terminates the affected iterator explicitly. Await `provider.ready()`
+when coordinating an initial subscription with an immediate publication. It
+confirms broker subscription setup, without asserting delivery to any browser.
+
+The adapter declares shared distribution but intentionally leaves production
+classification unset. Its default classification remains test-only. A deployment
+owner must review the actual authority, broker, credentials, TLS and permissions
+before supplying an explicitly approved production wrapper. Changing the label
+does not perform that review or enable durable messaging.
+
+With the disposable mTLS NATS fixture running, execute:
+
+```sh
+pnpm --filter @arkenivajs/example-graphql test:integration
+node scripts/check-packed-examples.mjs --integration graphql
+```
+
+Both commands require `ARKENIVA_NATS_DISPOSABLE=1` and the private
+`ARKENIVA_NATS_URL` prepared by the native NATS fixture. The test forks a second
+application process, uses actual signed identities and certificate-verified WSS,
+then proves bidirectional tenant-a delivery and tenant-b isolation. It rejects
+copied/proxy contexts, foreign topics and invalid counter values, enforces the
+source cap, cancels an opening source and checks physical broker subscription
+retirement. The packed command recompiles and runs the same case using installed
+public artifacts. CI executes it on all three supported Node lines.
+
+On shutdown, await application stop, provider close and finally bus close, using
+nested `finally` blocks so a failure cannot skip remaining cleanup. This provider
+does not own or close a bus shared by other application features. Broker delivery
+is best effort; uncertainty does not trigger publication retries. Counters remain
+independent demonstration memory in each process, even though their events cross
+process boundaries. Shared delivery does not create shared business storage.

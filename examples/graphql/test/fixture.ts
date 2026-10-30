@@ -16,7 +16,7 @@ import { createGraphqlExample } from '../dist/main.js';
 import type { GraphqlSubscriptionPubSub } from '@arkenivajs/graphql';
 
 /** Owned loopback issuer and verified TLS listener; no external identities or persistent credentials. */
-export async function fixture(pubsub?: GraphqlSubscriptionPubSub) {
+export async function fixture(pubsub?: GraphqlSubscriptionPubSub, externalIssuer?: string) {
   const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-graphql-guide-'));
   await chmod(directory, 0o700);
   const key = join(directory, 'server.key'),
@@ -83,7 +83,7 @@ export async function fixture(pubsub?: GraphqlSubscriptionPubSub) {
     await new Promise<void>((resolve) => authority.listen(0, '127.0.0.1', resolve));
     const address = authority.address();
     if (!address || typeof address !== 'object') throw new Error('Example issuer is unavailable');
-    issuer = 'http://127.0.0.1:' + address.port;
+    issuer = externalIssuer ?? 'http://127.0.0.1:' + address.port;
     example = await createGraphqlExample({
       service: { name: 'graphql-example', version: '1.0.0', environment: 'test' },
       http: {
@@ -147,19 +147,25 @@ export async function fixture(pubsub?: GraphqlSubscriptionPubSub) {
       ...example,
       send,
       origin,
+      issuer,
       ca,
       logs: () => logs,
       close,
-      token: async (tenant = 'tenant-a', scope = 'example:read example:write') =>
-        'Bearer ' +
-        (await new SignJWT({ tenant_id: tenant, scope })
-          .setProtectedHeader({ alg: 'ES256', kid: 'example', typ: 'JWT' })
-          .setIssuer(issuer)
-          .setAudience('api://graphql-example')
-          .setSubject('guide-user')
-          .setIssuedAt()
-          .setExpirationTime('5m')
-          .sign(pair.privateKey)),
+      token: async (tenant = 'tenant-a', scope = 'example:read example:write') => {
+        if (externalIssuer)
+          throw new Error('External assertions must come from their actual signing authority');
+        return (
+          'Bearer ' +
+          (await new SignJWT({ tenant_id: tenant, scope })
+            .setProtectedHeader({ alg: 'ES256', kid: 'example', typ: 'JWT' })
+            .setIssuer(issuer)
+            .setAudience('api://graphql-example')
+            .setSubject('guide-user')
+            .setIssuedAt()
+            .setExpirationTime('5m')
+            .sign(pair.privateKey))
+        );
+      },
     };
   } catch (error) {
     await close();

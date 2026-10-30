@@ -99,6 +99,11 @@ The [executable subscription example](../examples/graphql/README.md) demonstrate
 the authenticated wire exchange, mutation-triggered events, tenant isolation and
 iterator retirement through independently installed public package artifacts.
 Its explicitly local test provider does not establish distributed durability.
+The same example also includes a bounded application-owned counter adapter over
+the public NATS message bus. Its separately selected native and packed integration
+case verifies actual mTLS broker delivery across two WSS application processes,
+with verified tenant namespaces and physical source cleanup. Shared delivery
+retains the guide's explicit test-only deployment classification and memory store.
 
 The [PostgreSQL tenant example](../examples/graphql-postgres-tenants/README.md)
 uses existing SQL pools, row ownership checks and request-scoped native loaders.

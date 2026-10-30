@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "node --test dist-test/*.test.js"
+    "test": "node --test dist-test/*.test.js",
+    "test:integration": "node --test dist-test/integration/*.integration.test.js"
   },
   "dependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -16,6 +17,7 @@
     "@arkenivajs/security": "workspace:*"
   },
   "devDependencies": {
+    "@arkenivajs/messaging": "workspace:*",
     "@types/ws": "8.18.2",
     "jose": "6.2.13",
     "ws": "8.22.0"
