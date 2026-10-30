@@ -168,6 +168,9 @@ jobs:
       - name: Create the pinned owned RabbitMQ fixture with verified AMQPS and private ACLs
         run: python3 -B packages/messaging-amqp/test/fixtures/prepare.py --github-env "$GITHUB_ENV"
       - run: pnpm --filter '@arkenivajs/example-amqp...' build
+      - run: pnpm --filter '@arkenivajs/telemetry...' build
+      - name: Verify four AMQPS profiles with actual confirms and mandatory returns
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:amqp
       - name: Verify native confirms, returns, acknowledgments, broker restart and bounded recovery
         run: pnpm --filter @arkenivajs/messaging-amqp test:integration
       - name: Verify compiled public consumption and actual SDK diagnostics privacy
