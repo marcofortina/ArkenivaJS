@@ -2,6 +2,11 @@
 
 `createMeter(options)` creates independent technical usage scopes with an owned event exporter. It requires immutable service metadata and a synchronous `auth.isVerifiedTenant` checker bound to the verifier that minted the tenant context. The original method and receiver are captured once without consulting custom binding metadata. Authority accessors and proxy methods are rejected before resources open. Clones, foreign contexts, revoked verification and asynchronous or failing provenance checks are rejected. No request header, TypeScript cast or serialized tenant object establishes trust. The meter never issues credentials or computes currency values.
 
+Outer startup configuration fields must be data properties. Service metadata is
+captured without invoking own or inherited getters; supplied provider instances
+retain their original identity and receiver. Invalid configuration cannot execute
+accessor code before semantic validation.
+
 `start({tenant,operation,requestId?})` returns a manual session without entering an asynchronous scope or performing I/O. `run(session,work)` enters an owned live session for adapter integrations; `measure(input,work)` starts a scope, awaits its callback and closes it on success, failure or cancellation. Concurrent scopes are isolated through AsyncLocalStorage. Child scopes retain the original request and trace identifiers and receive a unique operation identifier and parent link. A nested scope cannot change tenant or request correlation. Work continuing after a parent ends needs a new explicit scope; late implicit children are rejected.
 
 `withoutScope(work)` on the managed provider enters an independent asynchronous
