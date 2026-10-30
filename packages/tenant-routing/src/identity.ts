@@ -34,18 +34,26 @@ export async function authorized(
 ): Promise<boolean> {
   scope.check();
   verifiedTenant(auth, tenant);
-  try {
+  const policy = () => {
     for (const required of operation.policy.requiredScopes)
       auth.requireScope(tenant.identity, required);
     if (operation.policy.assurance !== undefined)
       auth.requireAssurance(tenant.identity, operation.policy.assurance);
+  };
+  try {
+    policy();
     const allowed = await scope.run(() =>
       settings.authorize(
         Object.freeze({ tenant, operationId: operation.id, policy: operation.policy }),
       ),
     );
     scope.check();
-    return allowed === true;
+    if (allowed !== true) return false;
+    // Awaited policy work may outlive the trusted identity or assurance decision.
+    verifiedTenant(auth, tenant);
+    policy();
+    scope.check();
+    return true;
   } catch {
     scope.check();
     return false;
