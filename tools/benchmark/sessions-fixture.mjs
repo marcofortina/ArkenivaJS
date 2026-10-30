@@ -18,6 +18,23 @@ export async function startSessionsFixture() {
   const privacyValues = [bearer, '127.0.0.1'],
     faults = { store: false, hmac: false, authority: false };
   const state = { handedOut: 0, committedActivityUpdates: 0 };
+  const protocol = {
+    resolved: 0,
+    authorized: 0,
+    verified: 0,
+    rejectedMacs: 0,
+    ownerDigests: 0,
+    rateOwnerDigests: 0,
+    verifierDigests: 0,
+    epochs: 0,
+    recordReads: 0,
+    activityCasAttempts: 0,
+    attemptReads: 0,
+    attemptCasAttempts: 0,
+    committedAttempts: 0,
+    providerFailures: 0,
+  };
+  const attemptRows = new Map();
   let bridge;
   const remember = (value) => {
     if (typeof value === 'string' && value.length > 0 && !privacyValues.includes(value))
@@ -97,10 +114,12 @@ export async function startSessionsFixture() {
             assert.equal(args[1].operation, 'validate');
             assert.ok(originals.has(args[1].sessionId));
             result = await backend.settings.authority.resolveIdentity(...args);
+            protocol.resolved++;
           } else {
             assert.equal(args[0], 'sessions.validate');
             assert.ok(originals.has(args[2].sessionId));
             result = await backend.settings.authority.require(...args);
+            protocol.authorized++;
           }
         } else if (method === 'digest' || method === 'verify') {
           assert.equal(faults.hmac, false);
@@ -120,13 +139,26 @@ export async function startSessionsFixture() {
           assert.equal(args[method === 'digest' ? 2 : 3], backend.settings.hmacKeyRef);
           if (method === 'verify') remember(args[2]);
           result = await backend.settings.hmac[method](...args);
-          if (method === 'digest') remember(result);
+          if (method === 'digest') {
+            remember(result);
+            protocol[
+              args[0] === 'arkenivajs.sessions.owner.v1'
+                ? 'ownerDigests'
+                : args[0] === 'arkenivajs.sessions.rate-owner.v1'
+                  ? 'rateOwnerDigests'
+                  : 'verifierDigests'
+            ]++;
+          } else {
+            protocol.verified++;
+            if (result === false) protocol.rejectedMacs++;
+          }
         } else {
           assert.equal(faults.store, false);
           if (method === 'currentOwnerEpoch') {
             assert.equal(args[0], 'sessions.epochs.v1');
             assert.equal(args.length, 2);
             result = await backend.base.backend.store.currentOwnerEpoch(...args);
+            protocol.epochs++;
           } else {
             assert.ok(['sessions.records.v1', 'sessions.attempts.v1'].includes(args[0]));
             assert.equal(typeof args[1], 'string');
@@ -134,13 +166,28 @@ export async function startSessionsFixture() {
             if (method === 'read') {
               assert.equal(args.length, 2);
               result = await backend.base.backend.store.read(...args);
+              if (args[0] === 'sessions.records.v1') protocol.recordReads++;
+              else {
+                protocol.attemptReads++;
+                if (!attemptRows.has(args[1]))
+                  attemptRows.set(args[1], { initial: result?.count ?? 0, committed: 0 });
+              }
             } else {
               assert.equal(method, 'compareAndSet');
               assert.equal(args.length, 4);
               if (args[0] === 'sessions.records.v1') assert.ok(originals.has(args[1]));
               result = await backend.base.backend.store.compareAndSet(...args);
-              if (args[0] === 'sessions.records.v1' && result.committed)
-                state.committedActivityUpdates++;
+              if (args[0] === 'sessions.records.v1') {
+                protocol.activityCasAttempts++;
+                if (result.committed) state.committedActivityUpdates++;
+              } else {
+                protocol.attemptCasAttempts++;
+                if (result.committed) {
+                  assert.ok(attemptRows.has(args[1]));
+                  attemptRows.get(args[1]).committed++;
+                  protocol.committedAttempts++;
+                }
+              }
             }
           }
         }
@@ -148,7 +195,10 @@ export async function startSessionsFixture() {
           .writeHead(200, { 'content-type': 'application/json' })
           .end(JSON.stringify({ result }));
       })()
-        .catch(() => response.writeHead(400).end())
+        .catch(() => {
+          protocol.providerFailures++;
+          response.writeHead(400).end();
+        })
         .finally(() => tasks.delete(task));
       tasks.add(task);
     });
@@ -174,7 +224,7 @@ export async function startSessionsFixture() {
         const owner = originals.values().next().value;
         return backend.base.backend.store.bumpOwnerEpoch('sessions.epochs.v1', owner.ownerKey);
       },
-      async verify(expectedRefreshed) {
+      async verify(expectedRefreshed, expectedValidations) {
         let refreshed = 0;
         for (const grant of grants) {
           const record = await backend.base.backend.store.read(
@@ -203,11 +253,53 @@ export async function startSessionsFixture() {
         }
         assert.equal(refreshed, expectedRefreshed);
         assert.ok(state.committedActivityUpdates >= expectedRefreshed);
+        let observation;
+        if (expectedValidations !== undefined) {
+          assert.ok(Number.isSafeInteger(expectedValidations) && expectedValidations >= 8);
+          const rejected = grants.length,
+            total = expectedValidations + rejected;
+          assert.equal(state.handedOut, grants.length);
+          assert.equal(protocol.providerFailures, 0);
+          assert.equal(protocol.resolved, expectedValidations);
+          assert.equal(protocol.authorized, expectedValidations);
+          assert.equal(protocol.ownerDigests, expectedValidations);
+          assert.equal(protocol.rateOwnerDigests, grants.length);
+          assert.equal(protocol.verified, total);
+          assert.equal(protocol.rejectedMacs, rejected);
+          assert.equal(protocol.epochs, 2 * expectedValidations);
+          assert.equal(protocol.attemptReads, total);
+          assert.equal(protocol.attemptCasAttempts, total);
+          assert.equal(protocol.committedAttempts, total);
+          assert.equal(protocol.activityCasAttempts, state.committedActivityUpdates);
+          assert.ok(state.committedActivityUpdates <= expectedValidations);
+          assert.equal(protocol.verifierDigests, grants.length + state.committedActivityUpdates);
+          assert.equal(
+            protocol.recordReads,
+            2 * expectedValidations + rejected - state.committedActivityUpdates,
+          );
+          let persistedAttemptDelta = 0;
+          for (const [id, baseline] of attemptRows) {
+            const actual = await backend.base.backend.store.read('sessions.attempts.v1', id);
+            assert.equal(actual.count, baseline.initial + baseline.committed);
+            persistedAttemptDelta += actual.count - baseline.initial;
+          }
+          assert.equal(persistedAttemptDelta, total);
+          observation = {
+            successfulValidations: expectedValidations,
+            rejectedWrongSecrets: rejected,
+            persistedAttemptDelta,
+            persistedAttemptRows: attemptRows.size,
+            protocol: { ...protocol },
+            activityPolicy:
+              'CAS only when the trusted clock advances activity; unchanged authentication/MFA times and absolute expiry are independently verified',
+          };
+        }
         return {
           persistedRefreshedSessions: refreshed,
           committedActivityUpdates: state.committedActivityUpdates,
           originalAuthenticationAndMfaTimesPreserved: true,
           persistedHmacsVerified: true,
+          ...(observation ? { observation } : {}),
           releaseGate: false,
         };
       },

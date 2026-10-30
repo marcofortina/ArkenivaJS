@@ -8,6 +8,7 @@ PostgreSQL fixture environment:
 
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation sessions --verify /private/sessions-verification
+pnpm --filter @arkenivajs/benchmark-foundation sessions --smoke /private/sessions-smoke
 ```
 
 Four isolated profiles compare a benchmark-only positive-session reference with
@@ -40,7 +41,34 @@ providers. Reports and actual SDK exports must exclude bearer secrets, identitie
 keyed digests and provider credentials. Shutdown settles provider work and removes
 the parent's exact owned SQL schema and issuer resources.
 
-Only `--verify` is supported. Sampling is rejected before fixture allocation
-until complete provider/server resource accounting is available. Reports retain
-`releaseGate: false`; dedicated-runner budgets, five paired repetitions and
-one-hour soak acceptance remain separate work.
+`--verify` runs the positive and negative corpus without latency sampling.
+`--smoke` adds 20 warmup validations and exactly 100 retained Tinybench latency
+samples per profile. Each sample validates the same parent-issued active MFA
+session and includes actual provider bridge round trips, HMAC, signed authority,
+PostgreSQL reads, verification-attempt CAS and conditional activity CAS. The
+existing trusted clock determines whether activity needs an update; the harness
+does not force a new CAS, authentication or MFA event per sample. Measured
+identities must preserve the original subject, issuer, tenant, authentication
+time, MFA time and assurance.
+
+Worker completion counts reconcile the real warmup and retained sample counts.
+The parent independently checks all stored session HMACs and fixed absolute
+expiry, then re-reads every verification-attempt row touched by the campaign.
+Observed provider calls, successful attempt CAS and SQL count deltas must match
+the actual successful validations plus the four rejected modified secrets.
+Reports contain numeric protocol counts, never attempt-row keys or keyed MACs.
+
+Child resource samples cover each worker measurement, including warmup and tool
+import. `durable-observation.json` separately records actual process-wide parent
+CPU, sampled RSS/heap, event-loop and GC observations across the whole campaign
+after session issuance through independent readback. This includes child setup,
+verification and teardown, the bridge, HMAC, authority, SQL client and collector.
+It excludes fixture creation and final schema/issuer cleanup. Parent campaign
+totals cannot be attributed to individual profiles or added to one profile's
+resource costs. PostgreSQL server resources remain explicitly unknown (`null`).
+
+This bounded single campaign is not complete resource parity or a release
+measurement. Reports retain `releaseGate: false`; creation/renewal/revocation
+measurements, dedicated-runner budgets, five paired repetitions and one-hour
+soak acceptance remain separate work. Unsupported modes are rejected before
+fixture allocation.

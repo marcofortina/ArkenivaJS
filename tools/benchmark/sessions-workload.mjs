@@ -3,10 +3,15 @@
 
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
+import { setInterval, clearInterval } from 'node:timers';
 
 const domain = 'arkenivajs.sessions.verifier.v1',
   records = 'sessions.records.v1';
 const ownerParts = (owner) => [owner.issuer, owner.subject, owner.tenant?.tenantId ?? ''];
+const validationWorkloads = new WeakMap();
+export const sessionsIterations = 100;
+export const sessionsWarmupIterations = 20;
 
 export function sessionMacParts(state, secret) {
   return [
@@ -216,6 +221,7 @@ export async function verifySessions(service, fixture) {
   assert.equal(second.subject, first.subject);
   assert.equal(second.issuer, first.issuer);
   assert.ok(Date.parse(second.expiresAt) >= Date.parse(first.expiresAt));
+  validationWorkloads.set(service, { grant, identity: second, calls: 0 });
   return {
     actualValidationsVerified: 2,
     wrongSecretRejected: true,
@@ -223,5 +229,109 @@ export async function verifySessions(service, fixture) {
     originalMfaTimePreserved: true,
     assuranceUnchanged: true,
     idleRefreshVerified: true,
+  };
+}
+
+/** Retain only the parent-issued session; activity never changes its authentication event. */
+export function sessionsWorkload(service) {
+  const state = validationWorkloads.get(service);
+  assert.ok(state, 'Session validation must pass the verification corpus before sampling');
+  return {
+    async validate() {
+      const identity = await service.validate(state.grant.token);
+      for (const field of [
+        'sessionId',
+        'issuer',
+        'subject',
+        'authenticatedAt',
+        'assuredAt',
+        'assurance',
+      ])
+        assert.equal(identity[field], state.identity[field]);
+      assert.deepEqual(identity.tenant, state.identity.tenant);
+      assert.ok(Date.parse(identity.expiresAt) >= Date.parse(state.identity.expiresAt));
+      state.calls++;
+      return identity;
+    },
+  };
+}
+
+export function completeSessionsWorkload(service, { measure, records: results }) {
+  const state = validationWorkloads.get(service);
+  assert.ok(state);
+  let samples = 0,
+    warmup = 0;
+  if (measure) {
+    assert.equal(results.length, 1);
+    const result = results[0];
+    assert.equal(result.operation, 'validate');
+    assert.equal(result.sampleCount, sessionsIterations);
+    assert.equal(result.warmupIterations, sessionsWarmupIterations);
+    assert.equal(result.rawLatency.unit, 'milliseconds');
+    assert.equal(result.rawLatency.values.length, result.sampleCount);
+    samples = result.sampleCount;
+    warmup = result.warmupIterations;
+  } else assert.deepEqual(results, []);
+  assert.equal(
+    state.calls,
+    samples + warmup,
+    'Actual validation calls must reconcile with Tinybench',
+  );
+  return {
+    sampledValidations: samples,
+    warmupValidations: warmup,
+    successfulValidations: 2 + state.calls,
+    rejectedWrongSecrets: 1,
+    originalAuthenticationAndMfaTimesPreserved: true,
+  };
+}
+
+/** Child resources cannot account for the parent authority, HMAC and SQL client. */
+export function observeSessionsParent() {
+  const before = process.memoryUsage(),
+    cpu = process.cpuUsage(),
+    started = performance.now(),
+    elu = performance.eventLoopUtilization(),
+    loop = monitorEventLoopDelay({ resolution: 10 });
+  let peakRss = before.rss,
+    peakHeap = before.heapUsed,
+    gcCount = 0,
+    gcDurationMs = 0,
+    stopped = false;
+  const sample = () => {
+    const value = process.memoryUsage();
+    peakRss = Math.max(peakRss, value.rss);
+    peakHeap = Math.max(peakHeap, value.heapUsed);
+  };
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      gcCount++;
+      gcDurationMs += entry.duration;
+    }
+  });
+  observer.observe({ entryTypes: ['gc'] });
+  loop.enable();
+  const timer = setInterval(sample, 10);
+  return () => {
+    assert.equal(stopped, false, 'The session parent observer must close exactly once');
+    stopped = true;
+    sample();
+    clearInterval(timer);
+    loop.disable();
+    observer.disconnect();
+    return {
+      scope:
+        'Whole parent campaign after issuance: child setup, verification, warmup, sampling, teardown, bridge, external HMAC, signed authority, SQL client, OTLP collector and independent readback; not attributable to individual profiles',
+      elapsedMs: performance.now() - started,
+      cpuDeltaMicros: process.cpuUsage(cpu),
+      memoryBytes: { rssBefore: before.rss, peakRss, heapBefore: before.heapUsed, peakHeap },
+      eventLoopUtilization: performance.eventLoopUtilization(elu).utilization,
+      eventLoopDelayMeanMs: Number.isFinite(loop.mean) ? loop.mean / 1e6 : null,
+      gc: { count: gcCount, durationMs: gcDurationMs },
+      postgresServerResources: null,
+      limitations:
+        'Sampled parent RSS/heap are process-wide. PostgreSQL server resources and parent per-profile resource attribution are unavailable; do not add campaign totals to a single profile or claim complete resource parity.',
+      releaseGate: false,
+    };
   };
 }
