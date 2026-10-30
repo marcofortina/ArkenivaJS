@@ -504,6 +504,8 @@ jobs:
       - name: Start restricted MariaDB and its negative certificate endpoint
         run: docker compose -f packages/database-mariadb/test/fixtures/compose.yaml up -d --wait --wait-timeout 180
       - run: pnpm coverage:mariadb
+      - name: Verify four MariaDB prepared-query profiles and exact native bigint behavior
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:mariadb-query
       - run: pnpm --filter @arkenivajs/example-mariadb test:integration
       - run: pnpm test:packed:examples --integration mariadb
       - if: always() && env.MARIADB_FIXTURE_DIRECTORY != ''
