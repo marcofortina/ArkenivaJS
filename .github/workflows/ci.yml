@@ -529,6 +529,8 @@ jobs:
       - name: Start Redis and the independently healthy wrong-SAN endpoint
         run: docker compose -f packages/database-redis/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:redis
+      - name: Verify four portable Redis profiles and actual native server state
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:redis
       - name: Verify realtime shared Redis delivery across independent processes
         run: pnpm --filter @arkenivajs/realtime test:integration:redis
       - run: pnpm --filter @arkenivajs/example-redis test:integration
