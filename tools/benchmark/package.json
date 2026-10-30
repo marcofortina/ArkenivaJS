@@ -71,7 +71,8 @@
     "etcd": "node etcd.mjs",
     "test:integration:etcd": "node --test test/etcd-workload.integration.test.mjs",
     "proxy": "node proxy.mjs",
-    "realtime": "node realtime.mjs"
+    "realtime": "node realtime.mjs",
+    "mtls": "node mtls.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",

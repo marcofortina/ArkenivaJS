@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [mTLS verification](mtls.md) checks actual mutual TLS key possession and
+asynchronous chain/CRL authorization before HTTP/2 application traffic.
+
 The [authenticated realtime verification](realtime.md) checks actual signed-JWT
 WebSocket/SSE admission, exact wire data and scoped cursor replay.
 
