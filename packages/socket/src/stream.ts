@@ -11,7 +11,7 @@ import type { OperationOptions } from '@arkenivajs/core';
 import { KitError } from '@arkenivajs/core';
 import { withServerTls } from '@arkenivajs/core/support';
 import type { SocketPeer, SocketPeerHandler, SocketServerBinding } from './contracts.js';
-import { address, failure, operation } from './policy.js';
+import { address, failure, operation, payload } from './policy.js';
 import type { Captured } from './policy.js';
 import { counters, lifecycle } from './lifecycle.js';
 import type { Observation } from './observation.js';
@@ -250,9 +250,8 @@ export function streamServer(
         return owned;
       },
       async send(data: Uint8Array, input?: OperationOptions) {
-        if (!(data instanceof Uint8Array) || data.length > policy.maxPendingWriteBytes)
-          throw failure('EK_SOCKET_CAPACITY');
-        await io(() => undefined, input, Buffer.from(data));
+        const bytes = payload(data, policy.maxPendingWriteBytes, 'EK_SOCKET_CAPACITY');
+        await io(() => undefined, input, bytes);
       },
       async end(input?: OperationOptions) {
         operation(input, policy.shutdownTimeoutMs);

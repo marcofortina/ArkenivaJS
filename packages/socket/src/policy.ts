@@ -3,6 +3,7 @@
 
 import { isIP, SocketAddress } from 'node:net';
 import { isAbsolute, normalize } from 'node:path';
+import { types } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
 import { validateServerTlsFiles, captureAbortSignal } from '@arkenivajs/core/support';
@@ -76,6 +77,25 @@ export function integer(value: unknown, minimum: number, maximum: number): numbe
   if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum)
     throw failure('EK_SOCKET_CONFIG');
   return value as number;
+}
+/** Bound and snapshot native byte views without evaluating instance metadata. */
+export function payload(
+  input: unknown,
+  maximum: number,
+  code: 'EK_SOCKET_CAPACITY' | 'EK_SOCKET_DATAGRAM',
+): Buffer {
+  try {
+    if (!types.isUint8Array(input)) throw failure(code);
+    const prototype = Object.getPrototypeOf(Uint8Array.prototype),
+      buffer = Object.getOwnPropertyDescriptor(prototype, 'buffer')!.get!.call(input),
+      length = Object.getOwnPropertyDescriptor(prototype, 'byteLength')!.get!.call(input) as number;
+    if (types.isSharedArrayBuffer(buffer) || length > maximum) throw failure(code);
+    const owned = Buffer.alloc(length);
+    Uint8Array.prototype.set.call(owned, input);
+    return owned;
+  } catch {
+    throw failure(code);
+  }
 }
 export function array(value: unknown, maximum: number): readonly unknown[] {
   if (
