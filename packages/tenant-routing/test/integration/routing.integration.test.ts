@@ -566,6 +566,109 @@ test('Authorization provider errors omit capabilities and deny execution without
   }
 });
 
+for (const failure of ['downgrade', 'provider-error'] as const)
+  test(
+    `Trusted MFA ${failure} invalidates cached capability visibility without granting handler access`,
+    { timeout: 10000 },
+    async () => {
+      const snapshot = registry(),
+        tls = await tlsFiles();
+      Object.assign(snapshot.operations[0]!.policy, { assurance: 'mfa' });
+      snapshot.contentChecksum = registryContentChecksum(snapshot);
+      const input = settings(snapshot);
+      let strong = true,
+        unavailable = false,
+        effects = 0;
+      const f = await fixture(
+        {
+          ...input,
+          handlers: {
+            ...input.handlers,
+            north(context) {
+              effects++;
+              return input.handlers.north!(context);
+            },
+          },
+        },
+        {
+          tls: tls.tls,
+          assuranceResolver(identity) {
+            if (identity.claims.tenant_id === 'south') return 'phishing-resistant';
+            if (unavailable) throw new Error('Private tenant assurance provider detail');
+            return strong ? 'mfa' : 'single-factor';
+          },
+        },
+      ).catch(async (error: unknown) => {
+        await tls.close();
+        throw error;
+      });
+      try {
+        const north = await f.tenant('north'),
+          south = await f.tenant('south');
+        const hasRead = async (tenant: VerifiedTenantContext) =>
+          (await f.service.capabilities.list(tenant)).capabilities.some(
+            (item) => item.operationId === 'orders.read',
+          );
+        assert.equal(await hasRead(north), true);
+        assert.equal(await hasRead(south), true);
+        assert.ok(f.service.api.resolve('orders.read', north));
+        const authorization = await f.token();
+        const allowed = await send(f.origin, '/api/orders/id', {
+          ca: tls.ca,
+          headers: { authorization },
+        });
+        assert.equal(allowed.status, 200, allowed.body);
+        assert.equal(effects, 1);
+        if (failure === 'downgrade') strong = false;
+        else unavailable = true;
+        // Administrative resolution is informational; it cannot authorize a later HTTP call.
+        assert.ok(f.service.api.resolve('orders.read', north));
+        assert.equal(await hasRead(north), false);
+        assert.equal(await hasRead(south), true);
+        assert.deepEqual(
+          (await f.service.capabilities.list(north)).capabilities.map((item) => item.operationId),
+          ['orders.create'],
+        );
+        const denied = await send(f.origin, '/api/orders/id', {
+          ca: tls.ca,
+          headers: {
+            authorization,
+            'x-auth-assurance': 'phishing-resistant',
+            'x-tenant-id': 'south',
+          },
+        });
+        assert.ok(denied.status >= 400, denied.body);
+        assert.equal(effects, 1, 'A stale verified MFA decision must not invoke the handler');
+        const other = await send(f.origin, '/api/orders/id', {
+          ca: tls.ca,
+          headers: { authorization: await f.token('south') },
+        });
+        assert.equal(other.status, 200, other.body);
+        assert.equal(other.json().tenant, 'south');
+        await assert.rejects(f.service.capabilities.list({ ...north }));
+        assert.doesNotMatch(
+          denied.body + f.logs(),
+          /Private tenant assurance provider detail|Bearer /,
+        );
+        strong = true;
+        unavailable = false;
+        assert.equal(await hasRead(north), true);
+        const recovered = await send(f.origin, '/api/orders/id', {
+          ca: tls.ca,
+          headers: { authorization },
+        });
+        assert.equal(recovered.status, 200, recovered.body);
+        assert.equal(effects, 2);
+      } finally {
+        try {
+          await f.close();
+        } finally {
+          await tls.close();
+        }
+      }
+    },
+  );
+
 test('The registry is loaded once and caller mutations cannot replace a running handler or binding', async () => {
   const snapshot = registry(),
     input = settings(snapshot),

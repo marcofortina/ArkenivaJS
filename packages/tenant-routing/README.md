@@ -129,6 +129,12 @@ it and `capabilities.list` still reject forged, copied or foreign-authority tena
 objects. Methods become unavailable during drain/after close. Registry and
 catalog edits take effect only in a newly initialized application instance.
 
+A cached verified tenant or administrative resolution does not cache permission.
+Each capability listing and HTTP operation applies the current trusted assurance
+policy. A downgrade or assurance-provider failure hides protected capabilities
+and prevents handler execution. Client assurance and tenant headers cannot restore
+permission; other tenants retain their independently authorized access.
+
 ## Approved HTTP implementations
 
 Install an `approvedUpstreams` catalog with fixed canonical origins, explicit
