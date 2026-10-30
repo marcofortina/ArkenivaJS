@@ -7,9 +7,16 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
-import { meteringPlugin, parseMeteringEvent } from '@arkenivajs/metering';
+import { createMeter, meteringPlugin, parseMeteringEvent } from '@arkenivajs/metering';
+import type { ManagedUsageMeter, TenantVerifier } from '@arkenivajs/metering';
 import { COMPONENTS, KitError } from '@arkenivajs/core';
-import type { MeteringEvent, MeterSession, UsageMeter, Plugin } from '@arkenivajs/core';
+import type {
+  AuthService,
+  MeteringEvent,
+  MeterSession,
+  UsageMeter,
+  Plugin,
+} from '@arkenivajs/core';
 import { fixture, send } from '../fixture.js';
 
 async function events(directory: string): Promise<MeteringEvent[]> {
@@ -234,6 +241,100 @@ test('Meter failures preserve admission and field policy while rejected tenant p
     }
   }
 });
+
+for (const failure of ['declined', 'unavailable', 'capacity'] as const)
+  test(`Signed HTTP GraphQL child metering ${failure} preserves tenant authority before mutation effects`, async () => {
+    const recorded: MeteringEvent[] = [];
+    const checks = new Map<string, number>();
+    let effects = 0;
+    let meter!: ManagedUsageMeter;
+    const provider: Plugin = {
+      id: 'metering',
+      version: '1.0.0',
+      capabilities: new Set(['meter']),
+      dependencies: ['security'],
+      init(context) {
+        const authority = context.require<AuthService & TenantVerifier>(COMPONENTS.auth);
+        meter = createMeter({
+          service: { name: 'graphql-child-usage-test', version: '1.0.0', environment: 'test' },
+          auth: {
+            isVerifiedTenant(value): value is Parameters<UsageMeter['start']>[0]['tenant'] {
+              if (!authority.isVerifiedTenant(value)) return false;
+              const count = (checks.get(value.tenantId) ?? 0) + 1;
+              checks.set(value.tenantId, count);
+              // The actual meter revalidates provenance after its HTTP parent was accepted.
+              if (value.tenantId === 'tenant-a' && count === 2 && failure !== 'capacity') {
+                if (failure === 'unavailable') throw new Error('Private child authority failure');
+                return false;
+              }
+              return true;
+            },
+          },
+          maxActiveSessions: failure === 'capacity' ? 1 : 8,
+          exporter: {
+            kind: 'jsonl',
+            async export(batch) {
+              recorded.push(...batch);
+            },
+            async close() {},
+          },
+        });
+        context.provide(COMPONENTS.meter, meter);
+      },
+      async close() {
+        await meter.close();
+      },
+    };
+    const f = await fixture(
+      {
+        schema: 'type Query { ping: String! } type Mutation { update: Int! denied: Int }',
+        resolvers: {
+          Query: { ping: () => 'pong' },
+          Mutation: { update: () => ++effects, denied: () => ++effects },
+        },
+        security: { authorizeField: ({ field }) => field.fieldName !== 'denied' },
+      },
+      { metering: { enabled: true }, plugins: [provider] },
+    );
+    try {
+      const headers = { authorization: await f.token() };
+      const rejected = await send(f.origin, { query: 'mutation { update }' }, { headers });
+      assert.equal(rejected.status, failure === 'capacity' ? 200 : 401, rejected.body);
+      assert.equal(effects, failure === 'capacity' ? 1 : 0);
+      if (failure !== 'capacity') assert.match(rejected.body, /EK_GQL_AUTH/);
+      await meter.flush();
+      assert.equal(meter.snapshot().activeSessions, 0);
+      assert.equal(recorded.length, 1);
+      assert.equal(recorded[0]?.operation, 'POST /graphql');
+      assert.equal(recorded[0]?.status, failure === 'capacity' ? 'ok' : 'error');
+      assert.equal(recorded[0]?.quality.complete, false);
+      assert.ok(recorded[0]?.quality.missing.includes('span_not_instrumented'));
+      assert.equal(checks.get('tenant-a'), 2);
+      const other = await send(
+        f.origin,
+        { query: 'mutation { update }' },
+        {
+          headers: { authorization: await f.token('tenant-b') },
+        },
+      );
+      assert.equal(other.status, 200, other.body);
+      const denied = await send(f.origin, { query: 'mutation { denied }' }, { headers });
+      assert.match(denied.body, /EK_GQL_FORBIDDEN/);
+      assert.equal(effects, failure === 'capacity' ? 2 : 1);
+      const recovered = await send(f.origin, { query: 'mutation { update }' }, { headers });
+      assert.equal(recovered.status, 200, recovered.body);
+      assert.equal(effects, failure === 'capacity' ? 3 : 2);
+      await meter.flush();
+      assert.equal(meter.snapshot().activeSessions, 0);
+      assert.equal(f.service.stats().activeOperations, 0);
+      assert.doesNotMatch(
+        rejected.body + denied.body + other.body + recovered.body + f.logs(),
+        /Private child authority failure|Bearer /,
+      );
+    } finally {
+      await f.close();
+    }
+  });
 
 test(
   'Timed-out mutation usage reports an incomplete HTTP parent and unknown child outcome until physical work settles',
