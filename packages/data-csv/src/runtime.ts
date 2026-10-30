@@ -247,6 +247,9 @@ export class Scope {
     if (this.#output > Math.min(this.setting.maxOutputBytes, this.codec.maxTotalBytes))
       throw failure('EK_CSV_LIMIT');
   }
+  counters(): { inputBytes: number; outputBytes: number } {
+    return { inputBytes: this.#input, outputBytes: this.#output };
+  }
   watch(promise: Promise<void>) {
     this.#settled = false;
     const settle = () => {

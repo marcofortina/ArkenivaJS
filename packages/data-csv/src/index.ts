@@ -8,6 +8,10 @@ import { setImmediate as immediate } from 'node:timers/promises';
 import { parse as nativeParse } from 'csv-parse';
 import { stringify as nativeStringify } from 'csv-stringify/sync';
 import type { Plugin, OperationOptions } from '@arkenivajs/core';
+import { SUPPORT_PLUGINS } from '@arkenivajs/core/support';
+import type { ComposablePlugin } from '@arkenivajs/core/support';
+import { OBSERVERS, observers, observer, measureStream } from './observation.js';
+import type { Observation } from './observation.js';
 import { capture, callOptions, fields, failure, Scope } from './runtime.js';
 import type { Captured } from './runtime.js';
 import type {
@@ -161,7 +165,7 @@ async function* inputBytes(input: InputBytes, scope: Scope): AsyncIterable<Buffe
   }
   decoder.decode();
 }
-function service(setting: Captured, ready: () => void) {
+function service(setting: Captured, ready: () => void, observe?: (value: Observation) => void) {
   const scopes = new Set<Scope>();
   const begin = (options?: CsvOptions & OperationOptions) => {
     ready();
@@ -174,7 +178,9 @@ function service(setting: Captured, ready: () => void) {
   const api: CsvService = Object.freeze({
     async *parse(input: InputBytes, options?: CsvOptions & OperationOptions) {
       const scope = begin(options),
-        codec = scope.codec;
+        codec = scope.codec,
+        finish = measureStream('parse', observe, scope.signal);
+      let outcome: Observation['outcome'] = 'cancelled';
       let names: readonly string[] | undefined,
         count = 0,
         emitted = 0,
@@ -229,12 +235,15 @@ function service(setting: Captured, ready: () => void) {
         }
         scope.check();
         if (codec.hasHeader && names === undefined) throw failure('EK_CSV_SCHEMA');
+        outcome = 'ok';
       } catch (cause) {
+        outcome = 'error';
         throw scope.error(cause);
       } finally {
         source?.destroy();
         parser?.destroy();
         scope.stop();
+        finish?.(outcome, emitted, scope.counters());
       }
     },
     async *stringify(
@@ -242,7 +251,10 @@ function service(setting: Captured, ready: () => void) {
       options?: CsvOptions & OperationOptions,
     ) {
       const scope = begin(options),
-        codec = scope.codec;
+        codec = scope.codec,
+        finish = measureStream('stringify', observe, scope.signal);
+      let outcome: Observation['outcome'] = 'cancelled',
+        emitted = 0;
       let source: Readable | undefined, output: PassThrough | undefined;
       async function* encoded() {
         let names: readonly string[] | undefined,
@@ -296,8 +308,14 @@ function service(setting: Captured, ready: () => void) {
               captured.names.some((name) => !names!.includes(name))
             )
               throw failure('EK_CSV_SCHEMA');
-            yield encode(names.map((name) => row.columns![name]!));
-          } else yield encode(row.fields);
+            const bytes = encode(names.map((name) => row.columns![name]!));
+            emitted++;
+            yield bytes;
+          } else {
+            const bytes = encode(row.fields);
+            emitted++;
+            yield bytes;
+          }
           if (count % 64 === 0) await immediate(undefined, { signal: scope.signal });
         }
         if (codec.hasHeader && !names) throw failure('EK_CSV_SCHEMA');
@@ -311,12 +329,15 @@ function service(setting: Captured, ready: () => void) {
           yield chunk as Buffer;
         }
         scope.check();
+        outcome = 'ok';
       } catch (cause) {
+        outcome = 'error';
         throw scope.error(cause);
       } finally {
         source?.destroy();
         output?.destroy();
         scope.stop();
+        finish?.(outcome, emitted, scope.counters());
       }
     },
     validate(
@@ -376,15 +397,21 @@ export const CSV_CAPABILITY: unique symbol = Symbol('arkenivajs.csv');
 export function dataCsvPlugin(settings: DataCsvPluginSettings): Plugin {
   const setting = capture(settings),
     instances = new WeakMap<object, { close(): void }>();
-  return {
+  const plugin: ComposablePlugin = {
     id: 'data-csv',
     version: '0.1.0',
     capabilities: new Set(['csv']),
+    dependencies: ['csv-observers'],
+    [SUPPORT_PLUGINS]: [observers],
     init(context) {
       let active = true;
-      const managed = service(setting, () => {
-        if (!active) throw failure('EK_RESOURCE_CLOSED');
-      });
+      const managed = service(
+        setting,
+        () => {
+          if (!active) throw failure('EK_RESOURCE_CLOSED');
+        },
+        observer(context.require(OBSERVERS)),
+      );
       context.provide(CSV_CAPABILITY, managed.api);
       instances.set(context, {
         close() {
@@ -398,4 +425,5 @@ export function dataCsvPlugin(settings: DataCsvPluginSettings): Plugin {
       instances.delete(context);
     },
   };
+  return plugin;
 }

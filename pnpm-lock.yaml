@@ -2393,6 +2393,9 @@ importers:
       '@arkenivajs/data-compression':
         specifier: workspace:*
         version: link:../../packages/data-compression
+      '@arkenivajs/data-csv':
+        specifier: workspace:*
+        version: link:../../packages/data-csv
       '@arkenivajs/data-identifiers':
         specifier: workspace:*
         version: link:../../packages/data-identifiers
@@ -2459,6 +2462,12 @@ importers:
       bwip-js:
         specifier: 4.11.4
         version: 4.11.4
+      csv-parse:
+        specifier: 7.0.3
+        version: 7.0.3
+      csv-stringify:
+        specifier: 6.9.0
+        version: 6.9.0
       fastify:
         specifier: 5.12.7
         version: 5.12.7

@@ -13,6 +13,9 @@ four isolated profiles before any optional exploratory timing is requested.
 The [validation comparison](validation.md) checks a fixed email/URL/IP/UUID/schema
 corpus against the pinned native libraries through the same isolated profiles.
 
+The [CSV verification](csv.md) exchanges native/public CSV and TSV streams,
+including one-shot fragmented UTF-8 sources and exact text fields.
+
 The [logging comparison](logging.md) validates actual acknowledged JSON rows,
 redaction, child bindings and level filtering before optional local sampling.
 
