@@ -11,6 +11,7 @@ import { apiPlugin } from '@arkenivajs/api';
 import type { ManagedApiServer } from '@arkenivajs/api';
 import { loggingPlugin } from '@arkenivajs/logging';
 import { securityPlugin } from '@arkenivajs/security';
+import { telemetryPlugin } from '@arkenivajs/telemetry';
 import { uploadPlugin, UPLOAD_CAPABILITY } from '../../dist/index.js';
 import type { UploadRoute, UploadService, UploadPolicy } from '../../dist/index.js';
 
@@ -38,6 +39,7 @@ async function attemptFixture(
   input: Partial<UploadRoute> = {},
   timeoutMs = 5000,
   transport?: { tls: ServerTlsFiles; http2?: boolean },
+  telemetryEndpoint?: string,
 ) {
   const pair = await generateKeyPair('ES256'),
     jwk = { ...(await exportJWK(pair.publicKey)), kid: 'upload-fixture', alg: 'ES256', use: 'sig' };
@@ -78,10 +80,20 @@ async function attemptFixture(
     },
     security: { issuer: authority, audience: 'api://upload', algorithms: ['ES256'] },
     logging: { level: 'debug' },
+    ...(telemetryEndpoint ? { telemetry: { mode: 'standard' as const, samplingRatio: 1 } } : {}),
     plugins: [
       loggingPlugin({ destination: sink }),
+      ...(telemetryEndpoint
+        ? [
+            telemetryPlugin({
+              endpoint: telemetryEndpoint,
+              allowInsecureLoopback: true,
+              exportIntervalMs: 60000,
+            }),
+          ]
+        : []),
       securityPlugin({ allowInsecureLoopback: true }),
-      apiPlugin({ dependencies: ['security'] }),
+      apiPlugin({ dependencies: ['security', ...(telemetryEndpoint ? ['telemetry'] : [])] }),
       uploadPlugin({
         routes: [
           {
@@ -210,10 +222,11 @@ export async function fixture(
   input: Partial<UploadRoute> = {},
   timeoutMs = 5000,
   transport?: { tls: ServerTlsFiles; http2?: boolean },
+  telemetryEndpoint?: string,
 ) {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await attemptFixture(input, timeoutMs, transport);
+      return await attemptFixture(input, timeoutMs, transport, telemetryEndpoint);
     } catch (cause) {
       let current: unknown = cause,
         collision = false;
