@@ -25,7 +25,9 @@
     "config": "node config.mjs",
     "logging": "node logging.mjs",
     "csv": "node csv.mjs",
-    "mail": "node mail.mjs"
+    "mail": "node mail.mjs",
+    "password": "node password.mjs",
+    "test:integration:password": "node --test test/password-workload.integration.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -47,6 +49,7 @@
     "@arkenivajs/security": "workspace:*",
     "@arkenivajs/security-apikey": "workspace:*",
     "@arkenivajs/security-crypto": "workspace:*",
+    "@arkenivajs/security-password": "workspace:*",
     "@arkenivajs/security-totp": "workspace:*",
     "@arkenivajs/security-webauthn": "workspace:*",
     "@arkenivajs/security-x509": "workspace:*",
@@ -56,6 +59,7 @@
     "@simplewebauthn/server": "14.0.3",
     "@zxing/library": "0.21.3",
     "ajv": "8.20.0",
+    "argon2": "0.45.1",
     "bwip-js": "4.11.4",
     "csv-parse": "7.0.3",
     "csv-stringify": "6.9.0",
