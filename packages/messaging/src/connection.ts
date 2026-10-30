@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { setMaxListeners } from 'node:events';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import nats from 'nats';
 import type { NatsConnection, Subscription as NativeSubscription } from 'nats';
 import { KitError } from '@arkenivajs/core';
@@ -15,7 +16,7 @@ import type {
   Subscription,
   UsageMeter,
 } from '@arkenivajs/core';
-import { instrumentOperation, within } from '@arkenivajs/core/support';
+import { captureAbortSignal, instrumentOperation, within } from '@arkenivajs/core/support';
 import type { NatsConfiguration } from './config.js';
 import type {
   ManagedMessageBus,
@@ -65,6 +66,7 @@ export function messageOptions(
     input !== undefined &&
     (!input ||
       typeof input !== 'object' ||
+      types.isProxy(input) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(input)) ||
       Reflect.ownKeys(input).some(
         (key) =>
@@ -78,7 +80,7 @@ export function messageOptions(
       message: 'Messaging options require supported data properties',
     });
   const timeoutMs = input?.timeoutMs ?? 5000,
-    signal = input?.signal;
+    signal = input?.signal === undefined ? undefined : captureAbortSignal(input.signal);
   if (
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs <= 0 ||

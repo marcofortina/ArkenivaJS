@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Capture native cancellation before bus operations and closure; reject proxy controls and excessive signal prototype depth without executing caller traps.
 - Capture the original error strategy without executable callable metadata and
   reject proxied or accessor-based policy inputs before opening resources.
 - Add explicitly installed Core NATS messaging with verified TLS and scoped subjects.
