@@ -2417,6 +2417,9 @@ importers:
       '@arkenivajs/data-validation':
         specifier: workspace:*
         version: link:../../packages/data-validation
+      '@arkenivajs/data-xlsx':
+        specifier: workspace:*
+        version: link:../../packages/data-xlsx
       '@arkenivajs/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -2516,6 +2519,9 @@ importers:
       csv-stringify:
         specifier: 6.9.0
         version: 6.9.0
+      exceljs:
+        specifier: 4.4.0
+        version: 4.4.0
       fastify:
         specifier: 5.12.7
         version: 5.12.7
