@@ -2465,9 +2465,15 @@ importers:
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
+      '@arkenivajs/upload':
+        specifier: workspace:*
+        version: link:../../packages/upload
       '@fastify/helmet':
         specifier: 13.2.0
         version: 13.2.0
+      '@fastify/multipart':
+        specifier: 10.1.6
+        version: 10.1.6
       '@js-temporal/polyfill':
         specifier: 0.5.1
         version: 0.5.1
