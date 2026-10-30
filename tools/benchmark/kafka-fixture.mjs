@@ -6,10 +6,18 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { kafkaConnection, nativeKafkaClient, kafkaValues, waitKafka } from './kafka-workload.mjs';
+import {
+  kafkaConnection,
+  nativeKafkaClient,
+  kafkaValues,
+  waitKafka,
+  kafkaIterations,
+  kafkaWarmupIterations,
+} from './kafka-workload.mjs';
 
 /** A separate native consumer verifies actual wire bytes and offsets before acknowledging each profile. */
-export async function startKafkaFixture() {
+export async function startKafkaFixture(measure = false) {
+  assert.equal(typeof measure, 'boolean');
   assert.equal(process.env.ARKENIVA_KAFKA_DISPOSABLE, '1');
   assert.ok(process.env.ARKENIVA_KAFKA_SECRETS);
   const token = randomBytes(16).toString('hex');
@@ -40,7 +48,12 @@ export async function startKafkaFixture() {
     ];
   const observed = new Map(fixture.markers.map((marker) => [marker, []])),
     confirmed = new Set(),
+    sampledConfirmed = new Set(),
     tasks = new Set();
+  const samplingRecords = measure ? kafkaIterations + kafkaWarmupIterations : 0,
+    recordsPerProfile = 3 + samplingRecords,
+    observedKinds = { binary: 0, empty: 0, tombstone: 0 };
+  let observedValueBytes = 0;
   let consumer, bridge, fault;
   const close = async () => {
     if (bridge?.listening) {
@@ -74,8 +87,8 @@ export async function startKafkaFixture() {
           const rows = observed.get(message.key?.toString());
           if (!rows) return;
           assert.equal(topic, fixture.topic);
-          assert.ok(rows.length < 3);
-          const expected = kafkaValues(fixture)[rows.length];
+          assert.ok(rows.length < recordsPerProfile);
+          const expected = kafkaValues(fixture)[rows.length % 3];
           assert.deepEqual(message.value, expected);
           assert.equal(Object.getPrototypeOf(message.headers), null);
           assert.deepEqual(message.headers.duplicate, [
@@ -93,6 +106,10 @@ export async function startKafkaFixture() {
             { topic, partition, offset: (BigInt(message.offset) + 1n).toString() },
           ]);
           rows.push({ partition, offset: message.offset });
+          observedValueBytes += message.value?.byteLength ?? 0;
+          observedKinds[
+            expected === null ? 'tombstone' : expected.length === 0 ? 'empty' : 'binary'
+          ]++;
         } catch (cause) {
           fault = cause;
           throw cause;
@@ -101,6 +118,10 @@ export async function startKafkaFixture() {
     });
     await waitKafka(() => consumer.assignment().length === 2);
     bridge = createServer((request, response) => {
+      if (tasks.size >= 8) {
+        response.writeHead(503, { connection: 'close' }).end();
+        return;
+      }
       const task = (async () => {
         assert.equal(request.method, 'POST');
         assert.equal(request.url, '/receipts');
@@ -116,12 +137,19 @@ export async function startKafkaFixture() {
           chunks.push(chunk);
         }
         const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        assert.ok(observed.has(value.marker) && !confirmed.has(value.marker));
-        assert.ok(Array.isArray(value.receipts) && value.receipts.length === 3);
-        await waitKafka(() => fault || observed.get(value.marker).length === 3);
+        assert.ok(observed.has(value.marker));
+        assert.ok(['verification', 'sampling'].includes(value.phase));
+        const sampling = value.phase === 'sampling',
+          phaseConfirmed = sampling ? sampledConfirmed : confirmed,
+          expectedCount = sampling ? samplingRecords : 3,
+          end = sampling ? recordsPerProfile : 3;
+        assert.ok(!phaseConfirmed.has(value.marker));
+        if (sampling) assert.ok(measure && confirmed.has(value.marker));
+        assert.ok(Array.isArray(value.receipts) && value.receipts.length === expectedCount);
+        await waitKafka(() => fault || observed.get(value.marker).length === end);
         if (fault) throw fault;
-        assert.deepEqual(value.receipts, observed.get(value.marker));
-        confirmed.add(value.marker);
+        assert.deepEqual(value.receipts, observed.get(value.marker).slice(sampling ? 3 : 0, end));
+        phaseConfirmed.add(value.marker);
         response.writeHead(200).end();
       })()
         .catch(() => response.writeHead(400).end())
@@ -138,11 +166,29 @@ export async function startKafkaFixture() {
       fixture,
       privacyValues,
       close,
-      verify() {
+      verify(expectedRecords = 4 * recordsPerProfile) {
         assert.equal(fault, undefined);
         assert.equal(confirmed.size, 4);
-        assert.ok([...observed.values()].every((rows) => rows.length === 3));
-        return { actualObservedRecords: 12, matchedProfileReceipts: 4, releaseGate: false };
+        assert.equal(sampledConfirmed.size, measure ? 4 : 0);
+        assert.ok([...observed.values()].every((rows) => rows.length === recordsPerProfile));
+        const actualObservedRecords = [...observed.values()].reduce(
+          (sum, rows) => sum + rows.length,
+          0,
+        );
+        assert.equal(actualObservedRecords, expectedRecords);
+        return {
+          actualObservedRecords,
+          matchedProfileReceipts: confirmed.size,
+          matchedSamplingProfiles: sampledConfirmed.size,
+          observedValueBytes,
+          observedKinds: { ...observedKinds },
+          maximumRetainedReceiptRows: 4 * recordsPerProfile,
+          observerResources: null,
+          brokerResources: null,
+          receiptSemantics:
+            'Replication-policy broker receipts and independent observer commits are distinct; no application commitment or end-to-end exactly-once claim',
+          releaseGate: false,
+        };
       },
     };
   } catch (cause) {
