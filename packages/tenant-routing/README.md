@@ -123,6 +123,14 @@ operation ID and emits `Cache-Control: private, no-store` with
 `Vary: Authorization`. Exceeding `maxCapabilities` returns 503
 `EK_TCAP_LIMIT_EXCEEDED`, with no truncated success response.
 
+The limit counts one principal's authorized, discoverable results, independently
+of total registry bindings or tenants. Functional integration tests exercise
+100 and 10,000 bindings across 99 and 9,999 tenants with `maxCapabilities: 1`.
+They verify distinct authenticated tenant responses and reject a separate
+two-result response explicitly. These fixed two-route fixtures validate isolation
+and limit semantics; they do not establish latency, throughput or memory budgets
+for larger operation catalogs.
+
 Resolve the administrative service with `TENANT_ROUTING_CAPABILITY` after READY.
 Its `api.resolve` inspects exact bindings but does not grant execution permission;
 it and `capabilities.list` still reject forged, copied or foreign-authority tenant

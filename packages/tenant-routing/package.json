@@ -33,7 +33,7 @@
     "test": "node ../../scripts/test.mjs all",
     "test:unit": "node ../../scripts/test.mjs unit",
     "test:contract": "node ../../scripts/test.mjs contract",
-    "test:integration:http": "node --test dist-test/integration/routing.integration.test.js dist-test/integration/capabilities-lifecycle.integration.test.js dist-test/integration/upstream.integration.test.js dist-test/integration/observation.integration.test.js dist-test/integration/usage.integration.test.js",
+    "test:integration:http": "node --test dist-test/integration/routing.integration.test.js dist-test/integration/capabilities-lifecycle.integration.test.js dist-test/integration/capabilities-scale.integration.test.js dist-test/integration/upstream.integration.test.js dist-test/integration/observation.integration.test.js dist-test/integration/usage.integration.test.js",
     "test:integration:postgres": "node --test dist-test/integration/postgres.integration.test.js",
     "test:integration:file": "node --test dist-test/integration/file.integration.test.js",
     "lint": "eslint src test"
