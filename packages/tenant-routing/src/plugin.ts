@@ -282,6 +282,8 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
             if (capabilities.length > settings.maxCapabilities)
               throw routingFailure('EK_TCAP_LIMIT_EXCEEDED');
           }
+          // Earlier entries cannot escape after an awaited hook loses trusted tenant membership.
+          verifiedTenant(auth, tenant);
           return Object.freeze({
             schemaVersion: '1.0.0',
             revision: table.snapshot.revision,
