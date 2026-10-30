@@ -4,6 +4,7 @@
 import { Worker } from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
 import { KitError } from '@arkenivajs/core';
+import { captureAbortSignal } from '@arkenivajs/core/support';
 import type { OperationOptions, ErrorCode } from '@arkenivajs/core';
 import { failure, fields, integer } from './validation.js';
 import type { XmlDocument } from './contracts.js';
@@ -11,27 +12,14 @@ import type { options, Settings } from './settings.js';
 
 export function operation(input: OperationOptions | undefined, maximum: number) {
   const value = fields(input === undefined ? {} : input, ['signal', 'timeoutMs']);
-  if (value.signal !== undefined) {
-    try {
-      Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!.call(value.signal);
-      if (!(value.signal instanceof AbortSignal)) throw failure();
-      let current: object | null = value.signal;
-      while (current !== AbortSignal.prototype) {
-        if (
-          !current ||
-          ['aborted', 'reason', 'addEventListener', 'removeEventListener'].some((key) =>
-            Object.hasOwn(current!, key),
-          )
-        )
-          throw failure();
-        current = Object.getPrototypeOf(current) as object | null;
-      }
-    } catch {
-      throw failure();
-    }
+  let signal: AbortSignal | undefined;
+  try {
+    signal = value.signal === undefined ? undefined : captureAbortSignal(value.signal);
+  } catch {
+    throw failure();
   }
   return {
-    ...(value.signal === undefined ? {} : { signal: value.signal as AbortSignal }),
+    ...(signal === undefined ? {} : { signal }),
     timeoutMs: integer(value.timeoutMs === undefined ? maximum : value.timeoutMs, maximum),
   };
 }

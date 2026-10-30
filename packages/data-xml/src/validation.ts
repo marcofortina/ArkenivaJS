@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError } from '@arkenivajs/core';
+import { types } from 'node:util';
 import type { ErrorCode } from '@arkenivajs/core';
 const messages: Partial<Record<ErrorCode, string>> = {
   EK_CONFIG_INVALID: 'The XML configuration is invalid',
@@ -25,6 +26,7 @@ export function fields(input: unknown, allowed?: readonly string[]): Record<stri
   if (
     !input ||
     typeof input !== 'object' ||
+    types.isProxy(input) ||
     ![Object.prototype, null].includes(Object.getPrototypeOf(input))
   )
     throw failure();

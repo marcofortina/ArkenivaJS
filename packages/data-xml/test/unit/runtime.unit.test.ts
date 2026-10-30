@@ -154,3 +154,95 @@ test('Canceled external work retains its shared XML admission and shutdown owner
   assert.equal(runtime.active.size, 0);
   assert.equal(settled, true);
 });
+
+test('XML worker and external cleanup never invoke later caller signal overrides', async () => {
+  const runtime = new Runtime(capture(settings), new AbortController().signal, () => true);
+  let effects = 0;
+  try {
+    const workerController = new AbortController();
+    const parsed = service(runtime).parse('<r/>', { signal: workerController.signal });
+    Object.defineProperty(workerController.signal, 'removeEventListener', {
+      value: () => {
+        effects++;
+      },
+    });
+    assert.ok(Object.isFrozen((await parsed).root));
+    assert.equal(runtime.active.size, 0);
+    const externalController = new AbortController();
+    const external = runtime.external({ signal: externalController.signal }, 0, async () => 42);
+    Object.defineProperty(externalController.signal, 'removeEventListener', {
+      value: () => {
+        effects++;
+      },
+    });
+    assert.equal(await external, 42);
+    assert.equal(runtime.active.size, 0);
+    assert.equal(effects, 0);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('XML rejects proxy operation controls and excessive signal ancestry without executing traps', async () => {
+  const runtime = new Runtime(capture(settings), new AbortController().signal, () => true);
+  let effects = 0;
+  const proxy = new Proxy(
+    {},
+    {
+      getPrototypeOf() {
+        effects++;
+        return Object.prototype;
+      },
+    },
+  );
+  const controller = new AbortController();
+  let parent: object = AbortSignal.prototype;
+  for (let index = 0; index < 65; index++) parent = Object.create(parent) as object;
+  Object.setPrototypeOf(controller.signal, parent);
+  try {
+    assert.throws(() => operation(proxy, 2000), code('EK_CONFIG_INVALID'));
+    await assert.rejects(service(runtime).parse('<r/>', proxy), code('EK_CONFIG_INVALID'));
+    assert.throws(() => operation({ signal: controller.signal }, 2000), code('EK_CONFIG_INVALID'));
+    assert.equal(effects, 0);
+    assert.equal(runtime.active.size, 0);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('XML native cancellation survives caller hook replacement and retains actual work ownership', async () => {
+  const runtime = new Runtime(capture(settings), new AbortController().signal, () => true);
+  let effects = 0,
+    release!: () => void,
+    entered!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  try {
+    const controller = new AbortController();
+    const pending = runtime.external({ signal: controller.signal }, 0, async (signal) => {
+      entered();
+      await hold;
+      assert.equal(signal.aborted, true);
+    });
+    await started;
+    Object.defineProperty(controller.signal, 'removeEventListener', {
+      value: () => {
+        effects++;
+      },
+    });
+    controller.abort();
+    await assert.rejects(pending, code('EK_ABORTED'));
+    assert.equal(runtime.active.size, 1);
+    release();
+    await runtime.close();
+    assert.equal(runtime.active.size, 0);
+    assert.equal(effects, 0);
+  } finally {
+    release();
+    await runtime.close();
+  }
+});

@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Capture native cancellation sources before admission and reject executable proxy controls.
 - Add explicit XML contracts, capability registration and trusted finite configuration.
 - Parse and build ordered XML with native SAX security preflight and expanded namespace support.
 - Isolate native operations with bounded worker admission, deadlines, cancellation and owned shutdown.
