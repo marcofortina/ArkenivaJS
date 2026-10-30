@@ -161,6 +161,10 @@ export function uploadPlugin(input: UploadPluginSettings): Plugin {
             observer.telemetry?.addCounter('upload.request.bytes', scope.bytes, attributes),
           );
           safe(() => observer.telemetry?.addCounter('upload.files', scope.files, attributes));
+          safe(() => observer.telemetry?.addCounter('upload.requests', 1, attributes));
+          safe(() => observer.telemetry?.addCounter('upload.parts', scope.parts, attributes));
+          if (['EK_ABORTED', 'EK_TIMEOUT', 'EK_UPLOAD_TRUNCATED'].includes(scope.error?.code ?? ''))
+            safe(() => observer.telemetry?.addCounter('upload.aborted.requests', 1, attributes));
           safe(() => {
             const meter = metered.get(scope);
             if (!meter) return;

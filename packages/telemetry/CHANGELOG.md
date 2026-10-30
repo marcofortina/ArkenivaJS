@@ -8,6 +8,7 @@
 
 ## 0.1.0
 
+- Declare request and part units for upload completion and interrupted-stream counters.
 - Add fixed CSV operation/outcome dimensions and explicit row, byte, duration, error and process RSS units; reject custom CSV label catalogs.
 
 - Add closed CIE operation/outcome dimensions and seconds-based authentication duration, federation check and failure units; reject custom CIE identity/error label catalogs.
