@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Capture plugin lifecycle and health callbacks with their original receivers without executing custom binding metadata, policy accessors or proxy traps.
+
 - Abort owned work at an expired shutdown deadline even when a synchronous hook delays the timer; retain the shared deadline across drain and close callbacks.
 
 - Start expired-deadline drain and close hooks while their required capabilities remain available, ensuring forced shutdown can release owned listeners.

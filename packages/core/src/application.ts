@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
   Application,
@@ -70,55 +71,82 @@ function readonlyCapabilities(input: ReadonlySet<string>): ReadonlySet<string> {
   return view;
 }
 
+/** Capture plugin wiring without executing accessors or proxy metadata traps. */
+function pluginProperty(plugin: unknown, name: PropertyKey): unknown {
+  if (!plugin || typeof plugin !== 'object' || types.isProxy(plugin))
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid plugin metadata' });
+  let current: object | null = plugin;
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current))
+      throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid plugin metadata' });
+    const field = Object.getOwnPropertyDescriptor(current, name);
+    if (field) {
+      if (!('value' in field))
+        throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid plugin metadata' });
+      return field.value;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  if (current)
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid plugin metadata' });
+  return undefined;
+}
+
 function capturePlugin(plugin: Plugin): ComposablePlugin {
-  const composition = plugin as ComposablePlugin;
+  const composition = Object.fromEntries(
+    [
+      ...['id', 'version', 'init', 'close', 'capabilities', 'dependencies', 'health'],
+      PREPARE_PLUGIN,
+      ACTIVATE_PLUGIN,
+      DRAIN_PLUGIN,
+      SUPPORT_PLUGINS,
+    ].map((key) => [key, pluginProperty(plugin, key)]),
+  ) as unknown as ComposablePlugin;
+  const callable = (value: unknown) => typeof value === 'function' && !types.isProxy(value);
+  const capture = <T extends (...args: never[]) => unknown>(callback: T): T =>
+    ((...args: Parameters<T>) => Reflect.apply(callback, plugin, args)) as T;
   if (
-    !plugin ||
-    typeof plugin.id !== 'string' ||
-    !/^[a-z][a-z0-9.-]{0,79}(?![\s\S])/.test(plugin.id) ||
-    typeof plugin.version !== 'string' ||
-    !new RegExp(SEMVER_PATTERN).test(plugin.version) ||
-    typeof plugin.init !== 'function' ||
-    typeof plugin.close !== 'function' ||
-    (composition.health !== undefined && typeof composition.health !== 'function') ||
-    (composition[PREPARE_PLUGIN] !== undefined &&
-      typeof composition[PREPARE_PLUGIN] !== 'function') ||
-    (composition[ACTIVATE_PLUGIN] !== undefined &&
-      typeof composition[ACTIVATE_PLUGIN] !== 'function') ||
-    (composition[DRAIN_PLUGIN] !== undefined && typeof composition[DRAIN_PLUGIN] !== 'function') ||
+    typeof composition.id !== 'string' ||
+    !/^[a-z][a-z0-9.-]{0,79}(?![\s\S])/.test(composition.id) ||
+    typeof composition.version !== 'string' ||
+    !new RegExp(SEMVER_PATTERN).test(composition.version) ||
+    !callable(composition.init) ||
+    !callable(composition.close) ||
+    (composition.health !== undefined && !callable(composition.health)) ||
+    (composition[PREPARE_PLUGIN] !== undefined && !callable(composition[PREPARE_PLUGIN])) ||
+    (composition[ACTIVATE_PLUGIN] !== undefined && !callable(composition[ACTIVATE_PLUGIN])) ||
+    (composition[DRAIN_PLUGIN] !== undefined && !callable(composition[DRAIN_PLUGIN])) ||
     (composition[SUPPORT_PLUGINS] !== undefined &&
       (!Array.isArray(composition[SUPPORT_PLUGINS]) ||
         composition[SUPPORT_PLUGINS].length > 64 ||
         composition[SUPPORT_PLUGINS].some((factory) => typeof factory !== 'function'))) ||
-    !plugin.capabilities ||
-    typeof plugin.capabilities.has !== 'function' ||
-    typeof plugin.capabilities[Symbol.iterator] !== 'function' ||
-    (plugin.dependencies !== undefined &&
-      (!Array.isArray(plugin.dependencies) ||
-        !plugin.dependencies.every((d) => typeof d === 'string')))
+    !composition.capabilities ||
+    typeof composition.capabilities.has !== 'function' ||
+    typeof composition.capabilities[Symbol.iterator] !== 'function' ||
+    (composition.dependencies !== undefined &&
+      (!Array.isArray(composition.dependencies) ||
+        !composition.dependencies.every((d) => typeof d === 'string')))
   ) {
     throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid plugin definition' });
   }
   return Object.freeze({
-    id: plugin.id,
-    version: plugin.version,
-    init: plugin.init.bind(plugin),
-    close: plugin.close.bind(plugin),
-    ...(composition.health ? { health: composition.health.bind(plugin) } : {}),
+    id: composition.id,
+    version: composition.version,
+    init: capture(composition.init),
+    close: capture(composition.close),
+    ...(composition.health ? { health: capture(composition.health) } : {}),
     ...(composition[PREPARE_PLUGIN]
-      ? { [PREPARE_PLUGIN]: composition[PREPARE_PLUGIN].bind(plugin) }
+      ? { [PREPARE_PLUGIN]: capture(composition[PREPARE_PLUGIN]) }
       : {}),
     ...(composition[ACTIVATE_PLUGIN]
-      ? { [ACTIVATE_PLUGIN]: composition[ACTIVATE_PLUGIN].bind(plugin) }
+      ? { [ACTIVATE_PLUGIN]: capture(composition[ACTIVATE_PLUGIN]) }
       : {}),
-    ...(composition[DRAIN_PLUGIN]
-      ? { [DRAIN_PLUGIN]: composition[DRAIN_PLUGIN].bind(plugin) }
-      : {}),
+    ...(composition[DRAIN_PLUGIN] ? { [DRAIN_PLUGIN]: capture(composition[DRAIN_PLUGIN]) } : {}),
     ...(composition[SUPPORT_PLUGINS]
       ? { [SUPPORT_PLUGINS]: Object.freeze([...composition[SUPPORT_PLUGINS]]) }
       : {}),
-    dependencies: Object.freeze([...(plugin.dependencies ?? [])]),
-    capabilities: readonlyCapabilities(plugin.capabilities),
+    dependencies: Object.freeze([...(composition.dependencies ?? [])]),
+    capabilities: readonlyCapabilities(composition.capabilities),
   });
 }
 

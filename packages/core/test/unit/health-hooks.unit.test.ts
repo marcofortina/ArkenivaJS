@@ -201,3 +201,51 @@ test('Kernel rejects invalid plugin evidence and late successful probes after th
     await app.stop();
   }
 });
+
+test('Kernel health capture ignores custom bind metadata and preserves actual dependency failure', async () => {
+  let calls = 0,
+    binds = 0;
+  const owner: ComposablePlugin = {
+    id: 'unavailable-owner',
+    version: '0.1.0',
+    capabilities: new Set(),
+    init() {},
+    close() {},
+    health() {
+      assert.equal(this, owner);
+      calls++;
+      return false;
+    },
+  };
+  Object.defineProperty(owner.health, 'bind', {
+    value: () => {
+      binds++;
+      return () => true;
+    },
+  });
+  let probes: readonly PluginHealthProbe[] = [];
+  const app = await createApplication({
+    service,
+    plugins: [
+      owner,
+      {
+        id: 'collector',
+        version: '0.1.0',
+        capabilities: new Set(['health']),
+        init(context) {
+          probes = context.require(HEALTH_PROBES);
+        },
+        close() {},
+      },
+    ],
+  });
+  owner.health = () => true;
+  try {
+    await app.start();
+    assert.equal(await probes[0]!.check({}), false);
+    assert.equal(calls, 1);
+    assert.equal(binds, 0);
+  } finally {
+    await app.stop();
+  }
+});
