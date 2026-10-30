@@ -8,6 +8,80 @@ import { buildSchema, execute, parse } from 'graphql';
 import { bindMetadata, installMetadata } from '../../dist/metadata.js';
 import { Operation } from '../../dist/operation.js';
 import { capture } from '../../dist/policy.js';
+import { setTimeout as delay } from 'node:timers/promises';
+
+test('Copied ownership symbols cannot turn primitive, executable or proxied anchors into a live context', () => {
+  const owned = new OwnedContexts<{ request: number }>(),
+    context = {};
+  let reads = 0,
+    traps = 0;
+  const release = owned.bind(context, () => {
+    reads++;
+    return { request: 1 };
+  });
+  const key = Object.getOwnPropertySymbols(context)[0]!;
+  const hostile = () => {
+    traps++;
+    throw new Error('Context anchor reflection must not execute');
+  };
+  try {
+    for (const anchor of [
+      undefined,
+      null,
+      1,
+      'owned',
+      () => {},
+      new Proxy({}, { get: hostile, getOwnPropertyDescriptor: hostile, getPrototypeOf: hostile }),
+    ]) {
+      const forged = { [key]: anchor };
+      assert.equal(owned.owns(forged), true);
+      assert.equal(owned.get(forged), undefined);
+    }
+    assert.equal(reads, 0);
+    assert.equal(traps, 0);
+    assert.deepEqual(owned.get({ ...context }), { request: 1 });
+    assert.equal(reads, 1);
+  } finally {
+    release();
+  }
+});
+
+test('An already aborted owner and an elapsed monotonic deadline deny resolver work before any effect', async () => {
+  const limits = capture({
+    schema: 'type Query { ping: String }',
+    resolvers: {},
+    security: { authorizeField: () => true },
+  }).security.limits;
+  const aborted = new Operation({ requestId: 'pre-aborted' }, limits, AbortSignal.abort());
+  const expired = new Operation(
+    { requestId: 'expired' },
+    { ...limits, maxOperationMs: 1 },
+    new AbortController().signal,
+  );
+  let effects = 0;
+  try {
+    await assert.rejects(
+      aborted.run(() => {
+        effects++;
+      }),
+      { code: 'EK_GQL_TIMEOUT' },
+    );
+    await delay(5);
+    await assert.rejects(
+      expired.run(() => {
+        effects++;
+      }),
+      { code: 'EK_GQL_TIMEOUT' },
+    );
+    assert.equal(aborted.context.signal.aborted, true);
+    assert.equal(expired.context.signal.aborted, true);
+    assert.equal(effects, 0);
+  } finally {
+    aborted.end();
+    expired.end();
+    await Promise.all([aborted.completion, expired.completion]);
+  }
+});
 
 test('Owned execution contexts follow native shallow copies and resolve only the current event scope', () => {
   const owned = new OwnedContexts<{ event: number }>();
