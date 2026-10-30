@@ -9,6 +9,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { KitError } from '@arkenivajs/core';
+import { captureAbortSignal } from '@arkenivajs/core/support';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
 import type { Work } from './backend.js';
 import type { Settings } from './settings.js';
@@ -17,27 +18,16 @@ import { fields, failure, integer } from './validation.js';
 
 export function operation(input: OperationOptions | undefined, maximum: number) {
   const value = fields(input ?? {}, ['signal', 'timeoutMs']);
+  let signal: AbortSignal | undefined;
   if (value.signal !== undefined) {
     try {
-      Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!.call(value.signal);
+      signal = captureAbortSignal(value.signal);
     } catch {
       throw failure();
     }
-    if (!(value.signal instanceof AbortSignal)) throw failure();
-    let current: object | null = value.signal;
-    while (current !== AbortSignal.prototype) {
-      if (
-        !current ||
-        ['aborted', 'reason', 'addEventListener', 'removeEventListener'].some((name) =>
-          Object.hasOwn(current!, name),
-        )
-      )
-        throw failure();
-      current = Object.getPrototypeOf(current) as object | null;
-    }
   }
   return {
-    signal: value.signal as AbortSignal | undefined,
+    signal,
     timeoutMs: integer(value.timeoutMs ?? maximum, maximum),
   };
 }
