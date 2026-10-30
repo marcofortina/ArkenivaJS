@@ -49,6 +49,9 @@ dependency probes, independent liveness and private SDK observations in four pro
 The [HTTP security header comparison](http-security.md) checks native Helmet and
 public framework hardening on actual success and error responses in four profiles.
 
+The [multipart verification](upload.md) checks actual chunked streaming, ordered
+parts, consumed-file digests and SDK privacy in four isolated profiles.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.
