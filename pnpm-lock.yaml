@@ -2387,6 +2387,9 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@arkenivajs/data-barcodes':
+        specifier: workspace:*
+        version: link:../../packages/data-barcodes
       '@arkenivajs/data-identifiers':
         specifier: workspace:*
         version: link:../../packages/data-identifiers
@@ -2444,9 +2447,15 @@ importers:
       '@simplewebauthn/server':
         specifier: 14.0.3
         version: 14.0.3
+      '@zxing/library':
+        specifier: 0.21.3
+        version: 0.21.3
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+      bwip-js:
+        specifier: 4.11.4
+        version: 4.11.4
       fastify:
         specifier: 5.12.7
         version: 5.12.7
@@ -2471,6 +2480,12 @@ importers:
       pino:
         specifier: 10.4.0
         version: 10.4.0
+      qrcode:
+        specifier: 1.5.4
+        version: 1.5.4
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@22.20.5)
       tinybench:
         specifier: 6.2.2
         version: 6.2.2
