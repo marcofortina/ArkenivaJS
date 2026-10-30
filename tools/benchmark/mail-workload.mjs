@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import nodemailer from 'nodemailer';
+import { createHash } from 'node:crypto';
 
 export const mailPrivateValues = Object.freeze([
   'owned-private-mail-content',
@@ -106,17 +107,113 @@ export function nativeMail(fixture) {
     },
   };
 }
+const observations = new WeakMap();
+
+/** Aggregate private receipt integrity; never use this digest as a telemetry label. */
+export function mailReceiptDigest(ids) {
+  assert.ok(Array.isArray(ids) && ids.length <= 512);
+  const digest = createHash('sha256').update('arkenivajs.mail.benchmark.receipts.v1\n');
+  for (const id of ids) {
+    assert.equal(typeof id, 'string');
+    assert.ok(id.length > 0 && id.length <= 2048 && !/[\r\n]/.test(id));
+    digest.update(JSON.stringify(id) + '\n');
+  }
+  return digest.digest('hex');
+}
+
+export function verifyMailReceipt(result) {
+  assert.equal(result.outcome, 'accepted');
+  assert.deepEqual(result.accepted, [mailPrivateValues[2]]);
+  assert.deepEqual(result.rejected, []);
+  assert.equal(typeof result.transportId, 'string');
+  assert.ok(result.transportId.length > 0 && result.transportId.length <= 2048);
+  assert.ok(!/[\r\n]/.test(result.transportId));
+  assert.ok(Number.isFinite(Date.parse(result.sentAt)));
+  return result.transportId;
+}
+
+function captureReceipt(state, result) {
+  const id = verifyMailReceipt(result);
+  assert.ok(state.ids.length < 128, 'The bounded SMTP receipt capacity is exceeded');
+  assert.equal(state.seen.has(id), false, 'A submitted SMTP receipt was repeated');
+  state.seen.add(id);
+  state.ids.push(id);
+}
+
 export async function verifyMail(service) {
   const health = await service.verifyTransport();
   assert.equal(health.available, true);
   assert.ok(Number.isFinite(Date.parse(health.checkedAt)));
+  const state = {
+    ids: [],
+    seen: new Set(),
+    verificationAccepted: 0,
+    callbacks: 0,
+    completed: 0,
+    active: 0,
+    peakActive: 0,
+  };
+  observations.set(service, state);
   for (let index = 0; index < 2; index++) {
     const result = await service.send(mailMessage());
-    assert.equal(result.outcome, 'accepted');
-    assert.deepEqual(result.accepted, [mailPrivateValues[2]]);
-    assert.deepEqual(result.rejected, []);
-    assert.equal(typeof result.transportId, 'string');
-    assert.ok(Number.isFinite(Date.parse(result.sentAt)));
+    captureReceipt(state, result);
+    state.verificationAccepted++;
   }
   return { checkedMessages: 2, actualTransportVerified: true, streamedAttachments: true };
+}
+
+/** Each callback creates a new single-pass attachment and awaits real SMTP acceptance. */
+export function mailWorkload(service) {
+  const state = observations.get(service);
+  assert.ok(state, 'SMTP corpus verification must precede workload execution');
+  return {
+    'smtp-accepted-streamed-attachment': async () => {
+      assert.equal(state.active, 0);
+      state.callbacks++;
+      state.active++;
+      state.peakActive = Math.max(state.peakActive, state.active);
+      try {
+        captureReceipt(state, await service.send(mailMessage()));
+        state.completed++;
+        return true;
+      } finally {
+        state.active--;
+      }
+    },
+  };
+}
+
+export function mailObservations(service, { measure, records }) {
+  const state = observations.get(service);
+  assert.ok(state, 'SMTP corpus verification must precede completion');
+  assert.equal(state.callbacks, state.completed);
+  assert.equal(state.active, 0);
+  assert.ok(state.peakActive <= 1);
+  if (measure) {
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'smtp-accepted-streamed-attachment');
+    assert.equal(record.sampleCount, 100);
+    assert.equal(record.warmupIterations, 20);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    assert.ok(record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0));
+    assert.equal(state.callbacks, record.sampleCount + record.warmupIterations);
+  } else assert.equal(records.length, 0);
+  const totalReceipts = state.verificationAccepted + state.completed;
+  assert.equal(state.ids.length, totalReceipts);
+  const receiptDigest = mailReceiptDigest(state.ids);
+  state.ids.length = 0;
+  state.seen.clear();
+  return {
+    actualSubmissionCallbacks: state.callbacks,
+    acceptedSubmissions: state.completed,
+    verificationAccepted: state.verificationAccepted,
+    totalReceipts,
+    receiptDigest,
+    expectedAttachmentBytes: totalReceipts * attachmentBytes.length,
+    activeCallbacks: state.active,
+    peakConcurrentCallbacks: state.peakActive,
+    retainedReceiptIds: state.ids.length,
+  };
 }

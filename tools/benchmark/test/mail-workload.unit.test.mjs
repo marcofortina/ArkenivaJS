@@ -78,9 +78,12 @@ test(
         assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
       }
       assert.equal(process.env.NODE_EXTRA_CA_CERTS, before);
-      const rejected = join(directory, 'sample');
+      const rejected = join(directory, 'sample'),
+        env = { ...process.env };
+      delete env.ARKENIVA_MAIL_BENCHMARK_DISPOSABLE;
       await assert.rejects(
         promisify(execFile)(process.execPath, [script, '--smoke', rejected], {
+          env,
           timeout: 5000,
           maxBuffer: 1048576,
         }),

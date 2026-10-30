@@ -68,6 +68,7 @@
     "logging": "node logging.mjs",
     "csv": "node csv.mjs",
     "mail": "node mail.mjs",
+    "test:integration:mail": "node --test test/mail-smoke.integration.test.mjs",
     "password": "node password.mjs",
     "test:integration:password": "node --test test/password-workload.integration.test.mjs",
     "etcd": "node etcd.mjs",
