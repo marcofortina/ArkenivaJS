@@ -109,6 +109,9 @@ independent server counts and actual framework chain/revocation checks.
 The [magic-link comparison](magiclink.md) verifies actual one-use SQL consumption,
 concurrent winner counts, external HMAC/authority and exact persisted quotas.
 
+The [JWT verification comparison](auth.md) checks actual JOSE/native public bearer
+verification, provenance policy and completed crypto counters across four profiles.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
