@@ -124,3 +124,56 @@ test(
     }
   },
 );
+
+test(
+  'Native cookie requests reject corrupted PostgreSQL CSRF state without invoking handlers and recover after restoration',
+  { timeout: 30000 },
+  async () => {
+    const f = await httpSecurityFixture();
+    try {
+      const account = await f.session();
+      const token = await account.run(() =>
+        f.first.service.csrfToken({ sessionId: account.issued.sessionId }),
+      );
+      const headers = {
+        cookie:
+          '__Host-session=' +
+          account.issued.value +
+          '; __Host-arkeniva-csrf=' +
+          token.split('.')[1],
+        origin: 'https://app.fixture.invalid',
+        'x-csrf-token': token,
+      };
+      const stored = await f.backend.app.sql.queryOne<{ id: string; body: string }>('main', {
+        text: `SELECT id,body FROM ${f.backend.schema}.security_records WHERE namespace=:namespace`,
+        bindings: { namespace: 'arkenivajs.security-http.csrf.v1' },
+      });
+      assert.ok(stored);
+      const original = JSON.parse(stored.body) as Record<string, unknown>;
+      const write = (body: string) =>
+        f.backend.app.sql.execute('main', {
+          text: `UPDATE ${f.backend.schema}.security_records SET body=:body WHERE namespace=:namespace AND id=:id`,
+          bindings: { body, namespace: 'arkenivajs.security-http.csrf.v1', id: stored.id },
+        });
+      for (const patch of [
+        { kind: 'wrong-state' },
+        { binding: 'foreign' },
+        { ownerKey: 'foreign' },
+      ]) {
+        const before = f.state.effects;
+        await write(JSON.stringify({ ...original, ...patch }));
+        const denied = await fetch(f.second.origin + '/protected', { method: 'POST', headers });
+        assert.equal(denied.status, 403);
+        await denied.arrayBuffer();
+        assert.equal(f.state.effects, before);
+        await write(stored.body);
+        const recovered = await fetch(f.second.origin + '/protected', { method: 'POST', headers });
+        assert.equal(recovered.status, 200);
+        await recovered.arrayBuffer();
+        assert.equal(f.state.effects, before + 1);
+      }
+    } finally {
+      await f.close();
+    }
+  },
+);
