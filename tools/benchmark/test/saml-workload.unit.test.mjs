@@ -66,11 +66,16 @@ test(
         assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
         if (row.quality) assert.ok(row.quality.metricSeries > 0);
       }
-      const unsupported = join(directory, 'unsupported');
-      await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
-      );
-      await assert.rejects(access(unsupported));
+      for (const mode of ['--smoke', '--full']) {
+        const unsupported = join(directory, mode.slice(2));
+        await assert.rejects(
+          promisify(execFile)(process.execPath, [script, mode, unsupported], {
+            timeout: 5000,
+            env: { ...process.env, ARKENIVA_SAML_BENCHMARK_DISPOSABLE: '' },
+          }),
+        );
+        await assert.rejects(access(unsupported), { code: 'ENOENT' });
+      }
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -3,11 +3,28 @@
 
 import { samlPlugin, SAML_CAPABILITY } from '@arkenivajs/security-saml';
 import { runPureWorker } from './pure-worker.mjs';
-import { nativeSaml, samlSettings, verifySaml } from './saml-workload.mjs';
+import {
+  nativeSaml,
+  samlSettings,
+  verifySaml,
+  prepareSamlRedirect,
+  samlRedirectWorkload,
+  completeSamlRedirect,
+} from './saml-workload.mjs';
 
 runPureWorker({
   name: 'saml',
   native: nativeSaml,
   framework: (fixture) => ({ plugin: samlPlugin(samlSettings(fixture)), key: SAML_CAPABILITY }),
-  verify: verifySaml,
+  async verify(service, fixture) {
+    const result = await verifySaml(service, fixture);
+    if (fixture.sampleRedirect) prepareSamlRedirect(service, fixture);
+    return result;
+  },
+  asynchronous: true,
+  iterations: 100,
+  warmupIterations: 20,
+  retainRawSamples: true,
+  workload: samlRedirectWorkload,
+  complete: completeSamlRedirect,
 });
