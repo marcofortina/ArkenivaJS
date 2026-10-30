@@ -2456,6 +2456,9 @@ importers:
       '@arkenivajs/security-http':
         specifier: workspace:*
         version: link:../../packages/security-http
+      '@arkenivajs/security-ldap':
+        specifier: workspace:*
+        version: link:../../packages/security-ldap
       '@arkenivajs/security-password':
         specifier: workspace:*
         version: link:../../packages/security-password
@@ -2522,6 +2525,9 @@ importers:
       jose:
         specifier: 6.2.13
         version: 6.2.13
+      ldapts:
+        specifier: 9.2.0
+        version: 9.2.0
       mailparser:
         specifier: 3.12.4
         version: 3.12.4
