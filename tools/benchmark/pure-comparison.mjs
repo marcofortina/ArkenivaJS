@@ -131,6 +131,7 @@ export async function runPureComparison(definition, args = process.argv.slice(2)
         report: resolve(directory, 'report.json'),
       }),
     );
+    return report;
   } finally {
     if (active) {
       const child = active;

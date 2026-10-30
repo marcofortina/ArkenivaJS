@@ -24,7 +24,7 @@ export function runPureWorker(adapter) {
 async function run({ mode, fixture, measure, endpoint }, adapter) {
   assert.ok(['BASELINE', 'FRAMEWORK', 'STANDARD', 'DETAILED'].includes(mode));
   assert.equal(typeof measure, 'boolean');
-  let app, telemetry;
+  let app, telemetry, service;
   const sink = new Writable({
     write(_chunk, _encoding, done) {
       done();
@@ -40,12 +40,11 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
     }
   });
   try {
-    let service;
     if (mode === 'BASELINE') service = await adapter.native(fixture);
     else {
       const { createApplication } = await import('@arkenivajs/core'),
         { loggingPlugin } = await import('@arkenivajs/logging'),
-        { plugin, key } = await adapter.framework();
+        { plugin, key } = await adapter.framework(fixture);
       const plugins = [loggingPlugin({ destination: sink }), plugin];
       if (mode === 'STANDARD' || mode === 'DETAILED') {
         const { telemetryPlugin } = await import('@arkenivajs/telemetry');
@@ -69,7 +68,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
       service = app.resolve(key);
       if (mode === 'STANDARD' || mode === 'DETAILED') telemetry = app.telemetry;
     }
-    const verification = adapter.verify(service, fixture),
+    const verification = await adapter.verify(service, fixture),
       records = [];
     const before = process.memoryUsage(),
       cpu = process.cpuUsage(),
@@ -88,28 +87,43 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
     try {
       if (measure) {
         const { Bench } = await import('tinybench');
+        const iterations = adapter.iterations ?? 10000,
+          warmupIterations = adapter.warmupIterations ?? 1000;
+        assert.ok(Number.isSafeInteger(iterations) && iterations >= 10 && iterations <= 10000);
+        assert.ok(
+          Number.isSafeInteger(warmupIterations) &&
+            warmupIterations >= 0 &&
+            warmupIterations <= 1000,
+        );
         for (const [operation, work] of Object.entries(adapter.workload(service, fixture))) {
           let last;
           const bench = new Bench({
             time: 0,
-            iterations: 10000,
+            iterations,
             warmupTime: 0,
-            warmupIterations: 1000,
+            warmupIterations,
             retainSamples: true,
             throws: true,
           });
-          bench.add(operation, () => {
-            last = work();
-          });
+          bench.add(
+            operation,
+            adapter.asynchronous
+              ? async () => {
+                  last = await work();
+                }
+              : () => {
+                  last = work();
+                },
+          );
           await bench.run();
           const result = bench.tasks[0].result;
           assert.equal(result.state, 'completed');
           const samples = result.latency.samples;
-          assert.ok(samples.length >= 10000);
+          assert.ok(samples.length >= iterations);
           records.push({
             operation,
             sampleCount: samples.length,
-            warmupIterations: 1000,
+            warmupIterations,
             latencyNanoseconds: {
               p50: quantile(samples, 0.5) * 1e6,
               p95: quantile(samples, 0.95) * 1e6,
@@ -155,6 +169,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
     };
   } finally {
     await app?.stop();
+    if (mode === 'BASELINE') await adapter.close?.(service);
     sink.destroy();
   }
 }

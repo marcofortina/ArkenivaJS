@@ -16,7 +16,8 @@
     "x509": "node x509.mjs",
     "apikey": "node apikey.mjs",
     "identifiers": "node identifiers.mjs",
-    "validation": "node validation.mjs"
+    "validation": "node validation.mjs",
+    "dns": "node dns.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -27,6 +28,7 @@
     "@arkenivajs/database": "workspace:*",
     "@arkenivajs/database-postgres": "workspace:*",
     "@arkenivajs/diagnostics": "workspace:*",
+    "@arkenivajs/dns": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/metering": "workspace:*",
     "@arkenivajs/security": "workspace:*",
