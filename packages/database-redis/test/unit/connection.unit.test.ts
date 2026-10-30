@@ -6,7 +6,13 @@ import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import redis from 'redis';
 import { KitError } from '@arkenivajs/core';
-import type { Logger, Telemetry, UsageMeter, MeterSession } from '@arkenivajs/core';
+import type {
+  Logger,
+  Telemetry,
+  UsageMeter,
+  MeterSession,
+  OperationOptions,
+} from '@arkenivajs/core';
 import { sdkDouble } from '../fixtures/native-double.js';
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
@@ -17,6 +23,98 @@ function deferred() {
   });
   return { promise, resolve };
 }
+
+test('Redis startup and command cancellation retain owned native hooks after caller mutation', async (context) => {
+  const sdk = sdkDouble(context),
+    connection = sdk.connection(),
+    controller = new AbortController(),
+    startup = deferred();
+  let effects = 0;
+  sdk.gateConnect(startup.promise);
+  const starting = connection.start({ signal: controller.signal });
+  Object.defineProperty(controller.signal, 'removeEventListener', {
+    value() {
+      effects++;
+    },
+  });
+  startup.resolve();
+  try {
+    await starting;
+    assert.equal(effects, 0);
+    const commandController = new AbortController(),
+      gate = deferred();
+    sdk.plan('get', { gate: gate.promise, value: Buffer.from('owned') });
+    const pending = connection.get('key', { signal: commandController.signal });
+    Object.defineProperty(commandController.signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+    gate.resolve();
+    assert.equal(await pending, 'owned');
+    assert.equal(effects, 0);
+    assert.equal(connection.stats().pending, 0);
+  } finally {
+    startup.resolve();
+    await connection.close();
+  }
+});
+test('Redis operation options reject accessor and proxy controls without execution or native submission', async (context) => {
+  const sdk = sdkDouble(context),
+    connection = sdk.connection();
+  let effects = 0;
+  await connection.start();
+  const before = sdk.calls.length;
+  const signal = new AbortController().signal;
+  const inputs: OperationOptions[] = [
+    Object.defineProperty({}, 'signal', {
+      get() {
+        effects++;
+        return signal;
+      },
+    }),
+    Object.defineProperty({}, 'timeoutMs', {
+      get() {
+        effects++;
+        return 1000;
+      },
+    }),
+    new Proxy(
+      {},
+      {
+        get() {
+          effects++;
+          return undefined;
+        },
+        getPrototypeOf() {
+          effects++;
+          return Object.prototype;
+        },
+      },
+    ),
+    {
+      signal: new Proxy(signal, {
+        getPrototypeOf(target) {
+          effects++;
+          return Reflect.getPrototypeOf(target);
+        },
+      }),
+    },
+  ];
+  const deep = new AbortController().signal;
+  let prototype: object = AbortSignal.prototype;
+  for (let index = 0; index < 65; index++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(deep, prototype);
+  inputs.push({ signal: deep });
+  try {
+    for (const input of inputs)
+      await assert.rejects(connection.get('key', input), code('EK_CONFIG_INVALID'));
+    assert.equal(effects, 0);
+    assert.equal(sdk.calls.length, before);
+  } finally {
+    await connection.close();
+  }
+});
 
 test('EK-DB-002 Redis captures scoped commands, Buffer conversion and validated modern NX/TTL options', async (context) => {
   const sdk = sdkDouble(context),

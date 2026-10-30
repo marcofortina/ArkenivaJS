@@ -16,7 +16,7 @@ import type {
   MeterSession,
   Subscription,
 } from '@arkenivajs/core';
-import { instrumentOperation, within } from '@arkenivajs/core/support';
+import { captureAbortSignal, instrumentOperation, within } from '@arkenivajs/core/support';
 import type { RedisConfiguration } from './config.js';
 import { redisError, redisVendor } from './errors.js';
 import { SAFE_INCREMENT, BOUNDED_GET } from './increment.js';
@@ -37,26 +37,34 @@ function options(input: OperationOptions = {}): { timeoutMs: number; signal?: Ab
   if (
     !input ||
     typeof input !== 'object' ||
-    Array.isArray(input) ||
-    (input.signal !== undefined && !(input.signal instanceof AbortSignal))
+    types.isProxy(input) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(input))
   )
     throw new KitError({
       code: 'EK_CONFIG_INVALID',
       message: 'Redis operation options require an object and an AbortSignal',
     });
-  const timeoutMs = input.timeoutMs ?? REDIS_LIMITS.timeoutMs;
+  const timeout = Object.getOwnPropertyDescriptor(input, 'timeoutMs'),
+    source = Object.getOwnPropertyDescriptor(input, 'signal');
+  if ((timeout && !('value' in timeout)) || (source && !('value' in source)))
+    throw new KitError({
+      code: 'EK_CONFIG_INVALID',
+      message: 'Redis operation controls require data properties',
+    });
+  const timeoutMs = timeout?.value ?? REDIS_LIMITS.timeoutMs,
+    signal = source?.value === undefined ? undefined : captureAbortSignal(source.value);
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)
     throw new KitError({
       code: 'EK_CONFIG_INVALID',
       message: 'Redis timeout must be a positive integer',
     });
-  if (input.signal?.aborted)
+  if (signal?.aborted)
     throw new KitError({
       code: 'EK_ABORTED',
       message: 'Redis operation aborted',
-      cause: input.signal.reason,
+      cause: signal.reason,
     });
-  return { timeoutMs, ...(input.signal === undefined ? {} : { signal: input.signal }) };
+  return { timeoutMs, ...(signal === undefined ? {} : { signal }) };
 }
 function text(value: string, maximum: number, identifier = false): void {
   if (
