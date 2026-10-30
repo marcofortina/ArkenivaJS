@@ -770,7 +770,10 @@ test('Metering retains inherited verifier identity and rejects executable author
       },
     });
   const meter = createMeter({ ...f.options, auth });
-  auth.isVerifiedTenant = (_value: unknown): _value is VerifiedTenantContext => true;
+  auth.isVerifiedTenant = (_value: unknown): _value is VerifiedTenantContext => {
+    void _value;
+    return true;
+  };
   try {
     const session = meter.start({ tenant, operation: 'verified' });
     session.end('ok');
