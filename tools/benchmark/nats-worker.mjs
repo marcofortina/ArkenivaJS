@@ -3,11 +3,24 @@
 
 import { COMPONENTS } from '@arkenivajs/core';
 import { messagingPlugin } from '@arkenivajs/messaging';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { runPureWorker } from './pure-worker.mjs';
-import { nativeNats, natsConnection, verifyNats } from './nats-workload.mjs';
+import {
+  nativeNats,
+  natsConnection,
+  verifyNats,
+  natsWorkload,
+  natsObservations,
+  closeNatsWorkload,
+} from './nats-workload.mjs';
 
-runPureWorker({
+export const natsAdapter = {
   name: 'nats',
+  asynchronous: true,
+  iterations: 100,
+  warmupIterations: 20,
+  retainRawSamples: true,
   native: nativeNats,
   framework(fixture) {
     natsConnection(fixture);
@@ -20,8 +33,20 @@ runPureWorker({
         },
       }),
       key: COMPONENTS.messaging,
+      dispose: () => closeNatsWorkload(fixture),
     };
   },
   verify: verifyNats,
-  close: (service) => service?.close(),
-});
+  workload: natsWorkload,
+  complete: natsObservations,
+  async close(service) {
+    try {
+      await closeNatsWorkload(service);
+    } finally {
+      await service?.close();
+    }
+  },
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
+  runPureWorker(natsAdapter);

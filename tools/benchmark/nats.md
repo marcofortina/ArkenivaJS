@@ -32,8 +32,57 @@ The tool verifies actual local observations separately and requires
 `acknowledged: false`. It does not claim JetStream semantics, durable delivery,
 retry safety or authenticated distributed business authority.
 
-Only `--verify` is supported. Sampling is rejected before fixture allocation
-until complete broker/client resource accounting and representative queue and
-backpressure workloads are available. Reports retain `releaseGate: false`;
-dedicated-runner budgets, five paired repetitions and one-hour soak acceptance
-remain separate work.
+`--verify` retains its nonmeasured protocol checks and `releaseGate: false`.
+
+## Short client component comparison
+
+Measurements run only inside the owned disposable QEMU runner, using the same
+private mutual-TLS fixture environment. Both the existing
+`ARKENIVA_NATS_DISPOSABLE=1` and the explicit smoke marker are required. The
+smoke guard runs before fixture validation or report creation.
+
+```sh
+ARKENIVA_NATS_BENCHMARK_DISPOSABLE=1 \
+  python3 packages/messaging/test/fixtures/run.py /private/nats-environment.json \
+  pnpm --filter @arkenivajs/benchmark-foundation nats --smoke /private/nats-smoke
+```
+
+One sequential `publish-flush-and-dual-observed-receipt` scenario runs in each of
+the four profiles: 20 warmup callbacks followed by 100 actual retained Tinybench
+latency samples. At most one publication is pending. The first warmup callback
+creates one service subscription and one separately connected native subscriber
+on the owned literal topic. Each callback publishes the same bounded JSON shape
+with its sequence number and waits for both actual deliveries. It checks exact
+message ID, marker, sequence, correlation and absence of untrusted tenant state
+against the returned receipt. Actual observed encoded envelope bytes are checked
+against the exact expected envelope. No hidden retries or retained message-ID
+history is used; only the current private receipt is retained.
+
+Completion compares actual callbacks with measured samples plus warmup, requires
+exactly one native and one service-handler delivery per publication, closes both
+subscriptions and drains the independent connection. It requires zero pending
+receipts, callbacks, owned subscriptions or independent connections before
+accepting the result. The initial two-way interoperability corpus is outside
+the samples and retains its existing wrong-hostname certificate controls.
+Reports contain only aggregate counts and observed byte totals, never subjects,
+correlation identifiers, envelopes, connection credentials or private key paths.
+The measured integration case is enabled only with the explicit smoke marker;
+ordinary unit checks make no broker connection or performance measurement.
+
+Latency covers publication flush plus both actual observed receipts. This is
+neither request/reply latency nor a durable broker acknowledgment: every receipt
+still has `acknowledged: false`. CPU/RSS, heap, GC and event-loop observations
+cover the comparison client process, including its two client connections, and
+exclude broker/server resources. The shared helper retains the existing
+256 MiB old-space limit, 30-second per-profile deadline and bounded owned
+collector. Both STANDARD and DETAILED explicitly use diagnostic trace sampling
+ratio 1, so STANDARD does not represent normal production sampling.
+
+The native baseline still omits complete framework hostile-input, admission,
+cancellation and lifecycle policy. This small valid-corpus comparison cannot
+establish policy-equivalent overhead, server CPU cost, durable delivery,
+JetStream, exactly-once processing, queue/backpressure performance, confidence
+intervals, calibrated budgets or release acceptance. Normative long warmup and
+steady trials, five paired repetitions and one-hour soak remain deferred. The
+unsupported full-campaign flag and unmarked smoke are rejected before evidence
+creation.
