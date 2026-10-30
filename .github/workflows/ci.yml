@@ -402,6 +402,8 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:password
       - name: Verify native webhook signatures and durable one-use nonce claims
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:webhooks
+      - name: Verify native OAuth HTTPS machine grants and persisted technical budgets
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:oauth
       - name: Verify immutable tenant SQL registry activation and existing-pool HTTP startup
         run: pnpm --filter @arkenivajs/tenant-routing test:integration:postgres
       - name: Verify all four HTTP modes against real PostgreSQL and telemetry
