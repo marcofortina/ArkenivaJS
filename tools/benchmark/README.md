@@ -73,6 +73,9 @@ rotated text and ordered merged pages through the same four isolated profiles.
 The [SFTP/SSH verification](sftp.md) checks pinned-host file exchange, actual hashes,
 remote cleanup and literal allowed commands against the owned OpenSSH server.
 
+The [Redis comparison](redis.md) checks portable operation results, actual server
+state and ephemeral subscriber observations before optional bounded roundtrips.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.
