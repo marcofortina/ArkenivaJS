@@ -196,3 +196,52 @@ test(
     }
   },
 );
+
+test(
+  'Session real PostgreSQL corrupted state fails closed and restoration preserves native signed authentication',
+  { timeout: 30000 },
+  async () => {
+    const f = await sessionFixture();
+    try {
+      const account = await f.session();
+      const issued = await account.run(() =>
+        f.first.sessions.create(account.identity, f.settings.defaultPolicy),
+      );
+      for (const change of ['kind', 'owner', 'epoch', 'authentication-time']) {
+        const stored = await f.base.backend.app.sql.queryOne<{ body: string }>('main', {
+          text: `SELECT body FROM ${f.base.backend.schema}.security_records WHERE namespace=:namespace AND id=:id`,
+          bindings: { namespace: 'sessions.records.v1', id: issued.sessionId },
+        });
+        assert.ok(stored);
+        const original = JSON.parse(stored.body) as Record<string, unknown>;
+        const patch =
+          change === 'kind'
+            ? { kind: 'unexpected-record' }
+            : change === 'owner'
+              ? { ownerKey: 'g'.repeat(64) }
+              : change === 'epoch'
+                ? { epoch: -1 }
+                : {
+                    authenticatedAt: new Date(
+                      Date.parse(String(original.createdAt)) + 1000,
+                    ).toISOString(),
+                  };
+        const write = (body: string) =>
+          f.base.backend.app.sql.execute('main', {
+            text: `UPDATE ${f.base.backend.schema}.security_records SET body=:body WHERE namespace=:namespace AND id=:id`,
+            bindings: { body, namespace: 'sessions.records.v1', id: issued.sessionId },
+          });
+        await write(JSON.stringify({ ...original, ...patch }));
+        await assert.rejects(f.second.sessions.validate(issued.value), {
+          code: 'EK_SESSION_STORE',
+        });
+        await write(stored.body);
+        assert.equal((await f.second.sessions.validate(issued.value)).sessionId, issued.sessionId);
+      }
+      await account.run(() => f.first.sessions.revoke(issued.sessionId));
+      await assert.rejects(f.second.sessions.validate(issued.value));
+    } finally {
+      await f.close();
+    }
+  },
+);
