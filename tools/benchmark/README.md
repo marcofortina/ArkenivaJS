@@ -76,6 +76,9 @@ remote cleanup and literal allowed commands against the owned OpenSSH server.
 The [Redis comparison](redis.md) checks portable operation results, actual server
 state and ephemeral subscriber observations before optional bounded roundtrips.
 
+The [core lookup comparison](core.md) verifies actual public capability identity
+and lifecycle boundaries in four profiles without adding per-lookup instruments.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.
