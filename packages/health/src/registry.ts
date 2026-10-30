@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type { HealthRegistry, OperationOptions, Telemetry, Logger } from '@arkenivajs/core';
 import { within } from '@arkenivajs/core/support';
@@ -28,63 +29,93 @@ type Probe = { readonly result: Readiness; readonly causes: readonly unknown[] }
 const notReady = (): Readiness =>
   Object.freeze({ status: 'not_ready', failing: Object.freeze(['application']) });
 
+/** Read bounded data descriptors without executing application-owned accessors or proxy traps. */
+export function healthProperty(input: unknown, name: string): unknown {
+  if (!input || typeof input !== 'object' || types.isProxy(input) || Array.isArray(input))
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health policy metadata' });
+  let current: object | null = input;
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current))
+      throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health policy metadata' });
+    const field = Object.getOwnPropertyDescriptor(current, name);
+    if (field) {
+      if (!('value' in field))
+        throw new KitError({
+          code: 'EK_CONFIG_INVALID',
+          message: 'Invalid health policy metadata',
+        });
+      return field.value;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  if (current)
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health policy metadata' });
+  return undefined;
+}
+
+/** Capture the original callable and receiver without consulting mutable function metadata. */
+export function captureHealthChecks<T extends (...args: never[]) => unknown>(input: unknown) {
+  if (input === undefined) return Object.freeze([]) as readonly { name: string; check: T }[];
+  if (types.isProxy(input) || !Array.isArray(input) || input.length > 32)
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health probe list' });
+  const captured: { name: string; check: T }[] = [],
+    names = new Set<string>();
+  for (let index = 0; index < input.length; index++) {
+    const field = Object.getOwnPropertyDescriptor(input, String(index));
+    if (!field || !('value' in field))
+      throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health probe list' });
+    const entry: unknown = field.value,
+      name = healthProperty(entry, 'name'),
+      callback = healthProperty(entry, 'check');
+    if (
+      typeof name !== 'string' ||
+      !/^[a-z][a-z0-9.-]{0,95}(?![\s\S])/.test(name) ||
+      name === 'application' ||
+      names.has(name) ||
+      typeof callback !== 'function' ||
+      types.isProxy(callback)
+    )
+      throw new KitError({
+        code: 'EK_CONFIG_INVALID',
+        message: 'Health checks require unique bounded names and callbacks',
+      });
+    names.add(name);
+    const check = ((...args: Parameters<T>) => Reflect.apply(callback, entry, args)) as T;
+    captured.push(Object.freeze({ name, check }));
+  }
+  return Object.freeze(captured);
+}
+
 /** Capture bounded probe metadata without invoking callbacks or opening resources. */
 export function healthPolicy(
   options: Omit<HealthOptions, 'checks'> & {
     readonly checks?: readonly { readonly name: string; readonly check: unknown }[];
   },
 ) {
+  const configuredTimeout = healthProperty(options, 'timeoutMs'),
+    timeoutMs = configuredTimeout === undefined ? 1000 : configuredTimeout,
+    isReady = healthProperty(options, 'isReady');
   if (
-    !options ||
-    typeof options !== 'object' ||
-    Array.isArray(options) ||
-    (options.checks !== undefined && !Array.isArray(options.checks)) ||
-    (options.isReady !== undefined && typeof options.isReady !== 'function')
+    typeof timeoutMs !== 'number' ||
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs <= 0 ||
+    timeoutMs > 5000 ||
+    (isReady !== undefined && (typeof isReady !== 'function' || types.isProxy(isReady)))
   )
     throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health registry policy' });
-  const timeoutMs = options.timeoutMs === undefined ? 1000 : options.timeoutMs,
-    checks = options.checks ?? [],
-    names = new Set<string>();
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 5000 || checks.length > 32)
-    throw new KitError({
-      code: 'EK_CONFIG_INVALID',
-      message: 'Health probes require bounded capacity and positive timeout',
-    });
-  const captured: { readonly name: string; readonly check: unknown }[] = [];
-  for (const entry of checks) {
-    if (
-      !entry ||
-      typeof entry.name !== 'string' ||
-      !/^[a-z][a-z0-9.-]{0,95}(?![\s\S])/.test(entry.name) ||
-      entry.name === 'application' ||
-      names.has(entry.name) ||
-      typeof entry.check !== 'function'
-    )
-      throw new KitError({
-        code: 'EK_CONFIG_INVALID',
-        message: 'Health checks require unique bounded names and callbacks',
-      });
-    names.add(entry.name);
-    captured.push(Object.freeze({ name: entry.name, check: entry.check }));
-  }
   return Object.freeze({
     timeoutMs,
-    checks: Object.freeze(captured),
-    isReady: options.isReady,
-    telemetry: options.telemetry,
-    logger: options.logger,
+    checks: captureHealthChecks<HealthCheck['check']>(healthProperty(options, 'checks')),
+    isReady:
+      isReady === undefined ? undefined : () => Reflect.apply(isReady, options, []) as unknown,
+    telemetry: healthProperty(options, 'telemetry') as Telemetry | undefined,
+    logger: healthProperty(options, 'logger') as Logger | undefined,
   });
 }
 
 /** One registry owns bounded readonly probes; liveness never depends on an external backend. */
 export function createHealthRegistry(options: HealthOptions = {}): ManagedHealthRegistry {
-  const validated = healthPolicy(options),
-    policy = {
-      ...validated,
-      checks: (options.checks ?? []).map((entry) =>
-        Object.freeze({ name: entry.name, check: entry.check.bind(entry) }),
-      ),
-    },
+  const policy = healthPolicy(options),
     stop = new AbortController(),
     pending = new Map<string, Promise<boolean>>();
   let closed = false,

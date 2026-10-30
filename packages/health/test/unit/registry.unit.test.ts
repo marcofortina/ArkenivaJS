@@ -277,3 +277,93 @@ test('Health startup cancelled before a probe runs cannot establish readiness or
   assert.equal(calls, 0);
   assert.equal(registry.stats().pendingChecks, 0);
 });
+
+test('Health probes ignore custom bind metadata and preserve the original receiver', async () => {
+  let calls = 0,
+    binds = 0;
+  const probe = {
+    name: 'unavailable',
+    available: false,
+    check() {
+      calls++;
+      assert.equal(this, probe);
+      return this.available;
+    },
+  };
+  Object.defineProperty(probe.check, 'bind', {
+    value: () => {
+      binds++;
+      return () => true;
+    },
+  });
+  const registry = createHealthRegistry({ checks: [probe] });
+  try {
+    await assert.rejects(registry.start(), { code: 'EK_HEALTH_NOT_READY' });
+    assert.equal(calls, 1);
+    assert.equal(binds, 0);
+    assert.deepEqual(await registry.ready(), { status: 'not_ready', failing: ['application'] });
+  } finally {
+    await registry.close();
+  }
+});
+
+test('Health captures inherited methods once and never evaluates probe accessors or proxy traps', async () => {
+  let effects = 0;
+  class Probe {
+    name = 'native-owner';
+    available = true;
+    check() {
+      assert.ok(this instanceof Probe);
+      return this.available;
+    }
+  }
+  const probe = new Probe(),
+    registry = createHealthRegistry({ checks: [probe] });
+  probe.check = () => true;
+  await registry.start();
+  try {
+    probe.available = false;
+    assert.deepEqual(await registry.ready(), { status: 'not_ready', failing: ['native-owner'] });
+  } finally {
+    await registry.close();
+  }
+  const trap = () => {
+    effects++;
+    throw new Error('Application metadata must not execute');
+  };
+  const valid = { name: 'invalid', check: () => true };
+  const accessor = Object.defineProperty({ name: 'invalid' }, 'check', { get: trap });
+  const arrayAccessor = Object.defineProperty([valid], '0', { get: trap });
+  const proxiedCallback = { name: 'invalid', check: new Proxy(() => true, { apply: trap }) };
+  const proxy = new Proxy(valid, {
+    get: trap,
+    getOwnPropertyDescriptor: trap,
+    getPrototypeOf: trap,
+  });
+  const prototypeProxy = Object.create(proxy) as typeof valid;
+  const deep = Array.from({ length: 33 }).reduce<object>(
+    (previous) => Object.create(previous) as object,
+    valid,
+  );
+  for (const checks of [
+    [accessor],
+    arrayAccessor,
+    [proxiedCallback],
+    [proxy],
+    [prototypeProxy],
+    [deep],
+    new Proxy([valid], { get: trap }),
+  ]) {
+    assert.throws(() => createHealthRegistry({ checks: checks as never }), {
+      code: 'EK_CONFIG_INVALID',
+    });
+  }
+  for (const options of [
+    new Proxy({}, { get: trap }),
+    Object.defineProperty({}, 'checks', { get: trap }),
+    Object.defineProperty({}, 'isReady', { get: trap }),
+  ]) {
+    assert.throws(() => createHealthRegistry(options), { code: 'EK_CONFIG_INVALID' });
+  }
+  assert.equal(effects, 0);
+});
