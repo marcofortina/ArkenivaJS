@@ -63,6 +63,117 @@ function fixture() {
   };
 }
 
+test('Invalid close deadlines leave live meter sessions and the exporter untouched', async () => {
+  const f = fixture(),
+    meter = createMeter(f.options);
+  const session = meter.start({ tenant: f.mint('tenant-A'), operation: 'deadline.validation' });
+  try {
+    for (const timeoutMs of [
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+      '1000',
+      null,
+      false,
+    ]) {
+      await assert.rejects(
+        async () => meter.close({ timeoutMs } as never),
+        code('EK_CONFIG_INVALID'),
+      );
+      assert.equal(meter.snapshot().activeSessions, 1);
+      assert.equal(f.closes(), 0);
+      assert.deepEqual(f.events, []);
+    }
+    session.recordOperation('http.requests');
+    session.end('ok');
+    await meter.flush({ timeoutMs: 1000 });
+    assert.equal(f.events.length, 1);
+    assert.equal(f.events[0]!.status, 'ok');
+  } finally {
+    await meter.close();
+  }
+  assert.equal(f.closes(), 1);
+});
+
+test('Meter deadlines reject executable options and forged signals before reading hooks or retiring sessions', async () => {
+  for (const method of ['flush', 'close'] as const) {
+    const f = fixture(),
+      meter = createMeter(f.options);
+    const session = meter.start({ tenant: f.mint('tenant-A'), operation: 'deadline.metadata' });
+    let hooks = 0;
+    const trap = () => {
+      hooks++;
+      throw new Error('Deadline metadata hooks must not execute');
+    };
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+    const timeoutGetter = Object.defineProperty({}, 'timeoutMs', {
+      enumerable: true,
+      get() {
+        hooks++;
+        return 1000;
+      },
+    });
+    const signalGetter = Object.defineProperty({}, 'signal', {
+      enumerable: true,
+      get() {
+        hooks++;
+        return new AbortController().signal;
+      },
+    });
+    try {
+      for (const options of [
+        timeoutGetter,
+        signalGetter,
+        null,
+        [],
+        new Date(),
+        Object.create({ timeoutMs: 1000 }),
+        Object.defineProperty({}, 'timeoutMs', { value: 1000, enumerable: false }),
+        { [Symbol('deadline')]: 1000 },
+        { timeoutMs: 1000, requestId: 'unsupported-deadline-field' },
+        new Proxy(
+          {},
+          { get: trap, getOwnPropertyDescriptor: trap, getPrototypeOf: trap, ownKeys: trap },
+        ),
+        revoked.proxy,
+        { signal: false },
+        { signal: Object.create(AbortSignal.prototype) },
+        { signal: new Proxy(new AbortController().signal, { get: trap }) },
+      ]) {
+        await assert.rejects(
+          async () => meter[method](options as never),
+          code('EK_CONFIG_INVALID'),
+        );
+        assert.equal(hooks, 0);
+        assert.equal(meter.snapshot().activeSessions, 1);
+        assert.equal(f.closes(), 0);
+      }
+      const aborted = new AbortController();
+      aborted.abort();
+      await assert.rejects(
+        meter.flush({ timeoutMs: 1000, signal: aborted.signal }),
+        code('EK_ABORTED'),
+      );
+      assert.equal(meter.snapshot().activeSessions, 1);
+      session.end('ok');
+      const options = Object.assign(Object.create(null), {
+        timeoutMs: 1000,
+        signal: new AbortController().signal,
+      });
+      await meter.flush(options);
+      await meter.close(options);
+      assert.equal(f.events.length, 1);
+      assert.equal(f.closes(), 1);
+    } finally {
+      await meter.close();
+    }
+  }
+});
+
 test('Background consumers detach request tenant scope and require an independent verified accounting operation', async () => {
   const f = fixture(),
     meter = createMeter(f.options),
