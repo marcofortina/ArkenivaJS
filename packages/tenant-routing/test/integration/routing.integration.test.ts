@@ -16,6 +16,68 @@ import { within } from '@arkenivajs/core/support';
 import { fixture, settings, registry, send, tlsFiles } from '../http-fixture.js';
 import { connect } from 'node:http2';
 import { registryContentChecksum } from '../../dist/registry.js';
+import type { ManagedApiServer } from '@arkenivajs/api';
+
+test('Capability responses preserve application cache variation and remain private for every principal', async () => {
+  const variation: Plugin = {
+    id: 'application-cache-variation',
+    version: '1.0.0',
+    capabilities: new Set(),
+    dependencies: ['api', 'tenant-routing'],
+    init(context) {
+      context
+        .require<ManagedApiServer>(COMPONENTS.api)
+        .native()
+        .addHook('onRequest', async (_request, reply) => {
+          reply.header('vary', ['Accept-Encoding', 'Origin']);
+        });
+    },
+    close() {},
+  };
+  const f = await fixture(settings(), { plugins: [variation] });
+  try {
+    const cases = [
+      { authorization: undefined, status: 401, operations: undefined },
+      {
+        authorization: await f.token('north', 'orders:read'),
+        status: 200,
+        operations: ['orders.read'],
+      },
+      {
+        authorization: await f.token('south', 'orders:write'),
+        status: 200,
+        operations: ['orders.create'],
+      },
+      { authorization: await f.token('unmapped'), status: 200, operations: [] },
+    ];
+    for (const candidate of cases) {
+      const response = await send(f.origin, '/api/tenant/capabilities', {
+        headers: candidate.authorization ? { authorization: candidate.authorization } : {},
+      });
+      assert.equal(response.status, candidate.status, response.body);
+      assert.equal(response.headers['cache-control'], 'private, no-store');
+      assert.deepEqual(
+        String(response.headers.vary)
+          .split(',')
+          .map((name) => name.trim().toLowerCase())
+          .sort(),
+        ['accept-encoding', 'authorization', 'origin'],
+      );
+      const body = response.json();
+      assert.deepEqual(
+        (body.capabilities as { operationId: string }[] | undefined)?.map(
+          (item) => item.operationId,
+        ),
+        candidate.operations,
+      );
+      assert.doesNotMatch(response.body, /north|south|tenantId|handlerKey|implementationId/);
+      if (candidate.authorization)
+        assert.equal(response.body.includes(candidate.authorization), false);
+    }
+  } finally {
+    await f.close();
+  }
+});
 
 test('Real signed identities select exact tenant handlers and never trust diagnostic headers or bodies', async () => {
   const f = await fixture();
