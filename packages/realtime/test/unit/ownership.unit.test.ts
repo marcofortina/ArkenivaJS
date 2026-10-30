@@ -12,14 +12,24 @@ import type { MessageBus, Plugin } from '@arkenivajs/core';
 import type { SseEvent } from '../../dist/index.js';
 import { fixture, sseRequest } from '../fixture.js';
 
-for (const mode of ['throw', 'reject', 'late-reject', 'incomplete', 'malformed'])
+for (const mode of [
+  'throw',
+  'reject',
+  'late-reject',
+  'incomplete',
+  'malformed',
+  'accessor',
+  'proxy',
+  'inherited',
+])
   test(
     `An SSE iterator return ${mode} remains visible after the disconnected connection has retired`,
     { timeout: 10000 },
     async () => {
       let returned!: () => void,
         rejectCleanup = () => {},
-        allocations = 0;
+        allocations = 0,
+        completionReads = 0;
       const cleanup = new Promise<void>((resolve) => {
         returned = resolve;
       });
@@ -56,6 +66,30 @@ for (const mode of ['throw', 'reject', 'late-reject', 'incomplete', 'malformed']
                       value: { id: 'pending_1', type: 'update', data: 'Cleanup is incomplete' },
                     });
                   if (mode === 'malformed') return Promise.resolve(undefined as never);
+                  if (mode === 'accessor')
+                    return Promise.resolve({
+                      get done() {
+                        completionReads++;
+                        return true as const;
+                      },
+                      value: undefined,
+                    });
+                  if (mode === 'proxy')
+                    return Promise.resolve(
+                      new Proxy(
+                        { done: true as const, value: undefined },
+                        {
+                          get(target, key, receiver) {
+                            if (key === 'done') completionReads++;
+                            return Reflect.get(target, key, receiver);
+                          },
+                        },
+                      ),
+                    );
+                  if (mode === 'inherited')
+                    return Promise.resolve(
+                      Object.create({ done: true, value: undefined }) as IteratorResult<SseEvent>,
+                    );
                   const error = new Error('Private failed SSE cleanup diagnostic');
                   if (mode === 'throw') throw error;
                   if (mode === 'late-reject')
@@ -141,6 +175,7 @@ for (const mode of ['throw', 'reject', 'late-reject', 'incomplete', 'malformed']
         /Private failed SSE cleanup diagnostic/,
       );
       assert.ok(stopError instanceof Error);
+      assert.equal(completionReads, 0);
       assert.doesNotMatch(f.logs(), /Private failed SSE cleanup diagnostic/);
     },
   );

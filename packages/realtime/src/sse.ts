@@ -73,8 +73,8 @@ export async function streamSse(connection: Connection, source: SseSource): Prom
         Promise.resolve()
           .then(finish)
           .then((result) => {
-            if (!result || typeof result !== 'object' || result.done !== true)
-              throw failure('EK_BACKEND_UNAVAILABLE');
+            const completion = fields(result, ['done', 'value']);
+            if (completion.done !== true) throw failure('EK_BACKEND_UNAVAILABLE');
           }),
       );
     connection.close(false);
