@@ -624,6 +624,8 @@ jobs:
       - name: Confirm both authenticated replica sets are healthy
         run: docker compose -f packages/database-mongodb/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:mongodb
+      - name: Verify four MongoDB profiles with native BSON and actual replica-set transactions
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:mongodb
       - run: pnpm --filter @arkenivajs/example-mongodb test:integration
       - run: pnpm test:packed:examples --integration mongodb
       - if: always() && env.MONGODB_FIXTURE_DIRECTORY != ''
