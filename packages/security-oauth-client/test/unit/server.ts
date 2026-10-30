@@ -45,6 +45,8 @@ export async function startServer(tls?: Readonly<{ key: Buffer; cert: Buffer }>)
     holdToken: undefined as Promise<void> | undefined,
     tokenRedirect: undefined as string | undefined,
     oversizedResponse: false,
+    discoveryPayload: undefined as unknown,
+    discoveryStatus: 200,
   };
   const token = () => randomBytes(32).toString('base64url');
   const handler: RequestListener = async (request, response) => {
@@ -73,6 +75,10 @@ export async function startServer(tls?: Readonly<{ key: Buffer; cert: Buffer }>)
       }
       if (url.pathname === '/.well-known/openid-configuration') {
         counts.discovery++;
+        if (mode.discoveryPayload !== undefined || mode.discoveryStatus !== 200) {
+          send(mode.discoveryStatus, mode.discoveryPayload ?? {});
+          return;
+        }
         send(200, {
           issuer,
           ...(mode.noAuthorization ? {} : { authorization_endpoint: issuer + '/authorize' }),
