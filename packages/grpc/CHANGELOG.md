@@ -5,6 +5,8 @@
 
 ## 0.1.0
 
+- Complete failed server streams with a sanitized native gRPC error status before transport closure, preserving immediate client failure and admission release.
+
 - Add explicit native gRPC unary, server streaming and protected native access.
 - Compile bounded offline protobuf assets before activating mTLS listeners.
 - Enforce signed tenant assertions, authorization, deadlines and physical admission limits.

@@ -191,6 +191,9 @@ export async function fixture(
         handlers: {
           async Bounce(request, context) {
             calls++;
+            if ((request as { value?: string }).value === 'handler-throw')
+              throw new Error('private-handler-failure');
+            if ((request as { value?: string }).value === 'wrong-result') return { unknown: true };
             if ((request as { value?: string }).value === 'blocked') {
               if (++blockedCount === 2) blockedResolve();
               await blockedWork;
@@ -212,8 +215,16 @@ export async function fixture(
           },
           async Watch(request, context) {
             calls++;
+            const behavior = (request as { value?: string }).value;
+            if (behavior === 'wrong-stream') return {};
             return (async function* () {
               for (let index = 0; index < 3; index++) {
+                if (behavior === 'stream-throw' && index === 1)
+                  throw new Error('private-stream-failure');
+                if (behavior === 'oversized-stream') {
+                  yield { value: 'x'.repeat(4097) };
+                  return;
+                }
                 if (context.signal.aborted) return;
                 yield { ...(request as object), sequence: String(index) };
               }
