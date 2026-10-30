@@ -2447,6 +2447,9 @@ importers:
       '@arkenivajs/mail':
         specifier: workspace:*
         version: link:../../packages/mail
+      '@arkenivajs/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@arkenivajs/metering':
         specifier: workspace:*
         version: link:../../packages/metering
@@ -2549,6 +2552,9 @@ importers:
       mailparser:
         specifier: 3.12.4
         version: 3.12.4
+      nats:
+        specifier: 2.29.3
+        version: 2.29.3(patch_hash=f58ef54c31b92dbb1a5df622551011d56d875589f5723a9a275950dc1d0096d8)
       nodemailer:
         specifier: 10.2.1
         version: 10.2.1
