@@ -43,6 +43,9 @@ memory, timestamps and interval event-loop semantics in four isolated profiles.
 The [DNS comparison](dns.md) exercises an actual owned loopback authority, every
 supported record family and completed asynchronous calls in four profiles.
 
+The [health comparison](health.md) verifies actual successful and failed HTTP
+dependency probes, independent liveness and private SDK observations in four profiles.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.

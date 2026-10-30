@@ -2426,6 +2426,9 @@ importers:
       '@arkenivajs/dns':
         specifier: workspace:*
         version: link:../../packages/dns
+      '@arkenivajs/health':
+        specifier: workspace:*
+        version: link:../../packages/health
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../../packages/logging
