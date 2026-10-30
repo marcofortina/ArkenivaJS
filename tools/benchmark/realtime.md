@@ -20,8 +20,7 @@ both SSE and WebSocket upgrades.
 Each profile exchanges a WebSocket message containing a byte-exact base64url
 binary payload. Actual SSE bytes preserve Unicode, multiline and empty data,
 event types and tenant-scoped IDs. A valid cursor resumes strictly after the
-second event. Foreign/unknown cursors return 409 and an expired cursor returns
-410. Sources are bounded synthetic catalogs with explicit test-only status;
+second event. Foreign/unknown cursors return 409 and an expired cursor returns 410. Sources are bounded synthetic catalogs with explicit test-only status;
 this is not evidence of durable storage or distributed replay.
 
 The native reference uses actual JOSE admission, fixed tenant projection and

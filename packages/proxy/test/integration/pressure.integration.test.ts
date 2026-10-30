@@ -79,7 +79,7 @@ async function worker(t: TestContext, role: string, origin?: string) {
         if (!message || typeof message !== 'object' || !('id' in message) || message.id !== id)
           return;
         finish();
-      resolve(message as unknown as State);
+        resolve(message as unknown as State);
       };
       const timer = setTimeout(() => {
         finish();
