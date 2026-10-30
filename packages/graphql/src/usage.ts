@@ -91,8 +91,11 @@ export class RequestUsage {
           });
           observe(() => child.end(this.outcome));
         });
-      } catch {
+      } catch (error) {
         observe(() => this.meter?.markMissing(this.parent!, 'span_not_instrumented'));
+        // Lost tenant provenance is an admission failure, not an optional diagnostic gap.
+        if (error instanceof KitError && error.code === 'EK_TENANT_UNVERIFIED')
+          throw failure('EK_GQL_AUTH');
       }
     }
     return this.run(this.child, work);

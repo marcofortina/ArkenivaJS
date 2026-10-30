@@ -50,6 +50,11 @@ Tracing retains the framework's `http.server.request` server span and W3C `trace
 
 Include the configured endpoint in the telemetry plugin's finite route catalog, for example `labelValues: { route: ['/graphql'] }`, to enable existing HTTP route measurements and span attributes. This administrative catalog is not populated from request URLs.
 
+Technical metering revalidates tenant provenance when opening both the HTTP parent
+and the GraphQL child. If the trusted meter rejects that provenance, the operation
+fails with `EK_GQL_AUTH` before resolver effects. Capacity or diagnostic failures
+remain observation gaps and cannot replace field authorization.
+
 With metering enabled, verified authenticated requests create exactly one HTTP usage parent and one GraphQL execution child. Resolver and downstream service work inherits the child scope. Anonymous public queries create no synthetic tenant or tenant event. HTTP request/response byte totals belong only to the parent; the child records `graphql.operations`, successful `graphql.resolved_fields`, actual `graphql.loader_batches` and `graphql.loader_items`.
 
 The input byte count comes from the received JSON buffer, rather than a claimed Content-Length or re-encoded variables. Output bytes are measured from the serialized response. Denied fields do not count as successful resolutions. Events retain verified tenant provenance, request identity and `parentOperationId`; query names, documents, variables, token values and payload contents are not copied into them.
