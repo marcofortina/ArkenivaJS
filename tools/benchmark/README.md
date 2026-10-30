@@ -32,6 +32,8 @@ and physical closure against independent server and peer-policy counts.
 
 The [authenticated realtime verification](realtime.md) checks actual signed-JWT
 WebSocket/SSE admission, exact wire data and scoped cursor replay.
+Its bounded SSE smoke checks finite streams through an independently authenticated
+HTTP observer, exact tenant-scoped events and physical subscription retirement.
 
 The [fixed HTTPS proxy verification](proxy.md) checks actual streamed binary
 forwarding, unchanged query semantics and upstream credential isolation.

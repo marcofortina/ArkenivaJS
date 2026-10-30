@@ -94,7 +94,8 @@
     "test:integration:socket": "node --test test/socket-smoke.integration.test.mjs",
     "test:integration:proxy": "node --test test/proxy-workload.unit.test.mjs",
     "test:integration:xlsx": "node --test test/xlsx-smoke.integration.test.mjs",
-    "test:integration:upload": "node --test test/upload-smoke.integration.test.mjs"
+    "test:integration:upload": "node --test test/upload-smoke.integration.test.mjs",
+    "test:integration:realtime": "node --test test/realtime-workload.unit.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",

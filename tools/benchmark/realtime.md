@@ -7,6 +7,7 @@ Build the workspace, then run:
 
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation realtime --verify /private/realtime-verification
+ARKENIVA_REALTIME_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation realtime --smoke /private/realtime-smoke
 ```
 
 Four isolated profiles compare the actual pinned Fastify WebSocket/SSE backends
@@ -32,6 +33,36 @@ Source fixture behavior is not a production event store.
 
 The issuer and listeners use explicit test-only loopback HTTP. No production
 TLS or cross-pod broker claim is made. Reports and actual SDK exports exclude
-tokens, identity, event IDs and data. Only `--verify` is supported while complete
-independent-client/server resource accounting remains open. Reports retain
-`releaseGate: false`; five paired repetitions and one-hour soak remain separate.
+tokens, identity, event IDs and data.
+
+Optional smoke requires an explicit disposable marker before issuer or listener
+allocation. Each profile records 100 actual Tinybench finite SSE-response samples
+after 20 warmup callbacks, with concurrency one. Existing WebSocket and SSE
+negative/resume checks remain outside timing. A parent-owned native HTTP client
+consumes each timed response using the actual signed JWT. Before opening that
+connection, the parent independently authenticates through the real auth service
+against the same issuer and validates its actual tenant context. No additional
+signing or identity trust keys are introduced.
+
+The parent compares all UTF8 bytes against the original three-event corpus,
+including Unicode, multiline and empty data and exact tenant-scoped IDs, then
+waits for its physical client socket to close before acknowledging the worker.
+It independently requires 480 actual streams and 1,440 events, four registered
+owned loopback listeners and no remaining observer socket or callback. The
+additional independent auth service accounts for exactly one more JWKS request:
+five in measured smoke, four in untimed verification. Public source callbacks
+also check tenant provenance through their owning application's actual auth
+service. Each worker verifies retirement of all source subscriptions, retaining
+only 120 compact receipts under an explicit cap of 128 and no event-body corpus.
+
+The existing two-connections-per-tenant limit and one-second server operation
+policy remain unchanged, as does the 30-second profile controller. Timings include
+the authenticated observer RPC, actual HTTP response and client retirement;
+they do not isolate SSE encoding or server CPU. Worker resources cover the
+server; parent client, auth and issuer CPU/RSS remain explicitly unknown and
+excluded. Native signed-claim projection omits the public runtime's complete
+provenance and lifecycle policy, so this is not policy or full resource parity.
+The source is a finite test catalog: there is no persistent replay, broker,
+cross-pod broadcast, exactly-once, WebSocket performance or production TLS claim.
+Reports retain `releaseGate: false`; calibrated budgets, five paired repetitions
+and one-hour soak remain separate.
