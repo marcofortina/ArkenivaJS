@@ -293,6 +293,10 @@ jobs:
       - run: pnpm --filter '@arkenivajs/example-upload...' build
       - name: Exercise real multipart HTTP, HTTPS and HTTP2 with verified identity and bounded streams
         run: pnpm --filter @arkenivajs/upload test:integration
+      - name: Verify a real 1 GiB multipart stream with slow and aborted peers
+        env:
+          ARKENIVA_UPLOAD_PRESSURE_DISPOSABLE: '1'
+        run: node --test packages/upload/dist-test/integration/pressure.integration.test.js
       - name: Compile and run the guide through installed public artifacts
         run: pnpm --filter @arkenivajs/example-upload test
       - run: pnpm test:packed:examples --example upload

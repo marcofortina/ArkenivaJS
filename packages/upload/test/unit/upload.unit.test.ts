@@ -234,6 +234,27 @@ test('Configuration rejects unknown properties, accessors, unsafe names, schemas
   assert.equal(read, false);
 });
 
+test('Explicit request and file byte limits support large streams while rejecting nonfinite or unsafe integers', () => {
+  const make = (limits: Partial<UploadPolicy>): UploadPluginSettings => ({
+    routes: [
+      {
+        path: '/uploads',
+        method: 'POST',
+        policy: { ...policy, ...limits },
+        auth: { required: true },
+        responseSchema: { type: 'object' },
+        handler: () => ({}),
+      },
+    ],
+  });
+  for (const key of ['maxRequestBytes', 'maxFileBytes'] as const) {
+    for (const value of [67108865, 1073741824, Number.MAX_SAFE_INTEGER])
+      assert.equal(uploadPlugin(make({ [key]: value })).id, 'upload');
+    for (const value of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
+      assert.throws(() => uploadPlugin(make({ [key]: value })), { code: 'EK_UPLOAD_CONFIG' });
+  }
+});
+
 test('Protected uploads require an actual authentication provider and route collisions fail before listener activation', async () => {
   const sink = new Writable({
     write(_chunk, _encoding, done) {
