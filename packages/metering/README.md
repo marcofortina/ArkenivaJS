@@ -33,6 +33,12 @@ Export runs asynchronously after enqueue and on an unreferenced periodic timer (
 
 `close(options?)` rejects new sessions, closes remaining scopes as aborted, attempts bounded flush, cancels transport activity and closes the owned exporter once. It preserves a flush failure while still attempting exporter cleanup. Importing the package creates no timer or connection. There is no default in-memory production exporter or implicit production accounting backend.
 
+Flush and close options are plain data containing an optional positive safe integer
+`timeoutMs` and a genuine native `AbortSignal`. Invalid options, accessors, proxies
+and forged signals fail before exporter work or session retirement. A rejected
+close configuration leaves the meter and its active sessions usable. Cancellation
+of an otherwise valid close still preserves the existing bounded cleanup behavior.
+
 `parseMeteringEvent(value)` validates and freezes this producer's wire envelope before transport, rejecting extra fields, malformed dates, invalid quantities and inconsistent completeness. Every exporter applies it to each incoming event. The event schema and transport version remain `1.0.0` when package versions change.
 
 `await createJsonlExporter({workspace,path,maxFileBytes?,retainedFiles?,rotationIntervalMs?})` opens a dedicated POSIX file and exclusive `.lock` with mode `0600`. The workspace and existing parent directories must be owned by the current user and not writable by group/others. The path is relative to that workspace; directory links, final symlinks, hard links, public files and incomplete existing record suffixes are rejected. Concurrent owners fail rather than sharing append or stealing a stale lock. Do not modify a live writer's files or remove its lock; after a crash, an operator must establish that the original owner cannot still write before recovering the file/lock.

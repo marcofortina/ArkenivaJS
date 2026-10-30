@@ -23,7 +23,13 @@ import type {
   MeterResultStatus,
   UsageQuantity,
 } from '@arkenivajs/core';
-import { copyData, freezeData, SEMVER_PATTERN, within } from '@arkenivajs/core/support';
+import {
+  captureAbortSignal,
+  copyData,
+  freezeData,
+  SEMVER_PATTERN,
+  within,
+} from '@arkenivajs/core/support';
 
 export type {
   UsageMeter,
@@ -160,6 +166,39 @@ function captureTenantVerifier(input: unknown) {
   if (typeof callback !== 'function' || types.isProxy(callback))
     throw invalid('Meter service and trusted tenant verifier are required');
   return (value: unknown): unknown => Reflect.apply(callback, auth, [value]);
+}
+
+/** Reject executable deadline metadata before export work or irreversible session retirement. */
+function deadlineOptions(
+  input: OperationOptions,
+  fallback: number,
+): Readonly<{
+  timeoutMs: number;
+  signal?: AbortSignal;
+}> {
+  if (
+    !input ||
+    typeof input !== 'object' ||
+    types.isProxy(input) ||
+    Array.isArray(input) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(input))
+  )
+    throw invalid('Meter operation options require plain data');
+  const keys = Reflect.ownKeys(input);
+  if (keys.some((key) => typeof key !== 'string' || !['timeoutMs', 'signal'].includes(key)))
+    throw invalid('Unsupported meter operation options');
+  const values: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  for (const key of keys) {
+    const field = Object.getOwnPropertyDescriptor(input, key)!;
+    if (!('value' in field) || !field.enumerable)
+      throw invalid('Meter operation options require data properties');
+    values[key as string] = field.value;
+  }
+  const timeoutMs = values.timeoutMs === undefined ? fallback : values.timeoutMs;
+  if (!Number.isSafeInteger(timeoutMs) || (timeoutMs as number) < 1)
+    throw invalid('Meter operation timeout must be a positive safe integer');
+  const signal = values.signal === undefined ? undefined : captureAbortSignal(values.signal);
+  return Object.freeze({ timeoutMs: timeoutMs as number, ...(signal ? { signal } : {}) });
 }
 
 /** EK-METER-001: independent immutable events, verified tenant provenance and bounded asynchronous export. */
@@ -598,28 +637,36 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
     async flush(operation: OperationOptions = {}) {
       if (closed)
         throw new KitError({ code: 'EK_RESOURCE_CLOSED', message: 'Usage meter is closed' });
-      await within(pump, {
-        timeoutMs: operation.timeoutMs ?? timeout * attempts + retryDelay * (attempts - 1) + 1000,
-        ...(operation.signal ? { signal: operation.signal } : {}),
-      });
+      const boundedOperation = deadlineOptions(
+        operation,
+        timeout * attempts + retryDelay * (attempts - 1) + 1000,
+      );
+      await within(pump, boundedOperation);
       if (lost) throw lost;
     },
     close(operation: OperationOptions = {}) {
       if (closing) return closing;
+      let boundedOperation: ReturnType<typeof deadlineOptions>;
+      try {
+        boundedOperation = deadlineOptions(
+          operation,
+          timeout * attempts + retryDelay * (attempts - 1) + 1000,
+        );
+      } catch (error) {
+        return Promise.reject(error);
+      }
       draining = true;
       if (timer) clearInterval(timer);
       for (const state of active) {
         state.missing.add('aborted_before_close');
         state.session.end('aborted');
       }
-      const deadline =
-        performance.now() +
-        (operation.timeoutMs ?? timeout * attempts + retryDelay * (attempts - 1) + 1000);
+      const deadline = performance.now() + boundedOperation.timeoutMs;
       closing = (async () => {
         let primary: unknown;
         let failed = false;
         try {
-          await api.flush(operation);
+          await api.flush(boundedOperation);
         } catch (error) {
           primary = error;
           failed = true;
