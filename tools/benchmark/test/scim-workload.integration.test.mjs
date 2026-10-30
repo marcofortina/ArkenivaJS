@@ -16,6 +16,11 @@ import { apiPlugin } from '@arkenivajs/api';
 import { createScimService, scimPlugin, SCIM_CAPABILITY } from '@arkenivajs/security-scim';
 import { startScimFixture } from '../scim-fixture.mjs';
 import { grantScim, nativeScim, rememberScimOwner, scimSettings } from '../scim-workload.mjs';
+import {
+  scimIterations,
+  scimWarmupIterations,
+  scimMaximumRetainedReads,
+} from '../scim-workload.mjs';
 
 test(
   'Actual SCIM providers reject forged tenant authority, foreign records and outages without changing resource versions',
@@ -156,50 +161,95 @@ test(
 );
 
 test(
-  'Four SCIM profiles verify actual tenant-owned SQL state, idempotency and one atomic ETag winner',
-  { timeout: 30000 },
+  'Verified and sampled SCIM profiles preserve actual SQL ownership, read bodies and ETags',
+  { timeout: 180000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-scim-harness-'));
     const script = fileURLToPath(new URL('../scim.mjs', import.meta.url));
     try {
-      const output = join(directory, 'verify');
-      await promisify(execFile)(process.execPath, [script, '--verify', output], {
-        timeout: 25000,
-        maxBuffer: 1048576,
-      });
-      const encoded = await readFile(join(output, 'report.json'), 'utf8'),
-        report = JSON.parse(encoded);
-      assert.equal(report.measured, false);
-      assert.equal(report.releaseGate, false);
-      assert.equal(report.records.length, 4);
-      assert.ok(report.collector.receivedBodies >= 2);
-      assert.equal(report.collector.inputOccurrences, 0);
-      assert.doesNotMatch(encoded, /owned-scim-private-user|scim-[a-f0-9]{24}|127\.0\.0\.1/);
-      assert.deepEqual(
-        JSON.parse(await readFile(join(output, 'protocol-observation.json'), 'utf8')),
-        {
-          actualDeletedResources: 4,
-          independentTenantOwners: 4,
-          durableVersionPerResource: 4,
-          releaseGate: false,
-        },
-      );
-      for (const row of report.records) {
-        assert.deepEqual(row.verification, {
-          actualDurableCrudVerified: true,
-          idempotentCreateRetries: 2,
-          atomicEtagWinners: 1,
-          exactNativePatchAndPagination: true,
-          deletedResourceNotReturned: true,
+      for (const mode of ['--verify', '--smoke']) {
+        const measured = mode === '--smoke',
+          output = join(directory, mode.slice(2));
+        await promisify(execFile)(process.execPath, [script, mode, output], {
+          timeout: 150000,
+          maxBuffer: 1048576,
         });
-        assert.deepEqual(row.records, []);
-        assert.equal(row.resource, null);
-        assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
-        if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        const encoded = await readFile(join(output, 'report.json'), 'utf8'),
+          report = JSON.parse(encoded);
+        assert.equal(report.measured, measured);
+        assert.equal(report.releaseGate, false);
+        assert.equal(report.records.length, 4);
+        assert.ok(report.collector.receivedBodies >= 2);
+        assert.equal(report.collector.inputOccurrences, 0);
+        assert.doesNotMatch(encoded, /owned-scim-private-user|scim-[a-f0-9]{24}|127\.0\.0\.1/);
+        const protocolText = await readFile(join(output, 'protocol-observation.json'), 'utf8'),
+          protocol = JSON.parse(protocolText);
+        assert.equal(protocol.actualDeletedResources, 4);
+        assert.equal(protocol.independentTenantOwners, 4);
+        assert.equal(protocol.durableVersionPerResource, 4);
+        assert.equal(protocol.releaseGate, false);
+        assert.doesNotMatch(protocolText, /owned-scim-private-user|scim-[a-f0-9]{24}|127\.0\.0\.1/);
+        if (measured) {
+          const reads = report.records.reduce((sum, row) => sum + row.completion.checkedReads, 0);
+          assert.equal(reads, 4 * (scimIterations + scimWarmupIterations));
+          assert.equal(protocol.independentlyObservedSampleReads, reads);
+          assert.equal(protocol.actualLiveReadResources, 4);
+          assert.equal(protocol.unchangedReadResourceVersion, 1);
+          assert.equal(protocol.unchangedReadBodyAndOwnership, true);
+          assert.equal(protocol.parentProviderResources, null);
+          assert.equal(protocol.postgresServerResources, null);
+        } else
+          assert.deepEqual(protocol, {
+            actualDeletedResources: 4,
+            independentTenantOwners: 4,
+            durableVersionPerResource: 4,
+            releaseGate: false,
+          });
+        for (const row of report.records) {
+          assert.deepEqual(row.verification, {
+            actualDurableCrudVerified: true,
+            idempotentCreateRetries: 2,
+            atomicEtagWinners: 1,
+            exactNativePatchAndPagination: true,
+            deletedResourceNotReturned: true,
+          });
+          assert.equal(row.completion.sampledReads, measured ? scimIterations : 0);
+          assert.equal(row.completion.warmupReads, measured ? scimWarmupIterations : 0);
+          assert.equal(
+            row.completion.checkedReads,
+            row.completion.sampledReads + row.completion.warmupReads,
+          );
+          if (measured) {
+            assert.equal(row.records.length, 1);
+            const record = row.records[0];
+            assert.equal(record.operation, 'getUser');
+            assert.equal(record.sampleCount, scimIterations);
+            assert.equal(record.warmupIterations, scimWarmupIterations);
+            assert.equal(record.rawLatency.unit, 'milliseconds');
+            assert.equal(record.rawLatency.values.length, record.sampleCount);
+            assert.ok(
+              record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0),
+            );
+            assert.ok(record.throughputOpsPerSecond > 0);
+            assert.ok(row.resource.elapsedMs > 0);
+            assert.equal(row.completion.unchangedBodyAndEtag, true);
+            assert.equal(row.completion.activeCallbacks, 0);
+            assert.equal(
+              row.completion.peakRetainedResponses,
+              scimIterations + scimWarmupIterations,
+            );
+            assert.equal(row.completion.maximumRetainedResponses, scimMaximumRetainedReads);
+          } else {
+            assert.deepEqual(row.records, []);
+            assert.equal(row.resource, null);
+          }
+          assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
+          if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        }
       }
       const unsupported = join(directory, 'unsupported');
       await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
+        promisify(execFile)(process.execPath, [script, '--full', unsupported], { timeout: 5000 }),
       );
       await assert.rejects(access(unsupported));
     } finally {

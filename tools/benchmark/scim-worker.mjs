@@ -11,6 +11,11 @@ import {
   rememberScimOwner,
   scimSettings,
   verifyScim,
+  prepareScimRead,
+  scimReadWorkload,
+  completeScimRead,
+  scimIterations,
+  scimWarmupIterations,
 } from './scim-workload.mjs';
 
 runPureWorker({
@@ -34,5 +39,15 @@ runPureWorker({
       configure: rememberScimOwner,
     };
   },
-  verify: verifyScim,
+  async verify(service, fixture) {
+    const result = await verifyScim(service, fixture);
+    if (fixture.sampleReads) await prepareScimRead(service, fixture);
+    return result;
+  },
+  asynchronous: true,
+  iterations: scimIterations,
+  warmupIterations: scimWarmupIterations,
+  retainRawSamples: true,
+  workload: scimReadWorkload,
+  complete: completeScimRead,
 });

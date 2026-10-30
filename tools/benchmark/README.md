@@ -166,6 +166,8 @@ external HMAC/authority, owner revocation and preservation of original MFA time.
 
 The [SCIM verification](scim.md) checks native schema/PATCH interoperability,
 actual tenant-owned PostgreSQL resources, idempotent create retries and atomic ETags.
+Its bounded User-read smoke checks every body and ETag against a separate live seed,
+with independent provider counts and unchanged SQL ownership/version readback.
 
 The [MongoDB verification](mongodb.md) checks native BSON fidelity, actual CRUD,
 bounded unchanged aggregation, real transactions and independent collection cleanup.
