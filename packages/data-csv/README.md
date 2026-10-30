@@ -117,3 +117,23 @@ invalidates only that application's handle with `EK_RESOURCE_CLOSED`.
 `createCsvService` is an independent factory without unrelated required plugins.
 The [utilities example](../../examples/utilities/README.md) also runs against
 packed artifacts. Performance and remote compatibility remain release gates.
+
+With an installed telemetry plugin, admitted parse/write streams emit bounded
+`csv.operation` (`parse`/`stringify`) and `csv.outcome` (`ok`/`error`/`cancelled`)
+labels. Counters report operations, rows, input/output bytes and failed streams;
+histograms report duration and observed process RSS peak. Rows mean records
+yielded by parsing or encoded by writing, excluding headers. Byte counters use
+the accounting described above, including bytes attempted before a resource
+limit rejects a stream. Early consumer return is cancellation; a thrown stream
+failure is an error. Invalid options/admission failures occur before stream
+measurement begins. No records, cell values, headers or raw diagnostics enter
+telemetry. Observer failures cannot change results or replay input.
+
+RSS includes endpoints and 10 ms samples while the iterator is active; it is
+whole-process memory, not per-request allocation or exact parser-buffer memory.
+Duration includes consumer pauses. Dashboards can derive aggregate row rates
+from counter deltas; this is not an instantaneous per-stream throughput claim.
+Standalone factories and applications without telemetry create no RSS sampler.
+Sampling stops on cancellation or application shutdown, including abandoned
+iterators. See the [four-profile verification](../../tools/benchmark/csv.md)
+for functional native interoperability; performance acceptance remains separate.

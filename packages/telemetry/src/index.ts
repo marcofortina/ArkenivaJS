@@ -156,6 +156,8 @@ const labels = new Set([
   'mail.error',
   'compression.operation',
   'compression.outcome',
+  'csv.operation',
+  'csv.outcome',
   'codes.operation',
   'codes.symbology',
   'codes.outcome',
@@ -347,6 +349,8 @@ const fixed: Record<string, readonly TelemetryAttributeValue[]> = {
   ],
   'compression.operation': ['gzip', 'gunzip', 'create_zip', 'iterate_zip'],
   'compression.outcome': ['ok', 'error', 'cancelled'],
+  'csv.operation': ['parse', 'stringify'],
+  'csv.outcome': ['ok', 'error', 'cancelled'],
   'codes.operation': ['encode', 'decode'],
   'codes.symbology': ['QR', 'CODE128', 'EAN13', 'detect'],
   'codes.outcome': ['ok', 'error'],
@@ -560,6 +564,13 @@ const units: Record<string, string> = {
   'compression.process.cpu.ms': 'ms',
   'compression.process.rss.peak.bytes': 'By',
   'compression.expanded.bytes_per_second': 'By/s',
+  'csv.operations': '{operation}',
+  'csv.rows': '{row}',
+  'csv.input.bytes': 'By',
+  'csv.output.bytes': 'By',
+  'csv.errors': '{error}',
+  'csv.duration.ms': 'ms',
+  'csv.process.rss.peak.bytes': 'By',
   'codes.duration.ms': 'ms',
   'codes.output.bytes': 'By',
   'codes.image.pixels': '{pixel}',
@@ -675,6 +686,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       key.startsWith('routing.') ||
       key.startsWith('spid.') ||
       key.startsWith('cie.') ||
+      key.startsWith('csv.') ||
       !Array.isArray(values) ||
       !values.length ||
       values.length > 128 ||

@@ -15,6 +15,39 @@ const service = { name: 'telemetry-test', version: '1.0.0', environment: 'test' 
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
 
+test('CSV dimensions accept only fixed operations and outcomes without cell or schema data', async () => {
+  const target = await receiver(),
+    telemetry = createTelemetry(options(target.endpoint));
+  try {
+    telemetry.addCounter('csv.rows', 2, { 'csv.operation': 'parse', 'csv.outcome': 'ok' });
+    for (const attributes of [
+      { 'csv.operation': 'private-cell' },
+      { 'csv.outcome': 'Private parser failure' },
+      { 'csv.header': 'private-header' },
+      { 'csv.value': 'private-value' },
+    ])
+      assert.throws(
+        () => telemetry.addCounter('csv.rows', 1, attributes),
+        code('EK_CONFIG_INVALID'),
+      );
+    assert.throws(
+      () =>
+        createTelemetry({
+          ...options(target.endpoint),
+          labelValues: { 'csv.operation': ['private-cell'] },
+        }),
+      code('EK_CONFIG_INVALID'),
+    );
+    await telemetry.flush();
+    const wire = JSON.stringify(target.data);
+    assert.ok(wire.includes('csv.rows'));
+    assert.equal(wire.includes('private-'), false);
+  } finally {
+    await telemetry.close();
+    await target.close();
+  }
+});
+
 for (const system of ['spid', 'cie'] as const)
   test(`${system.toUpperCase()} dimensions remain closed and cannot carry federation identities or provider errors`, async () => {
     const target = await receiver(),

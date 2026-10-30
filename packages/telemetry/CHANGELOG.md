@@ -8,6 +8,8 @@
 
 ## 0.1.0
 
+- Add fixed CSV operation/outcome dimensions and explicit row, byte, duration, error and process RSS units; reject custom CSV label catalogs.
+
 - Add closed CIE operation/outcome dimensions and seconds-based authentication duration, federation check and failure units; reject custom CIE identity/error label catalogs.
 
 - Admit only fixed SPID operation/outcome dimensions and the required handshake/trust-failure counter units; reject private federation labels and arbitrary outcome values.

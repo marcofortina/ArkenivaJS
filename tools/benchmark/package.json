@@ -23,7 +23,8 @@
     "codes": "node codes.mjs",
     "compression": "node compression.mjs",
     "config": "node config.mjs",
-    "logging": "node logging.mjs"
+    "logging": "node logging.mjs",
+    "csv": "node csv.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -31,6 +32,7 @@
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/data-barcodes": "workspace:*",
     "@arkenivajs/data-compression": "workspace:*",
+    "@arkenivajs/data-csv": "workspace:*",
     "@arkenivajs/data-identifiers": "workspace:*",
     "@arkenivajs/data-time": "workspace:*",
     "@arkenivajs/data-validation": "workspace:*",
@@ -53,6 +55,8 @@
     "@zxing/library": "0.21.3",
     "ajv": "8.20.0",
     "bwip-js": "4.11.4",
+    "csv-parse": "7.0.3",
+    "csv-stringify": "6.9.0",
     "fastify": "5.12.7",
     "fflate": "0.8.3",
     "ipaddr.js": "2.5.0",
