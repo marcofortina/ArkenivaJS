@@ -75,7 +75,9 @@
     "mtls": "node mtls.mjs",
     "saml": "node saml.mjs",
     "scim": "node scim.mjs",
-    "test:integration:scim": "node --test test/scim-workload.integration.test.mjs"
+    "test:integration:scim": "node --test test/scim-workload.integration.test.mjs",
+    "kafka": "node kafka.mjs",
+    "test:integration:kafka": "node --test test/kafka-workload.integration.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -188,7 +190,9 @@
     "@node-saml/node-saml": "5.1.0",
     "@xmldom/xmldom": "0.8.15",
     "@arkenivajs/security-scim": "workspace:*",
-    "scimmy": "1.3.5"
+    "scimmy": "1.3.5",
+    "@arkenivajs/messaging-kafka": "workspace:*",
+    "@confluentinc/kafka-javascript": "1.11.0"
   },
   "license": "AGPL-3.0-or-later"
 }
