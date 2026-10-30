@@ -4,6 +4,7 @@
 import { fork } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { KitError } from '@arkenivajs/core';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
 import type { LdapEntry, LdapGroup, LdapService, LdapUser, WorkerInput } from './contracts.js';
@@ -19,6 +20,24 @@ const nativeErrors = new Set([
   'EK_LDAP_FILTER',
   'EK_LDAP_SEARCH',
 ]);
+const typedArray = Object.getPrototypeOf(Uint8Array.prototype),
+  byteLength = Object.getOwnPropertyDescriptor(typedArray, 'byteLength')!.get!,
+  backingBuffer = Object.getOwnPropertyDescriptor(typedArray, 'buffer')!.get!;
+
+/** Establish bounds from native slots before allocation; instance metadata never runs. */
+function copySecretBytes(input: unknown, maximum: number): Buffer {
+  if (!types.isUint8Array(input)) throw failure('EK_LDAP_BIND');
+  const length = Reflect.apply(byteLength, input, []) as number;
+  if (
+    length < 1 ||
+    length > maximum ||
+    types.isSharedArrayBuffer(Reflect.apply(backingBuffer, input, []))
+  )
+    throw failure('EK_LDAP_BIND');
+  const owned = Buffer.alloc(length);
+  Uint8Array.prototype.set.call(owned, input);
+  return owned;
+}
 function options(input: OperationOptions | undefined, maximum: number) {
   const value = fields(input ?? {}, ['signal', 'timeoutMs']);
   if (value.signal !== undefined) {
@@ -139,13 +158,7 @@ class Request {
       throw failure('EK_LDAP_BIND');
     if (typeof value.expiresAt === 'string')
       this.#secretExpiry = Math.min(this.#secretExpiry, Date.parse(value.expiresAt));
-    if (
-      !(value.bytes instanceof Uint8Array) ||
-      value.bytes.length < 1 ||
-      value.bytes.length > maximum
-    )
-      throw failure('EK_LDAP_BIND');
-    const owned = Buffer.from(value.bytes);
+    const owned = copySecretBytes(value.bytes, maximum);
     try {
       return text(new TextDecoder('utf-8', { fatal: true }).decode(owned), maximum);
     } finally {

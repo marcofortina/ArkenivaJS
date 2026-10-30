@@ -197,6 +197,38 @@ test('LDAP invalid secret envelopes and expired versions cannot start native dir
     await assert.rejects(directory.ping(), (error: unknown) => error instanceof KitError);
   }
 });
+
+test('LDAP secret byte validation rejects structural/shared inputs without executing length metadata or fetching another credential', async () => {
+  const f = fixture();
+  let effects = 0;
+  const fail = () => {
+      effects++;
+      throw new Error('Private byte metadata must not execute');
+    },
+    oversized = Object.defineProperty(new Uint8Array(2049), 'length', { get: fail }),
+    structural = Object.assign(Object.create(Uint8Array.prototype), { 0: 65 });
+  Object.defineProperty(structural, 'length', { get: fail });
+  for (const input of [
+    structural,
+    oversized,
+    new Uint8Array(new SharedArrayBuffer(32)),
+    new Proxy(new Uint8Array(32), { get: fail, getPrototypeOf: fail }),
+  ]) {
+    let calls = 0;
+    const directory = createLdapService({
+      ...f.settings,
+      secretProvider: {
+        async get() {
+          calls++;
+          return { bytes: input, keyVersion: 'one' };
+        },
+      },
+    });
+    await assert.rejects(directory.ping(), (error) => error instanceof KitError);
+    assert.equal(calls, 1);
+    assert.equal(effects, 0);
+  }
+});
 test('LDAP rejects inherited test-only markers in production without executing provider getters', () => {
   const f = fixture(),
     provider = Object.assign(Object.create({ usage: 'test-only' }), {
