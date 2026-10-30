@@ -677,6 +677,8 @@ jobs:
       - run: pnpm coverage:messaging
       - name: Verify four native Core NATS profiles and mutual-TLS envelope interoperability
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:nats
+        env:
+          ARKENIVA_NATS_BENCHMARK_DISPOSABLE: '1'
       - name: Verify realtime shared NATS delivery across independent processes
         run: pnpm --filter @arkenivajs/realtime test:integration:nats
       - name: Verify authenticated GraphQL WSS delivery across independent NATS-backed processes
