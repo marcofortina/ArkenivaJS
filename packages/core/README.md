@@ -34,6 +34,11 @@ The documented `@arkenivajs/core/support` integration entry point provides `Conf
 
 Long deadlines use bounded native timer intervals against a monotonic clock, preserving the requested duration beyond Node's single-timer limit.
 
+Plugin metadata must use data properties. Lifecycle and health callbacks are captured
+once with their original receiver; later replacement and custom `bind`, `call` or
+`apply` properties cannot substitute another callback. Accessors, proxy metadata
+and proxy lifecycle callbacks fail configuration validation before resources open.
+
 `createApplication(options)` validates service metadata and requested capabilities before opening resources. `start()` shares a pending initialization promise, follows plugin dependencies and rolls back initialized resources in reverse order. `stop({timeoutMs})` uses a shared deadline, continues after close failures and becomes harmless once CLOSED. Startup failure preserves the primary cause and counts cleanup failures.
 
 Use `COMPONENTS` with plugin `provide` and `require` to install explicit services. Duplicate registrations fail; a consumer must declare the provider's plugin id in `dependencies`. The registry freezes after initialization. `APPLICATION_SIGNAL` provides cooperative startup cancellation. Hooks must release partially acquired resources on rejection; late successful hooks are closed even after cancellation. JavaScript cannot forcibly terminate arbitrary uncooperative code.
