@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createLogger } from '@arkenivajs/logging';
+import { assertRawLatencySamples } from './raw-latency.mjs';
 import { createLoggingAdapter, loggingFixture } from '../logging-workload.mjs';
 
 test('Native Pino and public logging redact actual written rows and retain child and level semantics', async () => {
@@ -67,7 +68,10 @@ test(
           assert.ok(row.completion.bytesWritten > 0);
           assert.equal(row.completion.privateOccurrences, 0);
           if (mode === '--verify') assert.equal(row.resource, null);
-          for (const operation of row.records) assert.ok(operation.sampleCount >= 1000);
+          for (const operation of row.records) {
+            assert.ok(operation.sampleCount >= 1000);
+            assertRawLatencySamples(operation);
+          }
           if (row.mode !== 'BASELINE')
             for (const key of ['dropped', 'failedWrites', 'flushFailures', 'pendingBytes'])
               assert.equal(row.completion.frameworkStats[key], 0);

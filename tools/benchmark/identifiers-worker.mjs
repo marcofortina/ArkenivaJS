@@ -9,6 +9,7 @@ import {
 } from './identifiers-workload.mjs';
 runPureWorker({
   name: 'identifiers',
+  retainRawSamples: true,
   native: nativeIdentifiers,
   async framework() {
     const { dataIdentifiersPlugin, IDENTIFIERS_CAPABILITY } =

@@ -6,6 +6,7 @@ import { nativeCore, frameworkCore, verifyCore, coreWorkload } from './core-work
 
 runPureWorker({
   name: 'core',
+  retainRawSamples: true,
   iterations: 1000,
   warmupIterations: 100,
   native: nativeCore,

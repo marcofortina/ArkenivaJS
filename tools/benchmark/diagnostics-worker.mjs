@@ -10,6 +10,7 @@ import {
 } from './diagnostics-workload.mjs';
 runPureWorker({
   name: 'diagnostics',
+  retainRawSamples: true,
   native: nativeDiagnostics,
   async framework() {
     const { diagnosticsPlugin } = await import('@arkenivajs/diagnostics');

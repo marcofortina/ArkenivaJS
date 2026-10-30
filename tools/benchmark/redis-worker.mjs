@@ -16,6 +16,7 @@ import {
 const key = Symbol('redis-comparison');
 runPureWorker({
   name: 'redis',
+  retainRawSamples: true,
   asynchronous: true,
   iterations: 100,
   warmupIterations: 20,

@@ -58,6 +58,7 @@ export function createLoggingAdapter() {
     verifiedRows = 0;
   return {
     name: 'logging',
+    retainRawSamples: true,
     iterations: 1000,
     warmupIterations: 100,
     native(fixture) {

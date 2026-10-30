@@ -6,6 +6,7 @@ import { healthSettings, nativeHealth, verifyHealth, healthWorkload } from './he
 
 runPureWorker({
   name: 'health',
+  retainRawSamples: true,
   asynchronous: true,
   iterations: 100,
   warmupIterations: 20,

@@ -9,6 +9,7 @@ const originalResolvers = dns.getServers();
 process.once('beforeExit', () => assert.deepEqual(dns.getServers(), originalResolvers));
 runPureWorker({
   name: 'dns',
+  retainRawSamples: true,
   asynchronous: true,
   iterations: 100,
   warmupIterations: 20,

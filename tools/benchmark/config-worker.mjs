@@ -5,6 +5,7 @@ import { runPureWorker } from './pure-worker.mjs';
 import { nativeConfig, configOptions, verifyConfig, configWorkload } from './config-workload.mjs';
 runPureWorker({
   name: 'config',
+  retainRawSamples: true,
   asynchronous: true,
   iterations: 1000,
   warmupIterations: 100,

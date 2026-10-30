@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createIdentifiersService } from '@arkenivajs/data-identifiers';
+import { assertRawLatencySamples } from './raw-latency.mjs';
 import {
   nativeIdentifiers,
   identifierWorkload,
@@ -72,6 +73,7 @@ test(
         assert.ok(row.resource.cpuDeltaMicros.user >= 0);
         for (const operation of row.records) {
           assert.ok(operation.sampleCount >= 10000);
+          assertRawLatencySamples(operation);
           for (const value of Object.values(operation.latencyNanoseconds))
             assert.ok(Number.isFinite(value) && value >= 0);
         }

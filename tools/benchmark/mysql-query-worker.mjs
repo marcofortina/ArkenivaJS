@@ -14,6 +14,7 @@ import {
 
 runPureWorker({
   name: 'mysql-query',
+  retainRawSamples: true,
   asynchronous: true,
   iterations: 100,
   warmupIterations: 20,

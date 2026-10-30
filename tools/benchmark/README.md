@@ -1,5 +1,12 @@
 # Local foundation measurements
 
+Supported `runPureWorker` smoke adapters explicitly retain Tinybench's measured
+`rawLatency.values` in milliseconds, with one value per `sampleCount` and warmup
+excluded. The finite sample ceiling rejects excess rather than truncating results.
+Whole-worker CPU/memory observations include sample retention and copying overhead;
+retained samples introduce no second timer or release-budget claim. Verification-only
+adapters remain unsampled, and standalone legacy microcontrollers have separate reports.
+
 The [HTTPS tenant-routing verification](routing.md) checks authenticated local
 dispatch, private capability discovery and actual parented technical usage.
 
