@@ -130,6 +130,9 @@ verification, provenance policy and completed crypto counters across four profil
 The [session comparison](sessions.md) checks real PostgreSQL activity refresh,
 external HMAC/authority, owner revocation and preservation of original MFA time.
 
+The [SCIM verification](scim.md) checks native schema/PATCH interoperability,
+actual tenant-owned PostgreSQL resources, idempotent create retries and atomic ETags.
+
 The [MongoDB verification](mongodb.md) checks native BSON fidelity, actual CRUD,
 bounded unchanged aggregation, real transactions and independent collection cleanup.
 
