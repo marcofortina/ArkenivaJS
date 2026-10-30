@@ -129,6 +129,14 @@ it and `capabilities.list` still reject forged, copied or foreign-authority tena
 objects. Methods become unavailable during drain/after close. Registry and
 catalog edits take effect only in a newly initialized application instance.
 
+`capabilities.list(tenant, options)` accepts a native `AbortSignal` and a positive
+safe-integer `timeoutMs`, defaulting to 30 seconds. Invalid options fail before
+authorization callbacks run. Cancellation rejects with `EK_ABORTED`; deadline
+expiry rejects with `EK_TIMEOUT`. Neither returns a partially collected list.
+Unfinished authorization callbacks retain physical ownership after rejection,
+so graceful shutdown waits for their actual settlement. Other authorized tenants
+can continue discovery while such a callback is pending.
+
 A cached verified tenant or administrative resolution does not cache permission.
 Each capability listing and HTTP operation applies the current trusted assurance
 policy. A downgrade or assurance-provider failure hides protected capabilities
