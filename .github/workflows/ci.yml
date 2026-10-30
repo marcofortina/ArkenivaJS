@@ -414,6 +414,8 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:oauth
       - name: Verify four magic-link profiles and atomic single-use SQL consumption
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:magiclink
+      - name: Verify four session profiles and preserved durable authentication times
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:sessions
       - name: Verify immutable tenant SQL registry activation and existing-pool HTTP startup
         run: pnpm --filter @arkenivajs/tenant-routing test:integration:postgres
       - name: Verify all four HTTP modes against real PostgreSQL and telemetry

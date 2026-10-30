@@ -112,6 +112,9 @@ concurrent winner counts, external HMAC/authority and exact persisted quotas.
 The [JWT verification comparison](auth.md) checks actual JOSE/native public bearer
 verification, provenance policy and completed crypto counters across four profiles.
 
+The [session comparison](sessions.md) checks real PostgreSQL activity refresh,
+external HMAC/authority, owner revocation and preservation of original MFA time.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
