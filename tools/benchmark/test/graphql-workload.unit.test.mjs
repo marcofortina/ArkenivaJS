@@ -5,11 +5,18 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { graphqlCoordinates } from '../graphql-workload.mjs';
+import {
+  graphqlCoordinates,
+  graphqlWorkload,
+  graphqlObservations,
+  nativeGraphql,
+  verifyGraphql,
+} from '../graphql-workload.mjs';
+import { startGraphqlFixture } from '../graphql-fixture.mjs';
 
 test('GraphQL comparison rejects foreign issuers and ambiguous TLS fixture coordinates before I/O', () => {
   const valid = {
@@ -29,6 +36,56 @@ test('GraphQL comparison rejects foreign issuers and ambiguous TLS fixture coord
     assert.throws(() => graphqlCoordinates({ ...valid, issuer }));
   for (const privateKeyFile of ['relative.key', '/owned/key\n', '/owned/key\0'])
     assert.throws(() => graphqlCoordinates({ ...valid, privateKeyFile }));
+});
+
+test('GraphQL measurement entry refuses unsupported campaigns or an unmarked smoke before creating evidence', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-graphql-entry-'));
+  const env = { ...process.env };
+  delete env.ARKENIVA_GRAPHQL_BENCHMARK_DISPOSABLE;
+  try {
+    for (const flag of ['--full', '--smoke']) {
+      const output = join(directory, flag.slice(2));
+      await assert.rejects(
+        promisify(execFile)(
+          process.execPath,
+          [fileURLToPath(new URL('../graphql.mjs', import.meta.url)), flag, output],
+          { env, timeout: 5000, maxBuffer: 1048576 },
+        ),
+        (error) =>
+          error.code === 1 &&
+          /full GraphQL campaigns remain separate|explicitly disposable runner/.test(error.stderr),
+      );
+      await assert.rejects(access(output), { code: 'ENOENT' });
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('One untimed call per GraphQL scenario preserves exact TLS results and bounded idempotent effects', async () => {
+  const authority = await startGraphqlFixture();
+  let service;
+  try {
+    service = await nativeGraphql(authority.fixture);
+    await verifyGraphql(service, authority.fixture);
+    const workload = graphqlWorkload(service, authority.fixture);
+    for (const work of Object.values(workload)) await work();
+    const observed = graphqlObservations(service, { measure: false, records: [] });
+    assert.equal(observed.actualHttpRequests, 15);
+    assert.equal(observed.authenticatedHttpRequests, 12);
+    assert.equal(observed.expectedGraphqlChildren, 11);
+    assert.deepEqual(observed.workloadCallbacks, {
+      'simple-query': 1,
+      'own-row-query': 1,
+      'idempotent-mutation-retry': 1,
+    });
+    assert.equal(observed.physicalMutations, 2);
+    assert.equal(observed.retainedReceipts, 2);
+    assert.deepEqual(authority.observations(), { discovery: 0, jwks: 1, unknown: 0 });
+  } finally {
+    await service?.close();
+    await authority.close();
+  }
 });
 
 test(
@@ -62,7 +119,11 @@ test(
         });
         if (['STANDARD', 'DETAILED'].includes(record.mode)) {
           assert.equal(record.completion.technicalUsageEnabled, true);
-          assert.ok(record.completion.graphqlChildren >= 8);
+          assert.equal(
+            record.completion.graphqlChildren,
+            record.completion.expectedGraphqlChildren,
+          );
+          assert.equal(record.completion.httpParents, record.completion.authenticatedHttpRequests);
           assert.equal(record.completion.tenantCount, 2);
           assert.equal(record.completion.duplicateGraphqlByteCounters, 0);
         }
