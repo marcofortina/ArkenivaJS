@@ -12,6 +12,134 @@ import type { HttpObservation } from '@arkenivajs/http';
 const code = (value: string) => (error: unknown) =>
   error instanceof KitError && error.code === value;
 
+test('EK-HTTP-002 invalid request signals never execute supplied hooks or retain active admission', async () => {
+  let effects = 0;
+  const native = new AbortController().signal;
+  const revoked = Proxy.revocable(native, {});
+  revoked.revoke();
+  const shadowed = new AbortController().signal;
+  Object.defineProperty(shadowed, 'removeEventListener', {
+    value() {
+      effects++;
+      throw new Error('Private signal cleanup failure');
+    },
+  });
+  const forged = {
+    aborted: false,
+    addEventListener() {
+      effects++;
+      throw new Error('Private signal registration failure');
+    },
+    removeEventListener() {
+      effects++;
+      throw new Error('Private signal cleanup failure');
+    },
+  };
+  for (const signal of [
+    forged,
+    shadowed,
+    revoked.proxy,
+    new Proxy(native, {
+      get() {
+        effects++;
+        throw new Error('Private proxy signal access');
+      },
+      getPrototypeOf() {
+        effects++;
+        throw new Error('Private proxy prototype access');
+      },
+    }),
+  ]) {
+    const client = createHttpClient({ allowedOrigins: [] });
+    try {
+      await assert.rejects(
+        client.request('https://denied.invalid', { signal: signal as AbortSignal }),
+        code('EK_CONFIG_INVALID'),
+      );
+      assert.equal(client.stats().active, 0);
+    } finally {
+      await client.close();
+    }
+  }
+  const client = createHttpClient({ allowedOrigins: [] });
+  try {
+    const options = Object.defineProperty({}, 'signal', {
+      get() {
+        effects++;
+        throw new Error('Private signal getter');
+      },
+    });
+    await assert.rejects(
+      client.request('https://denied.invalid', options),
+      code('EK_CONFIG_INVALID'),
+    );
+    assert.equal(client.stats().active, 0);
+  } finally {
+    await client.close();
+  }
+  assert.equal(effects, 0);
+});
+
+test('EK-HTTP-002 cancellation capture supports native inherited data signals and rejects executable request prototypes', async () => {
+  let effects = 0;
+  const signal = new AbortController().signal;
+  const proxy = new Proxy(
+    {},
+    {
+      getOwnPropertyDescriptor() {
+        effects++;
+        throw new Error('Private prototype trap');
+      },
+    },
+  );
+  let deep: object = {};
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  for (let index = 0; index < 65; index++) deep = Object.create(deep) as object;
+  for (const input of [
+    null,
+    [],
+    revoked.proxy,
+    new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          effects++;
+          throw new Error('Private request trap');
+        },
+      },
+    ),
+    Object.create(proxy),
+    deep,
+  ]) {
+    const client = createHttpClient({ allowedOrigins: [] });
+    try {
+      await assert.rejects(
+        client.request('https://denied.invalid', input as Parameters<typeof client.request>[1]),
+        code('EK_CONFIG_INVALID'),
+      );
+      assert.equal(client.stats().active, 0);
+    } finally {
+      await client.close();
+    }
+  }
+  const server = await endpoint((_request, response) => response.end('native-signal')),
+    client = createHttpClient({ allowedOrigins: [server.origin], allowPrivateNetwork: true });
+  try {
+    for (const input of [
+      { signal: null },
+      Object.assign(Object.create(null) as object, { signal }),
+      Object.create({ signal }),
+    ])
+      assert.equal(await (await client.request(server.origin, input)).text(), 'native-signal');
+    assert.equal(client.stats().active, 0);
+    assert.equal(effects, 0);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
 test('EK-HTTP-002 public IPv4 remains admissible independently of mapped IPv6 exclusions without opening a connection', async () => {
   for (const origin of ['https://11.0.0.1', 'https://8.8.8.8', 'https://[2606:4700:4700::1111]']) {
     const boundary = new KitError({ code: 'EK_AUTH_INVALID', message: 'Stop before network I/O' });
