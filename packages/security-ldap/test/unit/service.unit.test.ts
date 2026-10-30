@@ -401,3 +401,63 @@ test('LDAP search is lazy, single-pass and validates policy before starting nati
   assert.deepEqual(await iterator.next(), { done: true, value: undefined });
   assert.equal(f.state.calls, 0);
 });
+
+test('LDAP rejects malformed deployment URLs, unknown provider classification and excessive filter complexity', () => {
+  const f = fixture();
+  for (const change of [
+    { url: 'not a URL' },
+    { url: 'ldaps://localhost#fragment' },
+    { allowedAttributes: ['uid'] },
+    { secretProvider: { ...f.settings.secretProvider, usage: 'unknown' } },
+  ])
+    assert.throws(() => capture({ ...f.settings, ...change } as LdapSettings));
+  for (const template of [
+    ')(',
+    '(|' + '(uid=x)'.repeat(257) + ')',
+    '(uid=prefix{username}suffix)',
+    '(description={username})',
+  ])
+    assert.throws(() => boundFilter(template, { username: 'alice' }, ['uid', 'cn']));
+  assert.equal(f.state.calls, 0);
+});
+
+test('LDAP readiness and an already aborted application signal deny work before secret resolution', async () => {
+  const { managedService } = await import('../../dist/service.js'),
+    f = fixture(),
+    controller = new AbortController();
+  controller.abort();
+  for (const managed of [
+    managedService(capture(f.settings), undefined, () => false),
+    managedService(capture(f.settings), controller.signal),
+  ]) {
+    assert.throws(() => managed.service.ping(), code('EK_RESOURCE_CLOSED'));
+    await assert.rejects(
+      managed.service.verifyCredentials({ username: 'alice' }, 'password'),
+      code('EK_RESOURCE_CLOSED'),
+    );
+    await managed.close();
+    await managed.close();
+  }
+  assert.equal(f.state.calls, 0);
+});
+
+test('LDAP closed managed logging never replaces an operation outcome', async () => {
+  const { recorder } = await import('../../dist/observation.js'),
+    { createLogger } = await import('@arkenivajs/logging'),
+    logger = createLogger({
+      service: { name: 'ldap-closed-observer', version: '1.0.0', environment: 'test' },
+      level: 'debug',
+      destination: new Writable({
+        write(_chunk, _encoding, done) {
+          done();
+        },
+      }),
+    });
+  await logger.close();
+  const observe = recorder({ logger });
+  assert.doesNotThrow(() => observe.measure('bind', 1));
+  assert.doesNotThrow(() => observe.measure('search', 1));
+  assert.doesNotThrow(() => observe.measure('depth', 1));
+  for (const outcome of ['ok', 'error', 'timeout'] as const)
+    assert.doesNotThrow(() => observe.complete('ping', outcome, 1));
+});

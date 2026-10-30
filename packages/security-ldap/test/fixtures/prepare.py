@@ -40,6 +40,16 @@ for index, uid in enumerate(["alice", "bob", "duplicate", "duplicate", "étoile"
     records.append(f"dn: cn=person-{index},ou=people,{base}\nobjectClass: inetOrgPerson\ncn: person-{index}\nsn: Fixture\nuid:: {encoded}\nuserPassword: {password_hash(user)}")
 for name, members in [("engineering", [f"cn=person-0,ou=people,{base}", f"cn=company,ou=groups,{base}"]), ("company", [f"cn=engineering,ou=groups,{base}"])]:
     records.append(f"dn: cn={name},ou=groups,{base}\nobjectClass: groupOfNames\ncn: {name}\n" + "\n".join("member: " + member for member in members))
+# Keep adversarial records outside the normal people/group search bases.
+records.append(f"dn: ou=boundaries,{base}\nobjectClass: organizationalUnit\nou: boundaries")
+for name, extra in [
+    ("missing-uid", ""),
+    ("multiple-uid", "uid: first\nuid: second"),
+    ("many-values", "\n".join("uid: value-" + str(i) for i in range(129))),
+    ("large-value", "uid: large-value\ndescription: " + "x" * 16385),
+]:
+    records.append(f"dn: cn={name},ou=boundaries,{base}\nobjectClass: inetOrgPerson\ncn: {name}\nsn: Boundary\n" + extra)
+records.append(f"dn: cn=ambiguous-group,ou=boundaries,{base}\nobjectClass: groupOfNames\ncn: ambiguous-group\ncn: alternate-group\nmember: cn=person-0,ou=people,{base}")
 (root / "seed.ldif").write_text("\n\n".join(records) + "\n")
 config = f"""include /etc/ldap/schema/core.schema
 include /etc/ldap/schema/cosine.schema
