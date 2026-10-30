@@ -135,7 +135,8 @@ The [MariaDB query comparison](mariadb-query.md) independently preserves native
 bigint results and verifies actual pool counters across the four profiles.
 
 The [XML interoperability verification](xml.md) checks ordered mixed content,
-namespace prefixes, native writer roundtrips and actual SDK privacy.
+namespace prefixes, native writer roundtrips and actual SDK privacy. Its bounded
+XSD smoke uses the reviewed offline native backend inside an isolated namespace.
 
 The [JSON workflow verification](json.md) checks native schemas, actual declarative
 mapping semantics, deterministic serialization and missing/null distinctions. Its
