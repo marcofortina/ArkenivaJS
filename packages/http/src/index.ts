@@ -5,6 +5,7 @@ import { lookup as resolveHost } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Agent, fetch as send } from 'undici';
 import {
@@ -21,7 +22,12 @@ import type {
   UsageMeter,
   MeterSession,
 } from '@arkenivajs/core';
-import { copyData, within, instrumentOperation } from '@arkenivajs/core/support';
+import {
+  copyData,
+  within,
+  instrumentOperation,
+  captureAbortSignal,
+} from '@arkenivajs/core/support';
 
 export type { OutboundHttpClient } from '@arkenivajs/core';
 export { DEFAULT_HTTP_TIMEOUT_MS } from '@arkenivajs/core';
@@ -104,6 +110,25 @@ const publicAddress = (address: string): boolean => {
     )
   );
 };
+
+/** Validate cancellation before admission without evaluating request accessors or supplied hooks. */
+function requestSignal(input: unknown): AbortSignal | undefined {
+  if (!input || typeof input !== 'object' || types.isProxy(input) || Array.isArray(input))
+    throw invalid('HTTP request options are required');
+  let current: object | null = input,
+    depth = 0;
+  while (current) {
+    if (types.isProxy(current) || ++depth > 64)
+      throw invalid('The HTTP operation signal is invalid');
+    const descriptor = Object.getOwnPropertyDescriptor(current, 'signal');
+    if (descriptor) {
+      if (!('value' in descriptor)) throw invalid('The HTTP operation signal is invalid');
+      return descriptor.value == null ? undefined : captureAbortSignal(descriptor.value);
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  return undefined;
+}
 
 /** EK-HTTP-002: bounded Undici client with connection-time DNS and origin enforcement. */
 export function createHttpClient(options: HttpClientOptions): ManagedHttpClient {
@@ -217,14 +242,15 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
   const perform: OutboundHttpClient['request'] = async (input, init) => {
     if (closed)
       throw new KitError({ code: 'EK_RESOURCE_CLOSED', message: 'HTTP client is closed' });
+    const sourceSignal = requestSignal(init);
     const began = performance.now();
     let method = 'GET',
       status: number | undefined,
       responseBytes: number | undefined;
     const controller = new AbortController();
     active.add(controller);
-    const abort = () => controller.abort(init?.signal?.reason);
-    init?.signal?.addEventListener('abort', abort, { once: true });
+    const abort = () => controller.abort(sourceSignal?.reason);
+    sourceSignal?.addEventListener('abort', abort, { once: true });
     let outcome: 'ok' | 'error' = 'error';
     let meterSession: MeterSession | undefined;
     try {
@@ -248,7 +274,6 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
       }
     };
     try {
-      if (!init || typeof init !== 'object') throw invalid('HTTP request options are required');
       let url: URL;
       try {
         url = new URL(input);
@@ -377,7 +402,10 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
             return value;
           }
         },
-        { timeoutMs: init.timeoutMs ?? timeoutMs, ...(init.signal ? { signal: init.signal } : {}) },
+        {
+          timeoutMs: init.timeoutMs ?? timeoutMs,
+          ...(sourceSignal ? { signal: sourceSignal } : {}),
+        },
       );
       counters.completed++;
       outcome = 'ok';
@@ -397,7 +425,7 @@ export function createHttpClient(options: HttpClientOptions): ManagedHttpClient 
       throw new KitError({ code: 'EK_HTTP_UPSTREAM', message: 'HTTP request failed', cause });
     } finally {
       controller.abort();
-      init?.signal?.removeEventListener('abort', abort);
+      sourceSignal?.removeEventListener('abort', abort);
       active.delete(controller);
       if (meterSession) {
         try {

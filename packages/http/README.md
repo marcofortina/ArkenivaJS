@@ -1,5 +1,11 @@
 # @arkenivajs/http
 
+Request cancellation is captured before admission from a native `AbortSignal`.
+Data properties inherited through a bounded
+prototype chain remain supported; signal getters, proxy metadata, structural
+lookalikes and shadowed signal hooks are rejected with `EK_CONFIG_INVALID`
+without execution. Invalid cancellation input leaves no active request behind.
+
 Default address policy rejects private and transition networks, including NAT64 and 6to4; only globally routed IPv6 unicast is eligible. A resolver answer must match its declared address family. Upstream deadline errors carry `details.upstream:true`, allowing the API boundary to return HTTP 504.
 
 `createHttpClient(options)` implements `OutboundHttpClient` with an isolated Undici agent. Importing the package opens no connection. `httpPlugin(options)` installs and closes a client per application. Standalone clients require `await client.close()` in a finally block.
