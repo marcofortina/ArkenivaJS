@@ -590,6 +590,8 @@ jobs:
           docker compose -f packages/database-etcd/test/fixtures/compose.yaml exec -T etcd /usr/local/bin/etcdctl --endpoints=https://localhost:2379 --cacert=/fixture/ca.crt --cert=/fixture/health.crt --key=/fixture/health.key endpoint health
           docker compose -f packages/database-etcd/test/fixtures/compose.yaml exec -T wrong-san /usr/local/bin/etcdctl --endpoints=https://wrong.invalid:2379 --cacert=/fixture/ca.crt --cert=/fixture/health.crt --key=/fixture/health.key endpoint health
       - run: pnpm coverage:etcd
+      - name: Verify four etcd profiles with exact revisions, watches and actual lease renewal
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:etcd
       - run: pnpm --filter @arkenivajs/example-etcd test:integration
       - run: pnpm test:packed:examples --integration etcd
       - if: always() && env.ETCD_FIXTURE_DIRECTORY != ''

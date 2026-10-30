@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [etcd verification](etcd.md) checks actual binary state, exact revisions,
+concurrent CAS, ordered watch events and independently observed lease renewal.
+
 Performance comparisons run through the explicit
 [manual performance workflow](../../.github/workflows/performance.yml) after
 functional implementation and verification. Automatic CI keeps functional,
