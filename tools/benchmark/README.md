@@ -69,7 +69,8 @@ The [compression verification](compression.md) consumes actual GZIP/ZIP streams
 and exchanges native/public archives; streaming measurement remains separate.
 
 The [barcode verification](codes.md) checks actual native/public image
-interoperability in four profiles; resource sampling awaits child accounting.
+interoperability in four profiles. Its bounded smoke retains raw samples, verifies
+every rendered image independently and supervises native codec descendants.
 
 The [time comparison](time.md) checks native Temporal/Intl parity, nanoseconds
 and elapsed DST transitions without changing the process timezone.
