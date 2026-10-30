@@ -22,6 +22,11 @@ Resource metadata includes service name/version, `deployment.environment.name`, 
 
 `withRemoteContext(headers,work)` extracts only W3C traceparent/tracestate and scopes them to this instance's async work. Invalid W3C context is ignored. Baggage and identity headers are not propagated as authorization. `traceHeaders()` and `currentTraceId()` read the scoped context; use them for outbound propagation and protected metering correlation. A downstream service must independently verify its access token and tenant entitlement.
 
+Configuration is captured as inert data before policy reads. Enabled span and
+measurement attribute wrappers and remote-context carriers require plain records
+with own data fields. Accessors, proxies and inherited carriers are rejected
+before callbacks execute. Unrelated baggage and identity fields are never read.
+
 `flush(options?)` waits for SDK buffers and in-flight exporter work within the caller deadline. Abort/timeout uses `EK_ABORTED`/`EK_TIMEOUT`; exporter rejection uses `EK_BACKEND_UNAVAILABLE`. `close(options?)` ends active diagnostic spans, stops periodic export and closes providers once; concurrent closes share completion. All new work after close uses `EK_RESOURCE_CLOSED`. A callback already running remains application-owned. `stats()` exposes local start/end, active/pending, export failure, dropped metric/span and instrument/series counts; it is not historical storage. `native()` returns the owned vendor providers and permits extensions outside adapter cardinality/redaction guarantees.
 
 Tests use actual SDK HTTP exports to disposable receivers, test W3C parents across concurrent asynchronous scopes, resource metadata, histogram buckets, queue pressure, exporter failure and cleanup. The integration fixture runs a real digest-pinned collector with bounded resources. Receiver acknowledgments mean collector acceptance, not durable long-term storage.

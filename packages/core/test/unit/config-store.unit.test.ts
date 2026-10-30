@@ -136,6 +136,42 @@ test('Data utilities reject cyclic, executable and non-finite inputs before seri
   assert.deepEqual(copyData(Object.create(null)), {});
 });
 
+test('Data capture rejects root, nested, array and revoked proxies without invoking reflection traps', () => {
+  let effects = 0;
+  const proxy = <T extends object>(value: T): T =>
+    new Proxy(value, {
+      getPrototypeOf(target) {
+        effects++;
+        return Reflect.getPrototypeOf(target);
+      },
+      ownKeys(target) {
+        effects++;
+        return Reflect.ownKeys(target);
+      },
+      getOwnPropertyDescriptor(target, key) {
+        effects++;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+      get(target, key, receiver) {
+        effects++;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  for (const value of [
+    proxy({ value: 1 }),
+    { nested: proxy({ value: 1 }) },
+    proxy([1]),
+    [proxy({ value: 1 })],
+    revoked.proxy,
+    { nested: revoked.proxy },
+  ])
+    assert.throws(() => copyData(value), code('EK_CONFIG_INVALID'));
+  assert.equal(effects, 0);
+  assert.deepEqual(copyData({ nested: [{ value: 1 }] }), { nested: [{ value: 1 }] });
+});
+
 test('Bounded operations preserve values and reject failure, abort and timeout', async () => {
   assert.equal(await within(() => 42), 42);
   await assert.rejects(

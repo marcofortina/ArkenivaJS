@@ -28,6 +28,9 @@ unknown identifiers and spelling variants are rejected at runtime.
 
 The documented `@arkenivajs/core/support` integration entry point provides `ConfigStore`, `compileSchema`, `copyData`, `freezeData`, `mergeData`, `redactData` and `within`. These primitives let adapters share one validated data model and error identity without circular package dependencies. They perform no I/O at import.
 
+`copyData` rejects executable accessors, custom object prototypes and proxies,
+including nested arrays and revoked proxies, before invoking their hooks.
+
 `ConfigStore<T>(initial, {schema, dynamicPaths?, secretPaths?, preflight?})` validates strict JSON Schema without coercion. Getters and snapshots are deeply immutable; snapshots redact known secret names and explicit secret paths. `reload` merges, validates and preflights a new generation before one atomic swap. Failed reloads retain the previous generation and reject with `EK_CONFIG_RELOAD_REJECTED`. Preflight functions must be side-effect-free. Static data, credentials and security policy require reconstruction.
 
 `within(work, {signal?, timeoutMs?})` bounds a promise with `EK_ABORTED` or `EK_TIMEOUT`; timeout defaults to 30,000 ms and must be a positive integer. It removes its listener and timer on every outcome. The work callback must cooperate with cancellation to terminate its own resources.
