@@ -11,6 +11,7 @@ import { SubscriptionEgress } from '../../dist/subscription-egress.js';
 
 function wire(
   options: { maxResultBytes?: number; maxQueuedEvents?: number; timeoutMs?: number } = {},
+  faults: { write?: boolean; acknowledge?: boolean } = {},
 ) {
   const callbacks: ((error?: Error) => void)[] = [],
     encoded: string[] = [],
@@ -20,6 +21,7 @@ function wire(
   const socket = Object.assign(new EventEmitter(), {
     bufferedAmount: 0,
     send(data: string, callback: (error?: Error) => void) {
+      if (faults.write) throw new Error('Private native transport failure');
       encoded.push(data);
       callbacks.push(callback);
     },
@@ -30,7 +32,10 @@ function wire(
   const egress: SubscriptionEgress = new SubscriptionEgress(
     socket as unknown as WebSocket,
     { maxResultBytes: 1024, maxQueuedEvents: 2, timeoutMs: 1000, ...options },
-    (message) => notices.push(message),
+    (message) => {
+      if (faults.acknowledge) throw new Error('Private admission observer failure');
+      notices.push(message);
+    },
     () => changes.push(egress.stats().pendingWrites),
   );
   return { socket, callbacks, encoded, notices, changes, egress, terminations: () => terminations };
@@ -52,6 +57,74 @@ test('Native writes retain bounded physical ownership until callbacks and notify
   assert.equal(notified, 1);
   assert.equal(w.terminations(), 0);
   assert.deepEqual(w.changes, [1, 0]);
+});
+
+test('Synchronous transport and admission failures retire physical writes without leaking causes or duplicate callbacks', () => {
+  for (const fault of ['write', 'acknowledge'] as const) {
+    const w = wire({}, { [fault]: true });
+    const failures: Error[] = [];
+    w.socket.send('{"type":"connection_ack"}', (error) => {
+      assert.ok(error);
+      failures.push(error);
+      throw new Error('Private consumer callback failure');
+    });
+    if (fault === 'acknowledge') {
+      w.callbacks[0]!();
+      w.callbacks[0]!();
+    }
+    assert.equal(failures.length, 1);
+    assert.doesNotMatch(failures[0]!.message, /Private|transport|observer|consumer/);
+    assert.deepEqual(w.egress.stats(), { pendingWrites: 0, closed: true });
+    assert.equal(w.notices.length, 0);
+    assert.equal(w.terminations(), 1);
+    w.socket.emit('close');
+    assert.equal(failures.length, 1);
+  }
+});
+
+test('Wire budgets include the next frame and the complete sanitized error array before writing', () => {
+  for (const mode of ['buffer-plus-frame', 'error-array', 'envelope'] as const) {
+    const w = wire({ maxQueuedEvents: 1, maxResultBytes: 100 });
+    if (mode === 'buffer-plus-frame') w.socket.bufferedAmount = 2148;
+    const message =
+      mode === 'error-array'
+        ? {
+            type: 'error',
+            id: 'one',
+            payload: [{ message: 'private-one' }, { message: 'private-two' }],
+          }
+        : mode === 'envelope'
+          ? { type: 'complete', id: 'x'.repeat(2200) }
+          : { type: 'pong' };
+    let failures = 0;
+    w.socket.send(JSON.stringify(message), (error) => {
+      assert.ok(error);
+      failures++;
+    });
+    assert.equal(w.encoded.length, 0);
+    assert.equal(w.notices.length, 0);
+    assert.equal(w.egress.stats().pendingWrites, 0);
+    assert.equal(w.terminations(), 1);
+    assert.equal(failures, 1);
+  }
+});
+
+test('A failed native callback closes admission and a later write cannot reopen the socket', () => {
+  const w = wire();
+  const failures: Error[] = [];
+  const failed = (error?: Error) => {
+    assert.ok(error);
+    failures.push(error);
+  };
+  w.socket.send('{"type":"pong"}', failed);
+  w.callbacks[0]!(new Error('Private driver endpoint'));
+  w.callbacks[0]!();
+  w.socket.send('{"type":"pong"}', failed);
+  assert.equal(w.encoded.length, 1);
+  assert.equal(w.notices.length, 0);
+  assert.equal(failures.length, 2);
+  assert.ok(failures.every((error) => !/Private|endpoint/.test(error.message)));
+  assert.deepEqual(w.egress.stats(), { pendingWrites: 0, closed: true });
 });
 
 test('Native start errors are sanitized while successful payloads preserve the standard wire dialect', () => {
