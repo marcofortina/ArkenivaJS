@@ -9,7 +9,13 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { routingCoordinates } from '../routing-workload.mjs';
+import {
+  routingCoordinates,
+  nativeRouting,
+  verifyRouting,
+  routingWorkload,
+} from '../routing-workload.mjs';
+import { startRoutingFixture } from '../routing-fixture.mjs';
 
 test('Routing comparison rejects foreign issuers, ambiguous trust files and duplicate tenant coordinates before I/O', () => {
   const valid = {
@@ -36,14 +42,14 @@ test('Routing comparison rejects foreign issuers, ambiguous trust files and dupl
     assert.throws(() => routingCoordinates({ ...valid, otherTenant }));
 });
 
-test('Routing verification refuses unsupported sampling before creating evidence', async () => {
+test('Routing verification refuses unsupported full campaigns before creating evidence', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-routing-mode-'));
   try {
     const output = join(directory, 'sampling');
     await assert.rejects(
       promisify(execFile)(process.execPath, [
         fileURLToPath(new URL('../routing.mjs', import.meta.url)),
-        '--smoke',
+        '--full',
         output,
       ]),
       (error) => /Use --verify/.test(error.stderr),
@@ -51,6 +57,48 @@ test('Routing verification refuses unsupported sampling before creating evidence
     await assert.rejects(stat(output), { code: 'ENOENT' });
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Routing smoke requires disposable-runner authorization before creating evidence', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-routing-disposable-'));
+  const environment = { ...process.env };
+  delete environment.ARKENIVA_ROUTING_BENCHMARK_DISPOSABLE;
+  try {
+    const output = join(directory, 'smoke');
+    await assert.rejects(
+      promisify(execFile)(
+        process.execPath,
+        [fileURLToPath(new URL('../routing.mjs', import.meta.url)), '--smoke', output],
+        { env: environment, timeout: 5000 },
+      ),
+      (error) => /explicitly disposable/.test(error.stderr),
+    );
+    await assert.rejects(stat(output), { code: 'ENOENT' });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('One functional HTTPS callback per routing scenario preserves native receipts and exact handler counts', async () => {
+  const authority = await startRoutingFixture();
+  let service;
+  try {
+    service = await nativeRouting(authority.fixture);
+    await verifyRouting(service, authority.fixture);
+    const workload = routingWorkload(service, authority.fixture);
+    assert.deepEqual(Object.keys(workload), [
+      'local-dispatch',
+      'capability-discovery',
+      'authorized-status',
+    ]);
+    assert.deepEqual(await workload['local-dispatch'](), { found: true, total: 14 });
+    assert.equal((await workload['capability-discovery']()).capabilities.length, 1);
+    assert.deepEqual(await workload['authorized-status'](), { ready: true });
+    assert.deepEqual(service.stats(), { north: 4, south: 1, status: 2, denied: 0 });
+  } finally {
+    await service?.close();
+    await authority.close();
   }
 });
 
@@ -75,6 +123,9 @@ test(
       assert.ok(report.collector.receivedBodies >= 2);
       for (const record of report.records) {
         assert.equal(record.resource, null);
+        assert.deepEqual(record.records, []);
+        assert.equal(record.completion.completedSampleCallbacks, 0);
+        assert.equal(record.completion.expectedUsageChildren, 5);
         assert.deepEqual(record.verification, {
           actualHttpsRequests: 19,
           deniedBeforeHandler: 7,
@@ -92,6 +143,8 @@ test(
           assert.equal(record.completion.tenantCount, 2);
           assert.equal(record.completion.duplicateChildByteCounters, 0);
           assert.ok(record.completion.httpParents >= 5);
+          assert.equal(record.completion.meterDroppedEvents, 0);
+          assert.equal(record.completion.meterFailedExports, 0);
         }
       }
       assert.deepEqual(
