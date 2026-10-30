@@ -52,6 +52,10 @@ The input byte count comes from the received JSON buffer, rather than a claimed 
 
 The HTTP event ends with the response. If physical work remains after timeout, its quality reports unobserved downstream work; the GraphQL child stays owned until that work settles and reports an unknown outcome. A timeout does not prove mutation rollback. Meter capacity/export diagnostics remain in the existing bounded meter; accounting failures never repeat business work or bypass field authorization. A meter rejection of tenant provenance fails authentication closed.
 
+Subscription sources must return boolean completion flags when present. Their iterator
+`return()` must confirm `{done: true}`; an incomplete or malformed cleanup result
+quarantines the subscription transport instead of reporting successful retirement.
+
 Subscription activation requires direct HTTPS and an installed authentication service. Production also requires the application-owned `GraphqlSubscriptionPubSub` to declare `distribution: 'shared'` and `securityLevel: 'production'`. An absent security classification defaults to `test-only`; production rejects unclassified, process-only and test-only providers. Explicit development accepts a declared `process` or `shared` distribution. Existing unclassified test-environment providers retain compatibility.
 
 These readonly properties describe trusted deployment configuration. They do not prove broker connectivity, authenticate a publisher or authorize a tenant. The application must review the real shared backend, verify tenant provenance at both publish and subscribe, and initialize the owning broker plugin before GraphQL through its existing plugin dependencies. GraphQL captures the properties and methods during construction without invoking provider getters or proxy traps; later caller mutation cannot promote a captured test provider. Never derive classification from requests or wrap an in-memory provider with production labels.

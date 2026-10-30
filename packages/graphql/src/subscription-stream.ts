@@ -95,7 +95,9 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
       const result = await this.watch(Promise.resolve().then(() => this.iterator!.next()));
       if (this.stopped) return { value: undefined, done: true };
       if (!result || typeof result !== 'object') throw failure('EK_GQL_SUBSCRIPTION');
-      if (result.done) {
+      const done = result.done;
+      if (done !== undefined && typeof done !== 'boolean') throw failure('EK_GQL_SUBSCRIPTION');
+      if (done) {
         this.stop();
         return { value: undefined, done: true };
       }
@@ -125,7 +127,11 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
     this.retired = true;
     this.watch(
       Promise.resolve()
-        .then(() => this.iterator!.return!())
+        .then(async () => {
+          const result = await this.iterator!.return!();
+          if (!result || typeof result !== 'object' || result.done !== true)
+            throw failure('EK_GQL_SUBSCRIPTION');
+        })
         .then(
           () => undefined,
           () => {

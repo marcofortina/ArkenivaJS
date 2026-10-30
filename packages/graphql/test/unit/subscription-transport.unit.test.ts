@@ -304,56 +304,58 @@ test(
   },
 );
 
-test(
-  'Failed physical provider retirement quarantines the transport even after its connection count reaches zero',
-  { timeout: 10000 },
-  async () => {
-    const r = await runtime({
-      source(_parent, _args, context) {
-        let delivered = false,
-          wake: ((value: IteratorResult<unknown>) => void) | undefined;
-        context.signal.addEventListener('abort', () => wake?.({ done: true, value: undefined }), {
-          once: true,
-        });
-        const iterator: AsyncIterableIterator<unknown> = {
-          [Symbol.asyncIterator]() {
-            return this;
-          },
-          next() {
-            if (!delivered) {
-              delivered = true;
-              return Promise.resolve({ done: false, value: context.auth!.tenantId });
-            }
-            if (context.signal.aborted) return Promise.resolve({ done: true, value: undefined });
-            return new Promise((resolve) => {
-              wake = resolve;
-            });
-          },
-          async return() {
-            throw new Error('Private provider cleanup failure');
-          },
-        };
-        return iterator;
-      },
-    });
-    try {
-      const socket = await r.connect(),
-        value = once(socket, 'message');
-      start(socket);
-      await value;
-      const closed = once(socket, 'close');
-      socket.send('{"type":"complete","id":"one"}');
-      await closed;
-      await until(() => r.transport.stats().connections === 0);
-      assert.equal(r.transport.stats().degraded, true);
-      assert.equal(r.transport.stats().ready, false);
-      await assert.rejects(r.connect(), /403/);
-      assert.equal(r.active.size, 0);
-    } finally {
-      await r.close();
-    }
-  },
-);
+for (const retirement of ['reject', 'incomplete'])
+  test(
+    `Provider ${retirement} retirement quarantines the transport even after its connection count reaches zero`,
+    { timeout: 10000 },
+    async () => {
+      const r = await runtime({
+        source(_parent, _args, context) {
+          let delivered = false,
+            wake: ((value: IteratorResult<unknown>) => void) | undefined;
+          context.signal.addEventListener('abort', () => wake?.({ done: true, value: undefined }), {
+            once: true,
+          });
+          const iterator: AsyncIterableIterator<unknown> = {
+            [Symbol.asyncIterator]() {
+              return this;
+            },
+            next() {
+              if (!delivered) {
+                delivered = true;
+                return Promise.resolve({ done: false, value: context.auth!.tenantId });
+              }
+              if (context.signal.aborted) return Promise.resolve({ done: true, value: undefined });
+              return new Promise((resolve) => {
+                wake = resolve;
+              });
+            },
+            async return() {
+              if (retirement === 'reject') throw new Error('Private provider cleanup failure');
+              return { done: false, value: 'Provider cleanup remains incomplete' };
+            },
+          };
+          return iterator;
+        },
+      });
+      try {
+        const socket = await r.connect(),
+          value = once(socket, 'message');
+        start(socket);
+        await value;
+        const closed = once(socket, 'close');
+        socket.send('{"type":"complete","id":"one"}');
+        await closed;
+        await until(() => r.transport.stats().connections === 0);
+        assert.equal(r.transport.stats().degraded, true);
+        assert.equal(r.transport.stats().ready, false);
+        await assert.rejects(r.connect(), /403/);
+        assert.equal(r.active.size, 0);
+      } finally {
+        await r.close();
+      }
+    },
+  );
 
 test(
   'A timed-out transport shutdown retains late physical acquisition until its real iterator is returned',
