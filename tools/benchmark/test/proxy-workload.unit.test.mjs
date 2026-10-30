@@ -80,48 +80,96 @@ test(
 );
 
 test(
-  'Four actual HTTPS proxy profiles preserve streamed bytes and raw query without leaking identity headers or SDK inputs',
-  { timeout: 30000 },
+  'Four actual HTTPS proxy profiles verify streamed bytes and optionally sample bounded GET receipts without leaking inputs',
+  { timeout: 180000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-proxy-harness-'));
     const script = fileURLToPath(new URL('../proxy.mjs', import.meta.url));
     try {
-      const output = join(directory, 'verify');
-      await promisify(execFile)(process.execPath, [script, '--verify', output], {
-        timeout: 25000,
-        maxBuffer: 1048576,
-      });
-      const encoded = await readFile(join(output, 'report.json'), 'utf8'),
-        report = JSON.parse(encoded);
-      assert.equal(report.measured, false);
-      assert.equal(report.releaseGate, false);
-      assert.equal(report.records.length, 4);
-      assert.ok(report.collector.receivedBodies >= 2);
-      assert.equal(report.collector.inputOccurrences, 0);
-      assert.doesNotMatch(encoded, /owned-proxy-private-credential|foreign\.invalid|127\.0\.0\.1/);
-      assert.deepEqual(
-        JSON.parse(await readFile(join(output, 'protocol-observation.json'), 'utf8')),
-        {
-          actualUpstreamRequests: 8,
-          exactStreamedBytesAndQueryVerified: true,
-          spoofedIdentityHeadersAbsent: true,
-          releaseGate: false,
-        },
-      );
-      for (const row of report.records) {
-        assert.deepEqual(row.verification, {
-          actualProxyRequests: 2,
-          exactStreamedResponseBytes: 262144,
-          verifiedUpstreamTls: true,
+      const campaigns =
+        process.env.ARKENIVA_PROXY_BENCHMARK_DISPOSABLE === '1' ? ['verify', 'smoke'] : ['verify'];
+      for (const campaign of campaigns) {
+        const measured = campaign === 'smoke',
+          output = join(directory, campaign);
+        await promisify(execFile)(process.execPath, [script, '--' + campaign, output], {
+          timeout: 150000,
+          maxBuffer: 1048576,
+          env: { ...process.env, ARKENIVA_PROXY_BENCHMARK_DISPOSABLE: '1' },
         });
-        assert.deepEqual(row.records, []);
-        assert.equal(row.resource, null);
-        assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
-        if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        const encoded = await readFile(join(output, 'report.json'), 'utf8'),
+          report = JSON.parse(encoded);
+        assert.equal(report.measured, measured);
+        assert.equal(report.releaseGate, false);
+        assert.equal(report.records.length, 4);
+        assert.ok(report.collector.receivedBodies >= 2);
+        assert.equal(report.collector.inputOccurrences, 0);
+        assert.doesNotMatch(
+          encoded,
+          /owned-proxy-private-credential|foreign\.invalid|127\.0\.0\.1/,
+        );
+        const observation = JSON.parse(
+          await readFile(join(output, 'protocol-observation.json'), 'utf8'),
+        );
+        if (measured) {
+          assert.equal(observation.actualUpstreamRequests, 488);
+          assert.equal(observation.sampledForwardedGets, 480);
+          assert.equal(observation.actualResponsePayloadBytes, 63963136);
+          assert.equal(observation.actualRequestPayloadBytes, 524288);
+          assert.equal(observation.maximumRetainedUpstreamReceipts, 512);
+          assert.equal(observation.pendingUpstreamHandlers, 0);
+          assert.equal(observation.parentHttpsOriginResources, null);
+          assert.equal(observation.exactStreamedBytesAndQueryVerified, true);
+          assert.equal(observation.spoofedIdentityHeadersAbsent, true);
+        } else
+          assert.deepEqual(observation, {
+            actualUpstreamRequests: 8,
+            exactStreamedBytesAndQueryVerified: true,
+            spoofedIdentityHeadersAbsent: true,
+            releaseGate: false,
+          });
+        for (const row of report.records) {
+          assert.deepEqual(row.verification, {
+            actualProxyRequests: 2,
+            exactStreamedResponseBytes: 262144,
+            verifiedUpstreamTls: true,
+          });
+          assert.equal(row.completion.checkedResponses, measured ? 120 : 0);
+          if (measured) {
+            assert.equal(row.completion.sampledGets, 100);
+            assert.equal(row.completion.warmupGets, 20);
+            assert.equal(row.completion.actualResponsePayloadBytes, 15728640);
+            assert.equal(row.completion.responseIntegrityVerified, true);
+            assert.equal(row.completion.peakRetainedReceipts, 120);
+            assert.equal(row.completion.maximumRetainedReceipts, 128);
+            assert.equal(row.completion.retainedResponseBuffers, 0);
+            assert.equal(row.completion.activeCallbacks, 0);
+            assert.equal(row.records.length, 1);
+            const record = row.records[0];
+            assert.equal(record.operation, 'forwardedGet');
+            assert.equal(record.sampleCount, 100);
+            assert.equal(record.warmupIterations, 20);
+            assert.equal(record.rawLatency.unit, 'milliseconds');
+            assert.equal(record.rawLatency.values.length, 100);
+            assert.ok(
+              record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0),
+            );
+            assert.ok(row.resource.elapsedMs > 0);
+          } else {
+            assert.deepEqual(row.records, []);
+            assert.equal(row.resource, null);
+          }
+          assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
+          if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        }
       }
       const unsupported = join(directory, 'unsupported');
+      const unmarked = { ...process.env };
+      delete unmarked.ARKENIVA_PROXY_BENCHMARK_DISPOSABLE;
       await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
+        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], {
+          timeout: 5000,
+          env: unmarked,
+        }),
       );
       await assert.rejects(access(unsupported));
     } finally {

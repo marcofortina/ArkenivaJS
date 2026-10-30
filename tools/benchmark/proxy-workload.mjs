@@ -5,9 +5,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { once } from 'node:events';
+import { createHash } from 'node:crypto';
 import Fastify from 'fastify';
 import nativeProxy from '@fastify/http-proxy';
 import { proxyBytes } from './proxy-fixture.mjs';
+
+export const proxyIterations = 100;
+export const proxyWarmupIterations = 20;
+export const proxyMaximumRetainedReceipts = 128;
 
 export function proxyRoute(fixture) {
   const url = new URL(fixture.upstream);
@@ -86,7 +91,8 @@ export async function proxyExchange(service, fixture, method) {
   assert.equal(origin.protocol, 'http:');
   assert.ok(origin.port);
   const body = method === 'POST' ? proxyBytes() : Buffer.alloc(0);
-  let outgoing;
+  let outgoing,
+    closed = Promise.resolve();
   const response = new Promise((done, reject) => {
     outgoing = request(
       origin,
@@ -126,6 +132,12 @@ export async function proxyExchange(service, fixture, method) {
       },
     );
     outgoing.once('error', reject);
+    outgoing.once('socket', (socket) => {
+      closed = new Promise((done) => {
+        if (socket.closed) done();
+        else socket.once('close', done);
+      });
+    });
   });
   void response.catch(() => undefined);
   try {
@@ -136,7 +148,86 @@ export async function proxyExchange(service, fixture, method) {
   } catch (cause) {
     outgoing.destroy();
     throw cause;
+  } finally {
+    outgoing.destroy();
+    await closed;
   }
+}
+
+/** Fixed-corpus digest receipts avoid retaining one response buffer for every sample. */
+export function createProxySampling(exchange, expected = proxyBytes()) {
+  assert.equal(typeof exchange, 'function');
+  assert.ok(expected instanceof Uint8Array);
+  const state = {
+    expectedBytes: expected.byteLength,
+    expectedDigest: createHash('sha256').update(expected).digest('hex'),
+    receipts: [],
+    active: false,
+    closed: false,
+  };
+  return {
+    workload: {
+      async forwardedGet() {
+        assert.equal(state.closed, false);
+        assert.equal(state.active, false);
+        assert.ok(state.receipts.length < proxyIterations + proxyWarmupIterations);
+        assert.ok(state.receipts.length < proxyMaximumRetainedReceipts);
+        state.active = true;
+        try {
+          const response = await exchange();
+          const receipt = {
+            status: response.status,
+            bytes: response.body.length,
+            digest: createHash('sha256').update(response.body).digest('hex'),
+            contentType: response.headers['content-type'],
+          };
+          state.receipts.push(receipt);
+          return receipt;
+        } finally {
+          state.active = false;
+        }
+      },
+    },
+    complete({ measure, records }) {
+      try {
+        assert.equal(state.active, false);
+        if (!measure) {
+          assert.equal(state.receipts.length, 0);
+          assert.deepEqual(records, []);
+          return { sampledGets: 0, warmupGets: 0, checkedResponses: 0 };
+        }
+        assert.equal(records.length, 1);
+        const record = records[0];
+        assert.equal(record.operation, 'forwardedGet');
+        assert.equal(record.sampleCount, proxyIterations);
+        assert.equal(record.warmupIterations, proxyWarmupIterations);
+        assert.equal(record.rawLatency.unit, 'milliseconds');
+        assert.equal(record.rawLatency.values.length, record.sampleCount);
+        assert.equal(state.receipts.length, record.sampleCount + record.warmupIterations);
+        for (const receipt of state.receipts)
+          assert.deepEqual(receipt, {
+            status: 200,
+            bytes: state.expectedBytes,
+            digest: state.expectedDigest,
+            contentType: 'application/octet-stream',
+          });
+        return {
+          sampledGets: record.sampleCount,
+          warmupGets: record.warmupIterations,
+          checkedResponses: state.receipts.length,
+          actualResponsePayloadBytes: state.expectedBytes * state.receipts.length,
+          responseIntegrityVerified: true,
+          peakRetainedReceipts: state.receipts.length,
+          maximumRetainedReceipts: proxyMaximumRetainedReceipts,
+          retainedResponseBuffers: 0,
+          activeCallbacks: 0,
+        };
+      } finally {
+        state.closed = true;
+        state.receipts.length = 0;
+      }
+    },
+  };
 }
 
 export async function verifyProxy(service, fixture) {
