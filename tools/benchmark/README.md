@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [authenticated realtime verification](realtime.md) checks actual signed-JWT
+WebSocket/SSE admission, exact wire data and scoped cursor replay.
+
 The [fixed HTTPS proxy verification](proxy.md) checks actual streamed binary
 forwarding, unchanged query semantics and upstream credential isolation.
 

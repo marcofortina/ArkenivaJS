@@ -70,7 +70,8 @@
     "test:integration:password": "node --test test/password-workload.integration.test.mjs",
     "etcd": "node etcd.mjs",
     "test:integration:etcd": "node --test test/etcd-workload.integration.test.mjs",
-    "proxy": "node proxy.mjs"
+    "proxy": "node proxy.mjs",
+    "realtime": "node realtime.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -174,7 +175,11 @@
     "etcd3": "1.1.2",
     "cockatiel": "3.2.1",
     "@arkenivajs/proxy": "workspace:*",
-    "@fastify/http-proxy": "11.6.5"
+    "@fastify/http-proxy": "11.6.5",
+    "@arkenivajs/realtime": "workspace:*",
+    "@fastify/websocket": "11.3.4",
+    "@fastify/sse": "0.6.1",
+    "ws": "8.22.0"
   },
   "license": "AGPL-3.0-or-later"
 }

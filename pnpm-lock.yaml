@@ -2480,6 +2480,9 @@ importers:
       '@arkenivajs/proxy':
         specifier: workspace:*
         version: link:../../packages/proxy
+      '@arkenivajs/realtime':
+        specifier: workspace:*
+        version: link:../../packages/realtime
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../../packages/security
@@ -2546,6 +2549,12 @@ importers:
       '@fastify/multipart':
         specifier: 10.1.6
         version: 10.1.6
+      '@fastify/sse':
+        specifier: 0.6.1
+        version: 0.6.1(patch_hash=2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df)(fastify@5.12.7)
+      '@fastify/websocket':
+        specifier: 11.3.4
+        version: 11.3.4
       '@grpc/grpc-js':
         specifier: 1.14.6
         version: 1.14.6
@@ -2687,6 +2696,9 @@ importers:
       validator:
         specifier: 13.15.35
         version: 13.15.35
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
       yaml:
         specifier: 2.9.1
         version: 2.9.1
