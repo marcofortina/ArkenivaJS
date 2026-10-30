@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Verify malformed reset records and receipts, durable rate counters, secret material,
+  breach responses and bounded operation failure paths without changing password policy.
 - Capture provider methods without evaluating callable metadata; reject proxy
   callbacks and unbounded prototype traversal before reset authorization or persistence.
 - Add bounded native Argon2id hashing, verification, rehash checks and

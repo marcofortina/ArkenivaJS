@@ -151,3 +151,54 @@ test(
     }
   },
 );
+
+test(
+  'Password reset real PostgreSQL corrupt records cannot replace credentials and restored state remains single-use',
+  { timeout: 30000 },
+  async () => {
+    const f = await passwordFixture();
+    try {
+      const originalPassword = password(),
+        account = await f.session(originalPassword);
+      const reset = await account.run(() =>
+        f.first.passwords.createReset(account.subject, account.subject),
+      );
+      const stored = await f.base.backend.app.sql.queryOne<{ body: string }>('main', {
+        text: `SELECT body FROM ${f.base.backend.schema}.security_records WHERE namespace=:namespace AND id=:id`,
+        bindings: { namespace: 'password.resets.v1', id: reset.requestId },
+      });
+      assert.ok(stored);
+      const original = JSON.parse(stored.body) as Record<string, unknown>;
+      const write = (body: string) =>
+        f.base.backend.app.sql.execute('main', {
+          text: `UPDATE ${f.base.backend.schema}.security_records SET body=:body WHERE namespace=:namespace AND id=:id`,
+          bindings: { body, namespace: 'password.resets.v1', id: reset.requestId },
+        });
+      for (const patch of [
+        { kind: 'unexpected-record' },
+        { ownerKey: 'g'.repeat(64) },
+        { digest: 'invalid' },
+      ]) {
+        await write(JSON.stringify({ ...original, ...patch }));
+        await assert.rejects(f.second.passwords.consumeReset(reset.value, password()), {
+          code: 'EK_PASSWORD_RESET',
+        });
+        assert.equal(
+          (await f.first.passwords.verify(originalPassword, await f.current(account.subject)))
+            .valid,
+          true,
+        );
+        await write(stored.body);
+      }
+      const replacement = password();
+      await f.second.passwords.consumeReset(reset.value, replacement);
+      assert.equal(
+        (await f.first.passwords.verify(replacement, await f.current(account.subject))).valid,
+        true,
+      );
+      await assert.rejects(f.first.passwords.consumeReset(reset.value, password()));
+    } finally {
+      await f.close();
+    }
+  },
+);
