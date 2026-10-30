@@ -645,6 +645,8 @@ jobs:
       - name: Start NATS and the independently healthy wrong-SAN endpoint
         run: docker compose -f packages/messaging/test/fixtures/compose.yaml up -d --wait --wait-timeout 90
       - run: pnpm coverage:messaging
+      - name: Verify four native Core NATS profiles and mutual-TLS envelope interoperability
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:nats
       - name: Verify realtime shared NATS delivery across independent processes
         run: pnpm --filter @arkenivajs/realtime test:integration:nats
       - name: Verify authenticated GraphQL WSS delivery across independent NATS-backed processes

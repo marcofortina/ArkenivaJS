@@ -82,6 +82,9 @@ bigint precision, pool release and four isolated instrumentation profiles.
 The [socket verification](socket.md) checks five actual TCP/TLS/UDP/Unix scenarios
 with independent native client processes and four isolated server profiles.
 
+The [Core NATS verification](nats.md) checks actual mutual-TLS wire interoperability
+with a separate native observer and no invented broker acknowledgment.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
