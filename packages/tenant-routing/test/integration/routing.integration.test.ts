@@ -8,7 +8,9 @@ import {
   type ApiServer,
   type Plugin,
   type VerifiedTenantContext,
+  type Application,
 } from '@arkenivajs/core';
+import { inspect } from 'node:util';
 import type { TenantRegistrySnapshotV1_1 } from '../../dist/index.js';
 import { request as httpRequest } from 'node:http';
 import { setImmediate as nextTurn } from 'node:timers/promises';
@@ -17,6 +19,87 @@ import { fixture, settings, registry, send, tlsFiles } from '../http-fixture.js'
 import { connect } from 'node:http2';
 import { registryContentChecksum } from '../../dist/registry.js';
 import type { ManagedApiServer } from '@arkenivajs/api';
+
+test('An unavailable startup registry cannot reach READY or bind routes and the same provider recovers on restart', async () => {
+  let failed: Application | undefined,
+    unavailable = true,
+    loads = 0,
+    effects = 0,
+    listening = 0;
+  const servers: { readonly listening: boolean }[] = [],
+    base = settings(),
+    snapshot = registry();
+  const probe: Plugin = {
+    id: 'registry-listener-probe',
+    version: '1.0.0',
+    capabilities: new Set(),
+    dependencies: ['api'],
+    init(context) {
+      const api = context.require<ManagedApiServer>(COMPONENTS.api);
+      const server = api.native().server;
+      servers.push(server);
+      server.on('listening', () => {
+        listening++;
+      });
+    },
+    close() {},
+  };
+  const input = {
+    ...base,
+    registry: {
+      async loadSnapshot() {
+        loads++;
+        if (unavailable) throw new Error('private-registry-load-failure');
+        return snapshot;
+      },
+    },
+    handlers: {
+      ...base.handlers,
+      north: (context: Parameters<(typeof base.handlers)[string]>[0]) => {
+        effects++;
+        return base.handlers.north!(context);
+      },
+    },
+  };
+  await assert.rejects(
+    fixture(input, {
+      plugins: [probe],
+      onCreated: (app) => {
+        failed = app;
+      },
+    }),
+    (error: unknown) => {
+      assert.doesNotMatch(inspect(error, { depth: 8 }), /private-registry-load-failure/);
+      return true;
+    },
+  );
+  assert.ok(failed);
+  assert.notEqual(failed.state, 'READY');
+  assert.equal(loads, 1);
+  assert.equal(effects, 0);
+  assert.equal(listening, 0);
+  assert.equal(servers.length, 1);
+  assert.ok(servers.every((server) => !server.listening));
+  unavailable = false;
+  const healthy = await fixture(input, { plugins: [probe] });
+  try {
+    const response = await send(healthy.origin, '/api/orders/recovered', {
+      headers: { authorization: await healthy.token() },
+    });
+    assert.equal(response.status, 200, response.body);
+    assert.equal(response.json().implementation, 'north');
+    assert.equal(response.json().id, 'recovered');
+    assert.equal(healthy.app.state, 'READY');
+    assert.equal(loads, 2);
+    assert.equal(effects, 1);
+    assert.equal(listening, 1);
+    assert.equal(servers.length, 2);
+    assert.doesNotMatch(response.body + healthy.logs(), /private-registry-load-failure/);
+  } finally {
+    await healthy.close();
+  }
+  assert.ok(servers.every((server) => !server.listening));
+});
 
 test('Capability responses preserve application cache variation and remain private for every principal', async () => {
   const variation: Plugin = {
