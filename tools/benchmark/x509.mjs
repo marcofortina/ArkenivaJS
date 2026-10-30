@@ -218,15 +218,57 @@ try {
         else resolve(result);
       });
     });
+    // Keep secret-free evidence of rejected load without treating raw observations as acceptance.
+    assert.equal(countSensitiveValues(result.report, new Set(result.fingerprints)), 0);
+    await writeFile(
+      resolve(directory, mode.toLowerCase() + '-observations.json'),
+      JSON.stringify(
+        {
+          gitSha: execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: root,
+            encoding: 'utf8',
+          }).trim(),
+          workingTreeDirty:
+            execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()
+              .length > 0,
+          validation: 'UNVERIFIED',
+          releaseGate: false,
+          observedTrustChecks: backend.checks() - checksBefore,
+          pendingTrustTasks: trustTasks.size,
+          report: result.report,
+        },
+        null,
+        2,
+      ) + '\n',
+      { mode: 0o600, flag: 'wx' },
+    );
     assert.equal(result.report.mode, mode);
     assert.equal(result.report.records.length, 4);
-    assert.equal(result.report.providerReads, 55, 'Trust verification must not be retried');
+    for (const record of result.report.records) {
+      assert.equal(
+        record.schedulingDrops,
+        0,
+        record.scenarioId + ': offered work missed its schedule',
+      );
+      assert.equal(
+        record.saturationDrops,
+        0,
+        record.scenarioId + ': offered work exceeded capacity',
+      );
+      assert.equal(record.errors, 0, record.scenarioId + ': certificate work failed');
+      assert.equal(
+        record.completedOperations,
+        50,
+        record.scenarioId + ': incomplete operation count',
+      );
+    }
+    assert.equal(
+      result.report.providerReads,
+      55,
+      'Trust reads must match the complete workload without retries',
+    );
     assert.equal(backend.checks() - checksBefore, 55);
     assert.equal(trustTasks.size, 0);
-    for (const record of result.report.records) {
-      assert.equal(record.completedOperations, 50);
-      assert.equal(record.errors + record.saturationDrops + record.schedulingDrops, 0);
-    }
     const findings = capture.bodies.reduce(
       (count, body) => count + countSensitiveValues(body, new Set(result.fingerprints)),
       0,

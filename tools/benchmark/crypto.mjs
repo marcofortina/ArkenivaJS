@@ -181,17 +181,55 @@ try {
         else resolve(result);
       });
     });
+    // Preserve secret-free observations even when offered-load validation rejects this profile.
+    assert.equal(countSensitiveValues(result.report, new Set(result.fingerprints)), 0);
+    await writeFile(
+      resolve(directory, mode.toLowerCase() + '-observations.json'),
+      JSON.stringify(
+        {
+          gitSha: execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: root,
+            encoding: 'utf8',
+          }).trim(),
+          workingTreeDirty:
+            execFileSync('git', ['status', '--porcelain'], {
+              cwd: root,
+              encoding: 'utf8',
+            }).trim().length > 0,
+          validation: 'UNVERIFIED',
+          releaseGate: false,
+          report: result.report,
+        },
+        null,
+        2,
+      ) + '\n',
+      { mode: 0o600, flag: 'wx' },
+    );
     assert.equal(result.report.mode, mode);
     assert.equal(result.report.records.length, 8);
+    for (const record of result.report.records) {
+      assert.equal(
+        record.schedulingDrops,
+        0,
+        record.scenarioId + ': offered work missed its schedule',
+      );
+      assert.equal(
+        record.saturationDrops,
+        0,
+        record.scenarioId + ': offered work exceeded capacity',
+      );
+      assert.equal(record.errors, 0, record.scenarioId + ': cryptographic work failed');
+      assert.equal(
+        record.completedOperations,
+        50,
+        record.scenarioId + ': incomplete operation count',
+      );
+    }
     assert.equal(
       result.report.providerReads,
       mode === 'BASELINE' ? 330 : 334,
-      'Fixture provider reads must not be retried',
+      'Provider reads must match the complete fixed workload without retries',
     );
-    for (const record of result.report.records) {
-      assert.equal(record.completedOperations, 50);
-      assert.equal(record.errors + record.saturationDrops + record.schedulingDrops, 0);
-    }
     const findings = capture.bodies.reduce(
       (count, body) => count + countSensitiveValues(body, new Set(result.fingerprints)),
       0,

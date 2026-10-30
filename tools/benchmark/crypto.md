@@ -16,6 +16,14 @@ existing parent. Symlinked parents resolve before the boundary check. Existing
 output is never overwritten. The directory is 0700 and `report.json` is 0600.
 No private key, raw corpus, secret fingerprint set or OTLP payload is persisted.
 
+Each completed worker also leaves a private `*-observations.json` snapshot after
+its metrics pass the material-leak check and before workload validation. These
+snapshots remain explicitly `UNVERIFIED` and never establish acceptance. A failed
+run can therefore retain its scheduling, saturation and completion counters;
+only a completed validated `report.json` represents a passing smoke. Offered-load
+failures are checked before provider-read equality, so skipped work cannot be
+misreported as a provider retry. No load or privacy check is relaxed.
+
 The parent clones one ephemeral corpus over closed IPC into four sequential
 workers. The corpus has a 1 KiB payload, 32-byte AAD, AES/HMAC material,
 Ed25519/P-256 PKCS#8 keys, SPKI public keys and runtime-allocated opaque versions.
