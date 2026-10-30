@@ -4,6 +4,10 @@ Optional GraphQL query and mutation integration on the existing Fastify HTTP, HT
 
 The implementation uses Mercurius 16.12.1 and GraphQL 16.14.2 over Fastify 5.12.7. Core and REST-only applications do not import this package. The plugin requires explicit application HTTP configuration and, by default, an authentication provider. SDL, field mappings and startup declarations are validated before listener activation. It never creates another listener.
 
+Scope, anonymous-root and subscription-origin lists are captured as immutable data.
+Malformed lists, duplicate entries, accessors and proxies, including revoked proxies,
+are rejected with `EK_GQL_CONFIG` without executing their application hooks.
+
 Application HTTP configuration owns TLS certificates and the `http2` switch. Secure HTTP/2 negotiates `h2` and preserves HTTP/1.1 fallback on the same endpoint. Multiplexed streams retain independent verified tenant contexts; resetting one stream cancels its resolver signal without closing other streams. Graceful application shutdown waits for accepted work before closing the listener.
 
 Anonymous policy requires an explicit list of public `Query.<field>` roots and a reason. Every resolved field needs an application authorization decision; a tenant argument is never authentication evidence. Batch results retain order, length and null entries. Subscription delivery requires verified tenant provenance and a shared production backend, with bounded transport and periodic revalidation.

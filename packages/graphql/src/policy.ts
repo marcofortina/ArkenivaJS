@@ -61,7 +61,8 @@ export function integer(value: unknown): number {
 }
 
 function strings(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || types.isProxy(value)) throw failure();
+  // Array.isArray throws for revoked proxies; reject them before inspecting the list.
+  if (types.isProxy(value) || !Array.isArray(value)) throw failure();
   const descriptors = Object.getOwnPropertyDescriptors(value);
   if (Reflect.ownKeys(value).length !== value.length + 1) throw failure();
   const entries = Array.from({ length: value.length }, (_, i) => {
