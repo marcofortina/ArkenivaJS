@@ -51,7 +51,7 @@
     "auth": "node auth.mjs",
     "sessions": "node sessions.mjs",
     "mongodb": "node mongodb.mjs",
-    "test:integration:mongodb": "node --test test/mongodb-workload.integration.test.mjs",
+    "test:integration:mongodb": "node --test --test-concurrency=1 test/mongodb-workload.integration.test.mjs test/mongodb-smoke.integration.test.mjs",
     "test:integration:sessions": "node --test test/sessions-workload.integration.test.mjs",
     "test:integration:magiclink": "node --test test/magiclink-workload.integration.test.mjs",
     "test:integration:mariadb-query": "node --test test/mariadb-query-workload.integration.test.mjs",

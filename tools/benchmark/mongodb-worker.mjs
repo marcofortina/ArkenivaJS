@@ -4,10 +4,21 @@
 import { COMPONENTS } from '@arkenivajs/core';
 import { mongodbPlugin } from '@arkenivajs/database-mongodb';
 import { runPureWorker } from './pure-worker.mjs';
-import { nativeMongo, mongodbConnection, verifyMongo } from './mongodb-workload.mjs';
+import {
+  nativeMongo,
+  mongodbConnection,
+  verifyMongo,
+  prepareMongoRead,
+  mongoReadWorkload,
+  completeMongoRead,
+} from './mongodb-workload.mjs';
 
 runPureWorker({
   name: 'mongodb',
+  asynchronous: true,
+  iterations: 100,
+  warmupIterations: 20,
+  retainRawSamples: true,
   native: nativeMongo,
   framework(fixture) {
     mongodbConnection(fixture);
@@ -20,6 +31,12 @@ runPureWorker({
       },
     };
   },
-  verify: verifyMongo,
+  async verify(service, fixture) {
+    const result = await verifyMongo(service, fixture);
+    if (fixture.readCollection !== undefined) await prepareMongoRead(service, fixture);
+    return result;
+  },
+  workload: mongoReadWorkload,
+  complete: completeMongoRead,
   close: (service) => service?.close(),
 });
