@@ -12,5 +12,6 @@ test('The actual CLI produces a strictly compilable service with a real HTTP gre
     idempotent: true,
     sourceUnchanged: true,
     packageBin: true,
+    recentModulesAdded: true,
   });
 });

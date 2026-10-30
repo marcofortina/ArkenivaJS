@@ -43,6 +43,7 @@ export async function exerciseCli() {
     const source = await readFile(join(created.directory, 'src/main.ts'), 'utf8');
     const added = await addModule('dns', { cwd: created.directory });
     const repeated = await addModule('dns', { cwd: created.directory });
+    const graphql = await addModule('graphql', { cwd: created.directory });
     await linkConsumerDependencies(created.directory);
     await execute(
       process.execPath,
@@ -85,12 +86,21 @@ export async function exerciseCli() {
     }
     const bin = join(packageRoot('@arkenivajs/cli'), 'dist/bin.js');
     const help = await execute(process.execPath, [bin, '--help'], { timeout: 5000 });
+    await execute(process.execPath, [bin, 'add', '@arkenivajs/tenant-routing'], {
+      cwd: created.directory,
+      timeout: 5000,
+    });
+    const manifest = JSON.parse(await readFile(join(created.directory, 'package.json'), 'utf8'));
     return {
       greeting,
       dependencyAdded: added.changed,
       idempotent: !repeated.changed,
       sourceUnchanged: source === (await readFile(join(created.directory, 'src/main.ts'), 'utf8')),
       packageBin: help.stdout.startsWith('Usage: arkenivajs'),
+      recentModulesAdded:
+        graphql.changed &&
+        manifest.dependencies['@arkenivajs/tenant-routing'] ===
+          manifest.dependencies['@arkenivajs/core'],
     };
   } finally {
     try {

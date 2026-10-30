@@ -1,5 +1,10 @@
 # @arkenivajs/cli
 
+The explicit dependency catalog covers all 60 application runtime modules,
+including GraphQL, tenant routing, federation profiles, document codecs and
+native protocol adapters. The CLI itself is excluded. Addition edits only the
+manifest; each selected capability still requires explicit application setup.
+
 Create a small ESM HTTP service or add one explicit framework dependency. The CLI uses Node's argument parser and filesystem primitives, with `jsonc-parser` for strict manifest inspection and localized edits. It does not install dependencies, run package scripts, initialize Git, contact registries or publish packages.
 
 ```sh
