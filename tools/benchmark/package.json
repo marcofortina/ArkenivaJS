@@ -80,7 +80,8 @@
     "scim": "node scim.mjs",
     "test:integration:scim": "node --test test/scim-workload.integration.test.mjs",
     "kafka": "node kafka.mjs",
-    "test:integration:kafka": "node --test test/kafka-workload.integration.test.mjs"
+    "test:integration:kafka": "node --test test/kafka-workload.integration.test.mjs",
+    "test:integration:supervised": "node --test test/supervised-comparison.integration.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
