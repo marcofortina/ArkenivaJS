@@ -77,6 +77,46 @@ function deferred<T>() {
     },
   };
 }
+test('Actual RabbitMQ authentication retains the captured secret resolver without callable metadata access', async () => {
+  const f = await fixture();
+  let effects = 0,
+    calls = 0;
+  const settings = {
+    ...f.settings,
+    async resolveSecret(this: unknown, reference: string) {
+      assert.equal(this, settings);
+      assert.equal(reference, 'fixture-uri');
+      calls++;
+      return metadata.uris.admin;
+    },
+  };
+  for (const field of ['bind', 'name', 'length'])
+    Object.defineProperty(settings.resolveSecret, field, {
+      get() {
+        effects++;
+        throw new Error('Callable metadata must not execute');
+      },
+    });
+  const app = await createApplication({
+    service: { name: 'amqp-owned-resolver', version: '1.0.0', environment: 'test' },
+    plugins: [amqpPlugin(settings)],
+  });
+  settings.resolveSecret = async () => {
+    throw new Error('Later resolver replacement must not execute');
+  };
+  try {
+    await app.start();
+    assert.equal(
+      (await app.resolve<AmqpService>(AMQP_CAPABILITY).health('events')).available,
+      true,
+    );
+    assert.ok(calls > 0);
+    assert.equal(effects, 0);
+  } finally {
+    await app.stop();
+    await f.app.stop();
+  }
+});
 test('Actual RabbitMQ health checks retain captured cancellation cleanup after caller hook replacement', async () => {
   const f = await fixture(),
     controller = new AbortController();
