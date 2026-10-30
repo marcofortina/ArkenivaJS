@@ -14,4 +14,8 @@ message limits and bounded admission. Native client/server escape hatches return
 actual grpc-js instances, with owned credentials and common server authorization.
 Client and bidirectional streaming use those native interfaces deliberately.
 
+The configured authorization method is captured once with its original receiver.
+Custom binding metadata cannot substitute another authority. Getter-based or
+proxy authority metadata and proxy callbacks are rejected before resources open.
+
 See the [guide](../../docs/grpc.md) and [executable example](../../examples/grpc/README.md).

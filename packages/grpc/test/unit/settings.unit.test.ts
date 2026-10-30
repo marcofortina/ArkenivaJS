@@ -132,3 +132,80 @@ test('Call metadata and cancellation are copied without getter execution or time
   for (const timeoutMs of [0, -1, 0.5, NaN, Infinity])
     assert.throws(() => operation({ timeoutMs }, 3000));
 });
+
+test('gRPC cannot replace denied authorization through custom binding metadata', async () => {
+  let calls = 0,
+    binds = 0;
+  const failure = new Error('private-authority-denial');
+  const authority = {
+    async require(): Promise<never> {
+      assert.equal(this, authority);
+      calls++;
+      throw failure;
+    },
+  };
+  Object.defineProperty(authority.require, 'bind', {
+    value: () => {
+      binds++;
+      return async () => ({ issuer: 'https://issuer.example', subject: 'forged-service' });
+    },
+  });
+  const configured = capture({ ...settings(), authority });
+  await assert.rejects(
+    configured.require('grpc.test', undefined, {}),
+    (error: unknown) => error === failure,
+  );
+  assert.equal(calls, 1);
+  assert.equal(binds, 0);
+});
+
+test('gRPC captures inherited authority callbacks and rejects proxy prototype metadata without executing traps', async () => {
+  let reads = 0,
+    calls = 0,
+    replacementCalls = 0;
+  const failure = new Error('private-authority-denial');
+  class Authority {
+    async require(): Promise<never> {
+      assert.ok(this instanceof Authority);
+      calls++;
+      throw failure;
+    }
+  }
+  const authority = new Authority();
+  for (const name of ['bind', 'call', 'apply'])
+    Object.defineProperty(authority.require, name, {
+      get() {
+        reads++;
+        throw new Error('Callable metadata must not execute');
+      },
+    });
+  const configured = capture({ ...settings(), authority });
+  authority.require = async (): Promise<never> => {
+    replacementCalls++;
+    throw new Error('A replacement authority must not execute');
+  };
+  await assert.rejects(
+    configured.require('grpc.test', undefined, {}),
+    (error: unknown) => error === failure,
+  );
+  assert.equal(calls, 1);
+  assert.equal(replacementCalls, 0);
+  const trap = () => {
+    reads++;
+    throw new Error('Authority metadata must not execute');
+  };
+  for (const value of [
+    Object.create(new Proxy(authority, { getOwnPropertyDescriptor: trap })),
+    new Proxy(authority, { get: trap, getOwnPropertyDescriptor: trap }),
+    {
+      require: new Proxy(
+        async () => ({ issuer: 'https://issuer.example', subject: 'forged-service' }),
+        { apply: trap },
+      ),
+    },
+  ])
+    assert.throws(() => capture({ ...settings(), authority: value as never }), {
+      code: 'EK_CONFIG_INVALID',
+    });
+  assert.equal(reads, 0);
+});
