@@ -80,51 +80,100 @@ test(
 );
 
 test(
-  'Four magic-link profiles verify one concurrent winner, replay rejection and exact durable SQL consumption',
-  { timeout: 30000 },
+  'Four magic-link profiles verify concurrent redemption and optionally sample bounded public issuance plus exact durable consumption',
+  { timeout: 180000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-magiclink-harness-'));
     const script = fileURLToPath(new URL('../magiclink.mjs', import.meta.url));
     try {
-      const output = join(directory, 'verify');
-      await promisify(execFile)(process.execPath, [script, '--verify', output], {
-        timeout: 25000,
-        maxBuffer: 1048576,
-      });
-      const encoded = await readFile(join(output, 'report.json'), 'utf8');
-      const report = JSON.parse(encoded);
-      assert.equal(report.measured, false);
-      assert.equal(report.releaseGate, false);
-      assert.equal(report.records.length, 4);
-      assert.ok(report.collector.receivedBodies >= 2);
-      assert.equal(report.collector.inputOccurrences, 0);
-      assert.doesNotMatch(encoded, /ml1\.[0-9a-f-]{36}\.|127\.0\.0\.1/);
-      assert.deepEqual(
-        JSON.parse(await readFile(join(output, 'durable-observation.json'), 'utf8')),
-        {
-          persistedConsumedLinks: 4,
-          persistedConsumeQuota: 4,
-          committedAtomicBatches: 4,
-          releaseGate: false,
-        },
-      );
-      for (const row of report.records) {
-        assert.deepEqual(row.verification, {
-          actualConsumeVerified: true,
-          concurrentWinnerCount: 1,
-          concurrentLoserCount: 1,
-          replayRejected: true,
-          getPrefetchRejected: true,
-          wrongPurposeRejected: true,
+      for (const campaign of ['verify', 'smoke']) {
+        const measured = campaign === 'smoke';
+        const output = join(directory, campaign);
+        await promisify(execFile)(process.execPath, [script, '--' + campaign, output], {
+          timeout: 150000,
+          maxBuffer: 1048576,
         });
-        assert.deepEqual(row.records, []);
-        assert.equal(row.resource, null);
-        assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
-        if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        const encoded = await readFile(join(output, 'report.json'), 'utf8');
+        const report = JSON.parse(encoded);
+        assert.equal(report.measured, measured);
+        assert.equal(report.releaseGate, false);
+        assert.equal(report.records.length, 4);
+        assert.ok(report.collector.receivedBodies >= 2);
+        assert.equal(report.collector.inputOccurrences, 0);
+        assert.doesNotMatch(encoded, /ml1\.[0-9a-f-]{36}\.|127\.0\.0\.1/);
+        const observation = JSON.parse(
+          await readFile(join(output, 'durable-observation.json'), 'utf8'),
+        );
+        if (measured) {
+          assert.equal(observation.persistedConsumedLinks, 484);
+          assert.equal(observation.persistedConsumeQuota, 484);
+          assert.equal(observation.committedAtomicBatches, 484);
+          for (const field of [
+            'sampledIssueRequests',
+            'independentlyCheckedSampleLinks',
+            'independentlyObservedHmacVerifications',
+            'independentlyObservedConsumeAuthorizations',
+            'uniqueNonceCount',
+            'independentReplayRejections',
+          ])
+            assert.equal(observation[field], 480);
+          assert.equal(observation.sampledOwnerCount, 8);
+          assert.equal(observation.maximumIssueAndConsumePerSampleOwner, 60);
+          assert.equal(observation.configuredClaimsPerHour, 64);
+          assert.equal(observation.mailDeliveries, 0);
+          for (const field of [
+            'parentIssuerResources',
+            'parentProviderResources',
+            'postgresServerResources',
+          ])
+            assert.equal(observation[field], null);
+        } else
+          assert.deepEqual(observation, {
+            persistedConsumedLinks: 4,
+            persistedConsumeQuota: 4,
+            committedAtomicBatches: 4,
+            releaseGate: false,
+          });
+        for (const row of report.records) {
+          assert.deepEqual(row.verification, {
+            actualConsumeVerified: true,
+            concurrentWinnerCount: 1,
+            concurrentLoserCount: 1,
+            replayRejected: true,
+            getPrefetchRejected: true,
+            wrongPurposeRejected: true,
+          });
+          assert.equal(row.completion.checkedConsumptions, measured ? 120 : 0);
+          if (measured) {
+            assert.equal(row.completion.sampledLinks, 100);
+            assert.equal(row.completion.warmupLinks, 20);
+            assert.equal(row.completion.verifiedOwnerAndIntent, true);
+            assert.equal(row.completion.uniqueIssueIds, true);
+            assert.equal(row.completion.peakRetainedResults, 120);
+            assert.equal(row.completion.maximumRetainedResults, 128);
+            assert.equal(row.completion.activeCallbacks, 0);
+            assert.equal(row.records.length, 1);
+            const record = row.records[0];
+            assert.equal(record.operation, 'issueAndConsume');
+            assert.equal(record.sampleCount, 100);
+            assert.equal(record.warmupIterations, 20);
+            assert.equal(record.rawLatency.unit, 'milliseconds');
+            assert.equal(record.rawLatency.values.length, 100);
+            assert.ok(
+              record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0),
+            );
+            assert.ok(row.resource.elapsedMs > 0);
+          } else {
+            assert.deepEqual(row.records, []);
+            assert.equal(row.resource, null);
+          }
+          assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
+          if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        }
       }
       const unsupported = join(directory, 'unsupported');
       await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
+        promisify(execFile)(process.execPath, [script, '--full', unsupported], { timeout: 5000 }),
       );
       await assert.rejects(access(unsupported));
     } finally {

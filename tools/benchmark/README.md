@@ -159,6 +159,8 @@ unary smoke reconciles exact protobuf receipts and supervised client resources.
 
 The [magic-link comparison](magiclink.md) verifies actual one-use SQL consumption,
 concurrent winner counts, external HMAC/authority and exact persisted quotas.
+Its bounded smoke includes common public issuance and checks each selected
+consumer result, independent durable counts and subsequent replay rejection.
 
 The [JWT verification comparison](auth.md) checks actual JOSE/native public bearer
 verification, provenance policy and completed crypto counters across four profiles.

@@ -8,6 +8,7 @@ PostgreSQL fixture environment:
 
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation magiclink --verify /private/magiclink-verification
+pnpm --filter @arkenivajs/benchmark-foundation magiclink --smoke /private/magiclink-smoke
 ```
 
 Four isolated profiles compare a benchmark-only native positive-corpus consumer
@@ -38,7 +39,29 @@ must exclude tokens, one-time URL fragments, keyed digests, identities and provi
 credentials. Parent shutdown settles provider work and removes its owned SQL
 schema and issuer resources.
 
-Only `--verify` is supported. Sampling is rejected before fixture allocation
-until complete provider/server resource accounting is available. Reports retain
-`releaseGate: false`; dedicated-runner budgets, five paired repetitions and
-one-hour soak acceptance remain separate work.
+Optional `--smoke` retains 100 actual Tinybench latency samples after 20 warmup
+callbacks in each profile. Each callback requests one new public issue from the
+same parent service under a real authenticated session, then awaits the selected
+consumer's actual atomic consumption receipt. Shared parent issuance is included
+in timing; the native comparison implements only positive-corpus consumption,
+so these timings do not compare separate native/public issuers or isolate issue
+latency. No mail adapter is configured: delivery count remains zero, and there
+is no email-delivery or MFA assurance claim.
+
+This is explicitly a workload over multiple subjects. Eight independently signed
+subjects are prepared outside timing, two per profile. Alternating subjects each
+issue and consume exactly 60 links under the unchanged hourly limit of 64. No
+quota is reset or overridden. The parent bounds fresh grants at 480 and verifies
+484 consumed SQL records including the four original verification grants, exact
+issue and consume quota sums for every owner, and 480 distinct random nonces.
+After timing, an independent public service rejects all 480 replays; record
+snapshots and consume quotas remain unchanged. Each worker privately checks all
+120 returned identities and purposes before clearing its retained results; the
+retention cap is 128. No raw token, URL, nonce, identity or digest enters reports.
+
+Child CPU/RSS observations exclude the parent issuer, application provider,
+SQL client and PostgreSQL server; those resource observations remain explicitly
+unknown. This is a short functional sampling harness, not complete resource
+parity or a release performance campaign. Reports retain `releaseGate: false`;
+dedicated-runner budgets, five paired repetitions and one-hour soak acceptance
+remain separate work.
