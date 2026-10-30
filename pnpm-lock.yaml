@@ -2450,6 +2450,9 @@ importers:
       '@arkenivajs/messaging':
         specifier: workspace:*
         version: link:../../packages/messaging
+      '@arkenivajs/messaging-amqp':
+        specifier: workspace:*
+        version: link:../../packages/messaging-amqp
       '@arkenivajs/metering':
         specifier: workspace:*
         version: link:../../packages/metering
@@ -2519,6 +2522,9 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+      amqplib:
+        specifier: 2.2.0
+        version: 2.2.0(patch_hash=5d45a5b8ea0b717b9774ec3dbc6ff9f8b9a512997f4dde9fab3d4b912c284a36)
       argon2:
         specifier: 0.45.1
         version: 0.45.1

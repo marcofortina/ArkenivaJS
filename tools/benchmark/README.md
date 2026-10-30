@@ -85,6 +85,9 @@ with independent native client processes and four isolated server profiles.
 The [Core NATS verification](nats.md) checks actual mutual-TLS wire interoperability
 with a separate native observer and no invented broker acknowledgment.
 
+The [AMQPS verification](amqp.md) checks actual publisher confirms, mandatory
+returns, binary/header interoperability and dedicated topology retirement.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
