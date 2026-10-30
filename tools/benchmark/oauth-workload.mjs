@@ -4,6 +4,9 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as native from 'openid-client';
+const workloads = new WeakMap();
+export const oauthIterations = 100;
+export const oauthWarmupIterations = 20;
 
 export function oauthPorts(fixture) {
   const endpoint = new URL(fixture.endpoint),
@@ -164,6 +167,7 @@ export async function verifyOAuth(service, fixture) {
   }
   assert.equal(tokens.size, 2);
   await assert.rejects(service.clientCredentials(fixture.audience, ['unapproved.scope']));
+  workloads.set(service, { tokens, grants: [], closed: false });
   return {
     authenticatedMachineGrants: 2,
     distinctTokens: true,
@@ -171,4 +175,77 @@ export async function verifyOAuth(service, fixture) {
     approvedScopeOnly: true,
     refreshReferenceAbsent: true,
   };
+}
+
+/** Only client credentials are timed; interactive PKCE, state and nonce do not apply. */
+export function oauthWorkload(service, fixture) {
+  const state = workloads.get(service);
+  assert.ok(state, 'OAuth machine-grant verification must pass before sampling');
+  return {
+    async clientCredentials() {
+      assert.equal(state.closed, false, 'The OAuth sampling corpus is already complete');
+      assert.ok(
+        state.grants.length < oauthIterations + oauthWarmupIterations,
+        'The bounded OAuth machine-grant corpus is exhausted',
+      );
+      const started = Date.now(),
+        grant = await service.clientCredentials(fixture.audience, ['orders.read']);
+      state.grants.push({ grant, started, completed: Date.now() });
+      return grant;
+    },
+  };
+}
+
+/** Check every returned token privately after timing; issuer/SQL counts remain an independent oracle. */
+export function completeOAuthWorkload(service, { fixture, measure, records }) {
+  const state = workloads.get(service);
+  try {
+    assert.ok(state);
+    let samples = 0,
+      warmup = 0;
+    if (measure) {
+      assert.equal(records.length, 1);
+      const record = records[0];
+      assert.equal(record.operation, 'clientCredentials');
+      assert.equal(record.sampleCount, oauthIterations);
+      assert.equal(record.warmupIterations, oauthWarmupIterations);
+      assert.equal(record.rawLatency.unit, 'milliseconds');
+      assert.equal(record.rawLatency.values.length, record.sampleCount);
+      samples = record.sampleCount;
+      warmup = record.warmupIterations;
+    } else assert.deepEqual(records, []);
+    assert.equal(
+      state.grants.length,
+      samples + warmup,
+      'Actual OAuth grants must reconcile with Tinybench samples and warmup',
+    );
+    for (const { grant, started, completed } of state.grants) {
+      assert.equal(grant.tokenType, 'Bearer');
+      assert.match(grant.accessToken, /^access\.[A-Za-z0-9_-]+$/);
+      assert.equal(grant.audience, fixture.audience);
+      assert.deepEqual([...grant.scopes], ['orders.read']);
+      assert.equal(grant.refreshRef, undefined);
+      assert.ok(
+        Date.parse(grant.expiresAt) >= started + 299000 &&
+          Date.parse(grant.expiresAt) <= completed + 301000,
+      );
+      assert.equal(state.tokens.has(grant.accessToken), false);
+      state.tokens.add(grant.accessToken);
+    }
+    assert.equal(state.tokens.size, 2 + samples + warmup);
+    return {
+      sampledGrants: samples,
+      warmupGrants: warmup,
+      checkedGrants: state.grants.length,
+      distinctTokens: true,
+      approvedScopeAndAudienceOnly: true,
+      finiteExpiryVerified: true,
+      refreshReferenceAbsent: true,
+    };
+  } finally {
+    if (state) state.closed = true;
+    state?.tokens.clear();
+    if (state) state.grants.length = 0;
+    workloads.delete(service);
+  }
 }

@@ -101,7 +101,8 @@ directory lookups. Its opt-in bounded smoke adds exact native readbacks and
 separately reports supervised native-descendant lifecycle resources.
 
 The [OAuth machine-grant verification](oauth.md) checks actual HTTPS token requests,
-persisted SQL grant budgets and private SDK exports in four isolated profiles.
+persisted SQL grant budgets and private SDK exports in four isolated profiles. Its
+bounded smoke reconciles real grant counts with independent issuer and SQL state.
 
 The [XLSX verification](xlsx.md) exchanges native/public typed and styled workbooks,
 one-shot sources and awaited targets without claiming incomplete child measurements.
