@@ -41,6 +41,7 @@
     "json": "node json.mjs",
     "soap": "node soap.mjs",
     "grpc": "node grpc.mjs",
+    "graphql": "node graphql.mjs",
     "magiclink": "node magiclink.mjs",
     "auth": "node auth.mjs",
     "sessions": "node sessions.mjs",
@@ -192,7 +193,10 @@
     "@arkenivajs/security-scim": "workspace:*",
     "scimmy": "1.3.5",
     "@arkenivajs/messaging-kafka": "workspace:*",
-    "@confluentinc/kafka-javascript": "1.11.0"
+    "@confluentinc/kafka-javascript": "1.11.0",
+    "@arkenivajs/graphql": "workspace:*",
+    "mercurius": "16.12.1",
+    "graphql": "16.14.2"
   },
   "license": "AGPL-3.0-or-later"
 }

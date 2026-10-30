@@ -52,6 +52,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
           http,
           databases,
           security,
+          metering,
           configure,
           dispose,
           telemetryOptions,
@@ -79,6 +80,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
         ...(http ? { http } : {}),
         ...(databases ? { databases } : {}),
         ...(security ? { security } : {}),
+        ...(metering ? { metering } : {}),
         ...(mode === 'STANDARD' || mode === 'DETAILED'
           ? { telemetry: { mode: mode.toLowerCase(), samplingRatio: 1 } }
           : {}),

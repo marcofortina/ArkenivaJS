@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [HTTPS GraphQL verification](graphql.md) checks native and public authenticated
+queries, guarded properties, tenant-bound idempotency and actual technical usage.
+
 The [Kafka verification](kafka.md) checks actual TLS/SASL producer acknowledgments
 against independent native consumption of binary, empty and tombstone records.
 
