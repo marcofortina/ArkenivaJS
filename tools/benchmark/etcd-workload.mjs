@@ -8,6 +8,22 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
 import { Etcd3 } from 'etcd3';
 import { noop } from 'cockatiel';
+const workloads = new WeakMap();
+export const etcdIterations = 100;
+export const etcdWarmupIterations = 20;
+const modes = ['BASELINE', 'FRAMEWORK', 'STANDARD', 'DETAILED'];
+
+export function selectEtcdProfile(fixture, mode) {
+  assert.ok(modes.includes(mode));
+  assert.ok(Array.isArray(fixture.profileNamespaces) && fixture.profileNamespaces.length === 4);
+  assert.equal(new Set(fixture.profileNamespaces).size, 4);
+  for (const namespace of fixture.profileNamespaces) etcdConnection({ ...fixture, namespace });
+  return { ...fixture, namespace: fixture.profileNamespaces[modes.indexOf(mode)] };
+}
+
+const casKey = (fixture, index) =>
+  fixture.namespace + 'sample-cas/' + String(index).padStart(3, '0');
+export const etcdCasValue = (index) => Uint8Array.of(0, 255, 128, index);
 
 export function etcdConnection(fixture) {
   try {
@@ -33,8 +49,14 @@ export function etcdConnection(fixture) {
   }
 }
 
-export async function connectEtcd(fixture) {
+export async function connectEtcd(fixture, maximumResponseBytes) {
   const { url, physical } = etcdConnection(fixture);
+  if (maximumResponseBytes !== undefined)
+    assert.ok(
+      Number.isSafeInteger(maximumResponseBytes) &&
+        maximumResponseBytes >= 1024 &&
+        maximumResponseBytes <= 1048576,
+    );
   const client = new Etcd3({
     hosts: url.origin,
     credentials: {
@@ -42,7 +64,12 @@ export async function connectEtcd(fixture) {
       certChain: await readFile(url.searchParams.get('sslcert')),
       privateKey: await readFile(url.searchParams.get('sslkey')),
     },
-    grpcOptions: { 'grpc.enable_retries': 0 },
+    grpcOptions: {
+      'grpc.enable_retries': 0,
+      ...(maximumResponseBytes === undefined
+        ? {}
+        : { 'grpc.max_receive_message_length': maximumResponseBytes }),
+    },
     faultHandling: { global: noop, host: () => noop },
     defaultCallOptions: ({ isStream }) => (isStream ? {} : { deadline: Date.now() + 5000 }),
   });
@@ -151,6 +178,125 @@ export async function nativeEtcd(fixture) {
 export async function cleanupEtcd(client, fixture) {
   const { physical } = etcdConnection(fixture);
   await client.delete().prefix(physical).exec();
+}
+
+/** Fresh-key CAS is one acknowledged transaction; no hidden retry or update-CAS claim. */
+export function etcdWorkload(service, fixture) {
+  etcdConnection(fixture);
+  assert.equal(workloads.has(service), false);
+  const state = { successful: 0, active: false, closed: false };
+  workloads.set(service, state);
+  return {
+    async casCreate() {
+      assert.equal(state.closed, false, 'The etcd sampling corpus is already complete');
+      assert.equal(state.active, false, 'Only one sampled etcd callback may be active');
+      assert.ok(
+        state.successful < etcdIterations + etcdWarmupIterations,
+        'The bounded etcd fresh-key corpus is exhausted',
+      );
+      state.active = true;
+      try {
+        assert.equal(
+          await service.compareAndSwap({
+            key: casKey(fixture, state.successful),
+            expectedRevision: 0n,
+            value: etcdCasValue(state.successful),
+          }),
+          true,
+        );
+        state.successful++;
+        return true;
+      } finally {
+        state.active = false;
+      }
+    },
+  };
+}
+
+export async function completeEtcdWorkload(service, { fixture, measure, records }) {
+  const state = workloads.get(service);
+  try {
+    if (!measure) {
+      assert.equal(state, undefined);
+      assert.deepEqual(records, []);
+      return { sampledCreates: 0, warmupCreates: 0, acknowledgedCreates: 0, staleCasRejections: 0 };
+    }
+    assert.ok(state);
+    assert.equal(state.active, false);
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'casCreate');
+    assert.equal(record.sampleCount, etcdIterations);
+    assert.equal(record.warmupIterations, etcdWarmupIterations);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    assert.equal(state.successful, record.sampleCount + record.warmupIterations);
+    assert.equal(
+      await service.compareAndSwap({
+        key: casKey(fixture, 0),
+        expectedRevision: 0n,
+        value: Uint8Array.of(9, 9, 9, 9),
+      }),
+      false,
+      'An existing key cannot acknowledge another create-only CAS',
+    );
+    return {
+      sampledCreates: record.sampleCount,
+      warmupCreates: record.warmupIterations,
+      acknowledgedCreates: state.successful,
+      staleCasRejections: 1,
+      activeCallbacks: 0,
+      retainedOwnedKeys: state.successful,
+      acknowledgedValueBytes: state.successful * 4,
+    };
+  } finally {
+    if (state) state.closed = true;
+    workloads.delete(service);
+  }
+}
+
+/** Parent-owned native readback checks a bounded range after all worker acknowledgments. */
+export async function verifyEtcdCasReadback(observer, fixture, expectedCount) {
+  assert.ok(
+    Number.isSafeInteger(expectedCount) &&
+      expectedCount >= 1 &&
+      expectedCount <= etcdIterations + etcdWarmupIterations,
+  );
+  const { prefix, physical } = etcdConnection(fixture),
+    response = await observer
+      .getAll()
+      .prefix(physical)
+      .limit(expectedCount + 1)
+      .exec(),
+    rows = response.kvs;
+  assert.equal(rows.length, expectedCount);
+  assert.notEqual(response.more, true, 'The independent etcd range must not be truncated');
+  const values = new Map();
+  let observedBytes = 0;
+  for (const row of rows) {
+    assert.ok(Buffer.isBuffer(row.key) && Buffer.isBuffer(row.value));
+    observedBytes += row.key.length + row.value.length;
+    assert.ok(observedBytes <= 32768, 'The independent etcd range exceeds its byte budget');
+    values.set(row.key.toString(), row);
+  }
+  assert.equal(values.size, expectedCount);
+  let previous = 0n;
+  for (let index = 0; index < expectedCount; index++) {
+    const row = values.get(prefix + casKey(fixture, index));
+    assert.ok(row);
+    assert.deepEqual(row.value, Buffer.from(etcdCasValue(index)));
+    assert.equal(BigInt(row.version), 1n);
+    assert.match(row.mod_revision, /^[1-9][0-9]*$/);
+    const revision = BigInt(row.mod_revision);
+    assert.ok(revision > previous);
+    previous = revision;
+  }
+  return {
+    independentlyVerifiedKeys: expectedCount,
+    valueBytes: expectedCount * 4,
+    observedKeyAndValueBytes: observedBytes,
+    exactRevisionAndVersionVerified: true,
+  };
 }
 
 export async function verifyEtcd(service, fixture) {

@@ -13,6 +13,7 @@ import { randomBytes } from 'node:crypto';
 import { createApplication } from '@arkenivajs/core';
 import { etcdPlugin } from '@arkenivajs/database-etcd';
 import { connectEtcd } from '../etcd-workload.mjs';
+import { etcdIterations, etcdWarmupIterations } from '../etcd-workload.mjs';
 
 test(
   'Native and public etcd verify healthy mTLS controls before rejecting wrong identity and unauthorized clients',
@@ -57,49 +58,99 @@ test(
 );
 
 test(
-  'Four etcd profiles verify binary state, exact revisions, concurrent CAS, ordered watch and lease retirement',
-  { timeout: 30000 },
+  'Verified and sampled etcd profiles reconcile fresh-key CAS with independent bounded native readback and cleanup',
+  { timeout: 180000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-etcd-harness-'));
     const script = fileURLToPath(new URL('../etcd.mjs', import.meta.url));
     try {
-      const output = join(directory, 'verify');
-      await promisify(execFile)(process.execPath, [script, '--verify', output], {
-        timeout: 25000,
-        maxBuffer: 1048576,
-      });
-      const encoded = await readFile(join(output, 'report.json'), 'utf8'),
-        report = JSON.parse(encoded);
-      assert.equal(report.measured, false);
-      assert.equal(report.releaseGate, false);
-      assert.equal(report.records.length, 4);
-      assert.ok(report.collector.receivedBodies >= 2);
-      assert.equal(report.collector.inputOccurrences, 0);
-      assert.doesNotMatch(
-        encoded,
-        /comparison_[a-f0-9]{32}|arkeniva_test_[a-f0-9]{24}|127\.0\.0\.1/,
-      );
-      assert.deepEqual(
-        JSON.parse(await readFile(join(output, 'protocol-observation.json'), 'utf8')),
-        { ownedKeysRemaining: 0, releaseGate: false },
-      );
-      for (const row of report.records) {
-        assert.deepEqual(row.verification, {
-          rawBytesVerified: true,
-          exactRevisionAndVersionVerified: true,
-          concurrentCasWinners: 1,
-          orderedWatchEvents: 3,
-          nativeLeaseGrantAndRevokeVerified: true,
-          serverObservedLeaseRenewal: true,
+      for (const mode of ['--verify', '--smoke']) {
+        const measured = mode === '--smoke',
+          output = join(directory, mode.slice(2));
+        await promisify(execFile)(process.execPath, [script, mode, output], {
+          timeout: 150000,
+          maxBuffer: 1048576,
         });
-        assert.deepEqual(row.records, []);
-        assert.equal(row.resource, null);
-        assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
-        if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        const encoded = await readFile(join(output, 'report.json'), 'utf8'),
+          report = JSON.parse(encoded);
+        assert.equal(report.measured, measured);
+        assert.equal(report.releaseGate, false);
+        assert.equal(report.records.length, 4);
+        assert.ok(report.collector.receivedBodies >= 2);
+        assert.equal(report.collector.inputOccurrences, 0);
+        assert.doesNotMatch(
+          encoded,
+          /comparison_[a-f0-9]{32}|arkeniva_test_[a-f0-9]{24}|127\.0\.0\.1/,
+        );
+        const protocolText = await readFile(join(output, 'protocol-observation.json'), 'utf8'),
+          protocol = JSON.parse(protocolText);
+        assert.equal(protocol.ownedKeysRemaining, 0);
+        assert.equal(protocol.releaseGate, false);
+        assert.doesNotMatch(
+          protocolText,
+          /comparison_[a-f0-9]{32}|arkeniva_test_[a-f0-9]{24}|127\.0\.0\.1/,
+        );
+        if (measured) {
+          const callbacks = report.records.reduce(
+            (sum, row) => sum + row.completion.acknowledgedCreates,
+            0,
+          );
+          assert.equal(callbacks, 4 * (etcdIterations + etcdWarmupIterations));
+          assert.equal(protocol.acknowledgedCasCreates, callbacks);
+          assert.equal(protocol.independentReadbackMatches, callbacks);
+          assert.equal(protocol.staleCasRejections, 4);
+          assert.equal(protocol.profileReadbacks.length, 4);
+          for (const profile of protocol.profileReadbacks) {
+            assert.equal(profile.independentlyVerifiedKeys, etcdIterations + etcdWarmupIterations);
+            assert.equal(profile.valueBytes, profile.independentlyVerifiedKeys * 4);
+            assert.ok(profile.observedKeyAndValueBytes <= 32768);
+            assert.equal(profile.exactRevisionAndVersionVerified, true);
+          }
+          assert.equal(protocol.parentObserverResources, null);
+          assert.equal(protocol.serverResources, null);
+        } else assert.deepEqual(protocol, { ownedKeysRemaining: 0, releaseGate: false });
+        for (const row of report.records) {
+          assert.deepEqual(row.verification, {
+            rawBytesVerified: true,
+            exactRevisionAndVersionVerified: true,
+            concurrentCasWinners: 1,
+            orderedWatchEvents: 3,
+            nativeLeaseGrantAndRevokeVerified: true,
+            serverObservedLeaseRenewal: true,
+          });
+          assert.equal(row.completion.sampledCreates, measured ? etcdIterations : 0);
+          assert.equal(row.completion.warmupCreates, measured ? etcdWarmupIterations : 0);
+          assert.equal(
+            row.completion.acknowledgedCreates,
+            row.completion.sampledCreates + row.completion.warmupCreates,
+          );
+          assert.equal(row.completion.staleCasRejections, measured ? 1 : 0);
+          if (measured) {
+            assert.equal(row.records.length, 1);
+            const record = row.records[0];
+            assert.equal(record.operation, 'casCreate');
+            assert.equal(record.sampleCount, etcdIterations);
+            assert.equal(record.warmupIterations, etcdWarmupIterations);
+            assert.equal(record.rawLatency.unit, 'milliseconds');
+            assert.equal(record.rawLatency.values.length, record.sampleCount);
+            assert.ok(
+              record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0),
+            );
+            assert.ok(record.throughputOpsPerSecond > 0);
+            assert.ok(row.resource.elapsedMs > 0);
+            assert.equal(row.completion.activeCallbacks, 0);
+            assert.equal(row.completion.retainedOwnedKeys, etcdIterations + etcdWarmupIterations);
+          } else {
+            assert.deepEqual(row.records, []);
+            assert.equal(row.resource, null);
+          }
+          assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
+          if (row.quality) assert.ok(row.quality.metricSeries > 0);
+        }
       }
       const unsupported = join(directory, 'unsupported');
       await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
+        promisify(execFile)(process.execPath, [script, '--full', unsupported], { timeout: 5000 }),
       );
       await assert.rejects(access(unsupported));
     } finally {

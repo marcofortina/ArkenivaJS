@@ -35,7 +35,9 @@ The [fixed HTTPS proxy verification](proxy.md) checks actual streamed binary
 forwarding, unchanged query semantics and upstream credential isolation.
 
 The [etcd verification](etcd.md) checks actual binary state, exact revisions,
-concurrent CAS, ordered watch events and independently observed lease renewal.
+concurrent CAS, ordered watch events and independently observed lease renewal. Its
+bounded CAS-create smoke reconciles every retained key with an independent native
+readback and removes only its owned namespaces.
 
 Performance comparisons run through the explicit
 [manual performance workflow](../../.github/workflows/performance.yml) after
