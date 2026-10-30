@@ -79,9 +79,14 @@ async function approvedUpstream() {
   }
 }
 
-for (const cancellation of ['deadline', 'client-disconnect'] as const)
+for (const [transformation, cancellation] of [
+  ['request', 'deadline'],
+  ['request', 'client-disconnect'],
+  ['response', 'deadline'],
+  ['response', 'client-disconnect'],
+] as const)
   test(
-    `A real ${cancellation} retains an uncooperative request transformer without late upstream effects or queued execution`,
+    `A real ${cancellation} retains an uncooperative ${transformation} transformer without late upstream effects or queued execution`,
     { timeout: 10000 },
     async () => {
       const target = await approvedUpstream();
@@ -151,24 +156,39 @@ for (const cancellation of ['deadline', 'client-disconnect'] as const)
           ],
           requestTransformers: {
             async 'partner-input'(_payload, context) {
-              calls++;
-              if (calls === 1) {
-                signal = context.signal;
-                signal.addEventListener('abort', cancelled, { once: true });
-                enter();
-                // Trusted application work may ignore cancellation; the caller still owns it.
-                await gate;
-                exited();
+              if (transformation === 'request') {
+                calls++;
+                if (calls === 1) {
+                  signal = context.signal;
+                  signal.addEventListener('abort', cancelled, { once: true });
+                  enter();
+                  // Trusted application work may ignore cancellation; the caller still owns it.
+                  await gate;
+                  exited();
+                }
               }
               return { ref: context.params.id };
             },
           },
           responseTransformers: {
-            'partner-output': (payload, context) => ({
-              tenant: context.auth!.tenantId,
-              implementation: 'partner',
-              id: (payload as { reference: string }).reference,
-            }),
+            async 'partner-output'(payload, context) {
+              if (transformation === 'response') {
+                calls++;
+                if (calls === 1) {
+                  signal = context.signal;
+                  signal.addEventListener('abort', cancelled, { once: true });
+                  enter();
+                  // Partner work has completed, but this transformation still owns its permit.
+                  await gate;
+                  exited();
+                }
+              }
+              return {
+                tenant: context.auth!.tenantId,
+                implementation: 'partner',
+                id: (payload as { reference: string }).reference,
+              };
+            },
           },
         });
         const authorization = await f.token('south');
@@ -190,7 +210,9 @@ for (const cancellation of ['deadline', 'client-disconnect'] as const)
         }
         await within(() => aborted, { timeoutMs: 2000 });
         assert.equal(signal?.aborted, true);
-        const blocked = await send(f.origin, '/api/orders/blocked', { headers: { authorization } });
+        const blocked = await send(f.origin, '/api/orders/blocked', {
+          headers: { authorization },
+        });
         assert.equal(blocked.status, 503, blocked.body);
         assert.equal((blocked.json().error as { code: string }).code, 'EK_TROUTE_CAPACITY');
         assert.equal(calls, 1, 'Saturation must not queue or re-enter the physical transformer');
@@ -201,17 +223,24 @@ for (const cancellation of ['deadline', 'client-disconnect'] as const)
         });
         assert.equal(healthy.status, 200, healthy.body);
         assert.equal(healthy.json().tenant, 'north');
-        assert.equal(target.connections(), 0);
-        assert.deepEqual(target.requests, []);
+        const initialRequests =
+          transformation === 'request' ? [] : [{ path: '/fixed', body: { ref: 'cancelled' } }];
+        assert.equal(target.connections(), transformation === 'request' ? 0 : 1);
+        assert.deepEqual(target.requests, initialRequests);
+        const initialConnections = target.connections();
         release();
         await within(() => physicalExit, { timeoutMs: 2000 });
         await nextTurn();
         assert.equal(calls, 1, 'Rejected requests must never execute after capacity returns');
-        assert.equal(target.connections(), 0, 'Late transformation cannot open an upstream socket');
+        assert.equal(
+          target.connections(),
+          initialConnections,
+          'Late transformation cannot open an upstream socket',
+        );
         assert.deepEqual(
           target.requests,
-          [],
-          'Late transformation cannot send an upstream request',
+          initialRequests,
+          'Late transformation cannot send or replay an upstream request',
         );
         const recovered = await send(f.origin, '/api/orders/recovered', {
           headers: { authorization },
@@ -219,8 +248,11 @@ for (const cancellation of ['deadline', 'client-disconnect'] as const)
         assert.equal(recovered.status, 200, recovered.body);
         assert.equal(recovered.json().id, 'partner-recovered');
         assert.equal(calls, 2);
-        assert.equal(target.connections(), 1);
-        assert.deepEqual(target.requests, [{ path: '/fixed', body: { ref: 'recovered' } }]);
+        assert.ok(target.connections() >= 1 && target.connections() <= 2);
+        assert.deepEqual(target.requests, [
+          ...initialRequests,
+          { path: '/fixed', body: { ref: 'recovered' } },
+        ]);
         assert.doesNotMatch(f.logs(), /Bearer /);
       } finally {
         outgoing?.destroy();
