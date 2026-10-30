@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Verify incoherent provider resources and ETags, corrupted PostgreSQL data,
+  runtime authority decisions and HTTP disconnect admission ownership.
 - Add authenticated standalone provisioning and lifecycle-owned HTTP, HTTPS and HTTP/2 routes.
 - Add bounded physical concurrency, cancellation, sanitized errors, private diagnostics and technical metering.
 - Add PostgreSQL ownership, idempotency and ETag race examples with independent processes.

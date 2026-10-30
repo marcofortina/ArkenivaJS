@@ -96,6 +96,36 @@ test(
       const created = creates[0]!.body as ScimRecord,
         id = created.id;
       assert.equal((creates[1]!.body as ScimRecord).id, id);
+      const stored = await backend.app.sql.queryOne<{ body: string; version: string }>('main', {
+        text: `SELECT body,version::text AS version FROM ${backend.schema}.scim_resources WHERE id=:id`,
+        bindings: { id },
+      });
+      assert.ok(stored);
+      try {
+        await backend.app.sql.execute('main', {
+          text: `UPDATE ${backend.schema}.scim_resources SET body=:body WHERE id=:id`,
+          bindings: { id, body: '{invalid-private-resource' },
+        });
+        for (const path of ['/Users/' + id, '/Users']) {
+          const denied = await second.handle(await request('GET', path));
+          assert.equal(denied.status, 503);
+          assert.equal(JSON.stringify(denied.body).includes('invalid-private-resource'), false);
+        }
+      } finally {
+        await backend.app.sql.execute('main', {
+          text: `UPDATE ${backend.schema}.scim_resources SET body=:body WHERE id=:id`,
+          bindings: { id, body: stored.body },
+        });
+      }
+      const retained = await backend.app.sql.queryOne<{ version: string }>('main', {
+        text: `SELECT version::text AS version FROM ${backend.schema}.scim_resources WHERE id=:id`,
+        bindings: { id },
+      });
+      assert.equal(retained?.version, stored.version);
+      assert.equal(
+        (await second.handle(await request('GET', '/Users/' + id))).headers.etag,
+        creates[0]!.headers.etag,
+      );
       const changes = {
           schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
           Operations: [{ op: 'replace', path: 'active', value: false }],
