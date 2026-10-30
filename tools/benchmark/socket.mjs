@@ -11,8 +11,12 @@ import { runPureComparison } from './pure-comparison.mjs';
 
 const args = process.argv.slice(2);
 assert.ok(
-  args.length === 2 && args[0] === '--verify',
-  'Use --verify with a fresh absolute external report directory; socket performance accounting remains separate',
+  args.length === 2 && ['--verify', '--smoke'].includes(args[0]),
+  'Use --verify or --smoke with a fresh absolute external report directory',
+);
+assert.ok(
+  args[0] !== '--smoke' || process.env.ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE === '1',
+  'Socket smoke requires an explicitly disposable measurement environment',
 );
 const directory = await mkdtemp('/tmp/arkenivajs-socket-comparison-');
 const fixture = {
@@ -20,6 +24,7 @@ const fixture = {
   certificateFile: join(directory, 'server.pem'),
   privateKeyFile: join(directory, 'server.key'),
   marker: randomBytes(24).toString('hex'),
+  sampleEcho: args[0] === '--smoke',
 };
 try {
   await chmod(directory, 0o700);
@@ -51,21 +56,29 @@ try {
     {
       scenarioId: 'socket-native-independent-client-verification',
       fixture,
-      privacyValues: [...Object.values(fixture), '127.0.0.1', 'localhost'],
+      privacyValues: [
+        ...Object.values(fixture).filter((value) => typeof value === 'string'),
+        '127.0.0.1',
+        'localhost',
+      ],
       privacyField: 'inputOccurrences',
       worker: new URL('./socket-worker.mjs', import.meta.url),
+      superviseProcessTree: true,
       inputs: {
         nativeBackend: 'Node net, tls and dgram',
         scenarios: ['tcp64', 'tcp65536', 'tls64', 'udp256', 'unix4096'],
         independentClientProcess: true,
         concurrency: 1,
         testCertificateKey: 'EC P-256',
-        samplingSupported: false,
+        samplingSupported: true,
+        measuredScenario: 'TCP64 independent client process lifecycle and echo',
+        samplesPerProfile: args[0] === '--smoke' ? 100 : 0,
+        warmupEchoesPerProfile: args[0] === '--smoke' ? 20 : 0,
       },
       observationCoverage:
-        'Actual independent-process native clients verify byte identity over five transport scenarios in four isolated server profiles; real listener counters, TLS hostname rejection, closed handles and Unix path retirement are checked. SDK exports exclude payloads and endpoints.',
+        'Actual independent-process native clients verify byte identity over five transport scenarios in four isolated server profiles; real listener counters, TLS hostname rejection, closed handles and Unix path retirement are checked. Optional TCP64 smoke awaits120 distinct client process lifecycles, verifies every exact echo and reconciles independent listener byte/connection counters before physical closure. Supervision includes server worker and actual descendant clients. SDK exports exclude payloads and endpoints.',
       limitations:
-        'Bounded functional echo only; raw stream chunks are never treated as framed messages. Native Node baseline omits framework admission, bounded queues, cancellation and lifecycle checks. UDP proves only the observed local request/reply, with no end-to-end reliability or OS-loss claim. No sampled first-byte latency, handshake rate, backpressure campaign, independent-process CPU accounting, dedicated-runner budgets, five repetitions or one-hour soak acceptance.',
+        'The bounded TCP64 scenario includes child process startup, IPC, connection, echo and physical client exit in each Tinybench callback; it is not steady-connection echo latency. Client first-byte and exchange observations start after native socket construction and exclude process startup/IPC. Other transport scenarios remain verification only. Raw stream chunks are never treated as framed messages. Native Node baseline omits framework admission, bounded queues, cancellation and lifecycle checks. UDP proves only observed local request/reply, with no reliability or OS-loss claim. Sampled summed RSS is not exact peak/PSS; opaque kernel buffers remain unknown. No handshake-rate, backpressure campaign, calibrated policy-equivalent overhead, dedicated-runner budgets, five repetitions, one-hour soak or release acceptance.',
     },
     args,
   );

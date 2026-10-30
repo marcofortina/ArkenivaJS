@@ -6,6 +6,7 @@ import { connect } from 'node:net';
 import { connect as connectTls } from 'node:tls';
 import { createSocket } from 'node:dgram';
 import { readFile } from 'node:fs/promises';
+import { performance } from 'node:perf_hooks';
 
 /** The actual client lives outside the server worker and never reports payload or endpoints. */
 export async function exchangeSocket(input) {
@@ -39,6 +40,8 @@ export async function exchangeSocket(input) {
           })
         : connect(options);
   try {
+    const started = performance.now();
+    let firstByteMs;
     return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('The owned socket client timed out')), 3000);
       const fail = (cause) => {
@@ -53,6 +56,8 @@ export async function exchangeSocket(input) {
           resolve({
             receivedBytes: bytes.length,
             byteIdentityVerified: true,
+            firstByteMs,
+            exchangeElapsedMs: performance.now() - started,
             ...(tls ? { tls } : {}),
           });
         } catch (cause) {
@@ -60,7 +65,10 @@ export async function exchangeSocket(input) {
         }
       };
       if (kind === 'udp') {
-        socket.once('message', (bytes) => complete(bytes));
+        socket.once('message', (bytes) => {
+          firstByteMs = performance.now() - started;
+          complete(bytes);
+        });
         socket.send(payload, options.port, options.host, (cause) => {
           if (cause) fail(cause);
         });
@@ -68,6 +76,7 @@ export async function exchangeSocket(input) {
         const chunks = [];
         let bytes = 0;
         socket.on('data', (chunk) => {
+          firstByteMs ??= performance.now() - started;
           bytes += chunk.length;
           if (bytes > size) fail(new Error('The owned echo exceeded its payload bound'));
           else chunks.push(chunk);

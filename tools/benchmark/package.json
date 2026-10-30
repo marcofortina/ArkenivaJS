@@ -90,7 +90,8 @@
     "test:integration:codes": "node --test test/codes-smoke.integration.test.mjs",
     "test:integration:compression": "node --test test/compression-smoke.integration.test.mjs",
     "test:integration:pdf": "node --test test/pdf-smoke.integration.test.mjs",
-    "test:integration:mtls": "node --test test/mtls-workload.unit.test.mjs"
+    "test:integration:mtls": "node --test test/mtls-workload.unit.test.mjs",
+    "test:integration:socket": "node --test test/socket-smoke.integration.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",

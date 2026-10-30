@@ -110,7 +110,10 @@ test(
       }
       const unsupported = join(directory, 'unsupported');
       await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
+        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], {
+          timeout: 5000,
+          env: { ...process.env, ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE: '' },
+        }),
       );
       await assert.rejects(access(unsupported));
     } finally {
