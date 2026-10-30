@@ -72,7 +72,8 @@
     "test:integration:etcd": "node --test test/etcd-workload.integration.test.mjs",
     "proxy": "node proxy.mjs",
     "realtime": "node realtime.mjs",
-    "mtls": "node mtls.mjs"
+    "mtls": "node mtls.mjs",
+    "saml": "node saml.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -180,7 +181,10 @@
     "@arkenivajs/realtime": "workspace:*",
     "@fastify/websocket": "11.3.4",
     "@fastify/sse": "0.6.1",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "@arkenivajs/security-saml": "workspace:*",
+    "@node-saml/node-saml": "5.1.0",
+    "@xmldom/xmldom": "0.8.15"
   },
   "license": "AGPL-3.0-or-later"
 }
