@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Verify native mutual TLS without optional ALPN, DNS/IP peer policy, altered CA
+  snapshots, certificate-chain boundaries and final conversion size limits.
 - Capture credential and trust callbacks without evaluating callable metadata,
   retaining original receivers and rejecting proxies and unbounded classification traversal.
 - Add explicit credential profiles, complete startup snapshots and atomic explicit reload.
