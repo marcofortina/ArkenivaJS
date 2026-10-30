@@ -3,7 +3,15 @@
 
 import { kafkaPlugin, KAFKA_CAPABILITY } from '@arkenivajs/messaging-kafka';
 import { runPureWorker } from './pure-worker.mjs';
-import { kafkaSettings, nativeKafka, verifyKafka } from './kafka-workload.mjs';
+import {
+  kafkaSettings,
+  nativeKafka,
+  verifyKafka,
+  kafkaIterations,
+  kafkaWarmupIterations,
+  kafkaWorkload,
+  completeKafkaWorkload,
+} from './kafka-workload.mjs';
 
 runPureWorker({
   name: 'kafka',
@@ -14,5 +22,11 @@ runPureWorker({
     return { plugin: kafkaPlugin(kafkaSettings(fixture)), key: KAFKA_CAPABILITY };
   },
   verify: verifyKafka,
+  asynchronous: true,
+  iterations: kafkaIterations,
+  warmupIterations: kafkaWarmupIterations,
+  retainRawSamples: true,
+  workload: kafkaWorkload,
+  complete: completeKafkaWorkload,
   close: (service) => service?.close(),
 });

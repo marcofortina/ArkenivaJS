@@ -9,6 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
 
 const require = createRequire(import.meta.url);
+const workloads = new WeakMap();
+export const kafkaIterations = 100;
+export const kafkaWarmupIterations = 20;
 const quiet = {
   info() {},
   error() {},
@@ -171,15 +174,8 @@ export async function verifyKafka(service, fixture) {
   assert.ok(receipts.every((receipt) => receipt.partition === receipts[0].partition));
   assert.ok(BigInt(receipts[0].offset) < BigInt(receipts[1].offset));
   assert.ok(BigInt(receipts[1].offset) < BigInt(receipts[2].offset));
-  const response = await globalThis.fetch(fixture.observerUrl + '/receipts', {
-    method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(12000),
-    headers: { authorization: 'Bearer ' + fixture.observerKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ marker: fixture.marker, receipts }),
-  });
-  assert.equal(response.status, 200);
-  await response.arrayBuffer();
+  await confirmKafkaReceipts(fixture, 'verification', receipts);
+  workloads.set(service, { previous: receipts.at(-1), receipts: [] });
   return {
     actualBrokerAcknowledgments: 3,
     independentConsumerReceiptMatches: 3,
@@ -187,5 +183,97 @@ export async function verifyKafka(service, fixture) {
     repeatedNullableHeadersPreserved: true,
     exactOffsetOrderVerified: true,
     wireTenantHintRemainsUntrusted: true,
+  };
+}
+
+async function confirmKafkaReceipts(fixture, phase, receipts) {
+  const response = await globalThis.fetch(fixture.observerUrl + '/receipts', {
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(12000),
+    headers: { authorization: 'Bearer ' + fixture.observerKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ marker: fixture.marker, phase, receipts }),
+  });
+  assert.equal(response.status, 200);
+  await response.arrayBuffer();
+}
+
+/** Each timed callback awaits an actual broker receipt; observer commits occur outside timing. */
+export function kafkaWorkload(service, fixture) {
+  const state = workloads.get(service);
+  assert.ok(state, 'The Kafka verification corpus must pass before sampling');
+  return {
+    async publishReceipt() {
+      const index = state.receipts.length;
+      assert.ok(
+        index < kafkaIterations + kafkaWarmupIterations,
+        'The bounded Kafka sampling corpus is exhausted',
+      );
+      const value = kafkaValues(fixture)[index % 3];
+      const receipt = await service.publish(
+        {
+          cluster: 'owned',
+          topic: fixture.topic,
+          key: Buffer.from(fixture.marker),
+          value,
+          headers: kafkaHeaders(fixture),
+          messageId: fixture.marker,
+        },
+        { timeoutMs: 10000 },
+      );
+      assert.equal(receipt.status, 'acknowledged');
+      assert.equal(receipt.topic, fixture.topic);
+      assert.equal(receipt.messageId, fixture.marker);
+      assert.equal(receipt.partition, state.previous.partition);
+      assert.match(receipt.offset, /^(?:0|[1-9][0-9]*)$/);
+      assert.ok(BigInt(receipt.offset) > BigInt(state.previous.offset));
+      const row = {
+        partition: receipt.partition,
+        offset: receipt.offset,
+        valueBytes: value?.byteLength ?? 0,
+      };
+      state.receipts.push(row);
+      state.previous = row;
+      return receipt;
+    },
+  };
+}
+
+export async function completeKafkaWorkload(service, { fixture, measure, records }) {
+  const state = workloads.get(service);
+  assert.ok(state);
+  let samples = 0,
+    warmup = 0;
+  if (measure) {
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'publishReceipt');
+    assert.equal(record.sampleCount, kafkaIterations);
+    assert.equal(record.warmupIterations, kafkaWarmupIterations);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    samples = record.sampleCount;
+    warmup = record.warmupIterations;
+  } else assert.deepEqual(records, []);
+  assert.equal(
+    state.receipts.length,
+    samples + warmup,
+    'Actual broker receipts must reconcile with Tinybench samples and warmup',
+  );
+  if (measure)
+    await confirmKafkaReceipts(
+      fixture,
+      'sampling',
+      state.receipts.map(({ partition, offset }) => ({ partition, offset })),
+    );
+  const bytes = (rows) => rows.reduce((total, row) => total + row.valueBytes, 0);
+  return {
+    sampledBrokerAcknowledgments: samples,
+    warmupBrokerAcknowledgments: warmup,
+    independentConsumerReceiptMatches: state.receipts.length,
+    sampledValueBytes: bytes(state.receipts.slice(warmup)),
+    warmupValueBytes: bytes(state.receipts.slice(0, warmup)),
+    receiptSemantics:
+      'Broker acknowledgment only; independent observer offset commits are not application commitment or end-to-end exactly once',
   };
 }
