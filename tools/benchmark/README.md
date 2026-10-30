@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [Kafka verification](kafka.md) checks actual TLS/SASL producer acknowledgments
+against independent native consumption of binary, empty and tombstone records.
+
 The [SAML verification](saml.md) checks actual signed requests/responses, verified
 metadata, correlated identities and replay/tampering/audience rejection.
 

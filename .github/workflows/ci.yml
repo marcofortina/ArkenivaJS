@@ -751,6 +751,8 @@ jobs:
             --add --allow-principal User:fixture-allowed --operation Read --operation Describe --group owned-secure- --resource-pattern-type prefixed
       - name: Verify actual native offsets, durable commits, ownership, failures, TLS/SASL and SDK privacy
         run: pnpm --filter @arkenivajs/messaging-kafka test:integration
+      - name: Verify four Kafka producer profiles against independent native TLS consumption
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:kafka
       - name: Verify the compiled public Kafka example
         run: pnpm --filter @arkenivajs/example-kafka test:integration
       - name: Verify independent public package archives with the actual native backend

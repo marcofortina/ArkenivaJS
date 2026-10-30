@@ -2474,6 +2474,9 @@ importers:
       '@arkenivajs/messaging-amqp':
         specifier: workspace:*
         version: link:../../packages/messaging-amqp
+      '@arkenivajs/messaging-kafka':
+        specifier: workspace:*
+        version: link:../../packages/messaging-kafka
       '@arkenivajs/metering':
         specifier: workspace:*
         version: link:../../packages/metering
@@ -2546,6 +2549,9 @@ importers:
       '@arkenivajs/webhooks':
         specifier: workspace:*
         version: link:../../packages/webhooks
+      '@confluentinc/kafka-javascript':
+        specifier: 1.11.0
+        version: 1.11.0(patch_hash=46e9a5b1bd7a683cc3840d3202a6cb6c61f02ea802eb93214f5ee0a39c20b767)
       '@fastify/helmet':
         specifier: 13.2.0
         version: 13.2.0
