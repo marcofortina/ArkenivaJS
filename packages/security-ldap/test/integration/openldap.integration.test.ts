@@ -91,6 +91,53 @@ test('Actual verified OpenLDAP operations retain captured external secret method
   assert.ok(reads >= 9);
   assert.equal(effects, 0);
 });
+
+test('Actual OpenLDAP uses native secret bytes without instance length, buffer or iterator metadata', async () => {
+  const input = settings(),
+    source = input.secretProvider;
+  let effects = 0;
+  const retained: { bytes: Uint8Array; expected: Buffer }[] = [];
+  const directory = createLdapService({
+    ...input,
+    secretProvider: {
+      async get(reference, options) {
+        const value = await source.get(reference, options),
+          bytes = Buffer.from(value.bytes),
+          expected = Buffer.from(bytes);
+        retained.push({ bytes, expected });
+        for (const key of ['length', 'byteLength', 'buffer', Symbol.iterator])
+          Object.defineProperty(bytes, key, {
+            get() {
+              effects++;
+              throw new Error('Private LDAP byte metadata must not execute');
+            },
+          });
+        return { ...value, bytes };
+      },
+    },
+  });
+  try {
+    assert.equal(await directory.ping(), true);
+    assert.equal((await directory.findUser({ username: 'alice' }))?.uid, 'alice');
+    assert.equal(
+      await directory.verifyCredentials({ username: 'alice' }, metadata.userPassword),
+      true,
+    );
+    for (const value of retained) {
+      const copy = Buffer.alloc(value.expected.length);
+      Uint8Array.prototype.set.call(copy, value.bytes);
+      assert.deepEqual(copy, value.expected);
+      copy.fill(0);
+    }
+    assert.ok(retained.length >= 9);
+    assert.equal(effects, 0);
+  } finally {
+    for (const value of retained) {
+      Uint8Array.prototype.fill.call(value.bytes, 0);
+      value.expected.fill(0);
+    }
+  }
+});
 test('OpenLDAP verified LDAPS finds a unique user, projects immutable attributes and verifies an isolated user bind', async () => {
   const directory = createLdapService(settings());
   assert.equal(await directory.ping(), true);
