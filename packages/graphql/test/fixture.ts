@@ -204,7 +204,7 @@ export async function fixture(
       issuer: options.issuer ?? issuer,
       logs: () => logs,
       close,
-      token: async (tenant = 'tenant-a', scope = 'graphql:read') => {
+      token: async (tenant = 'tenant-a', scope = 'graphql:read', expiresAt?: number) => {
         if (options.issuer)
           throw new Error(
             'External fixture credentials must come from their actual signing authority',
@@ -217,7 +217,7 @@ export async function fixture(
             .setAudience('api://graphql')
             .setSubject('graphql-user')
             .setIssuedAt()
-            .setExpirationTime('5m')
+            .setExpirationTime(expiresAt ?? '5m')
             .sign(pair.privateKey))
         );
       },

@@ -195,7 +195,7 @@ async function runtime(
       config,
       tls,
       auth,
-      async connect(tenant = 'tenant-a') {
+      async connect(tenant = 'tenant-a', assertion?: string) {
         const socket = new WebSocket(
           f.origin.replace('https:', 'wss:') + '/graphql',
           'graphql-transport-ws',
@@ -212,7 +212,7 @@ async function runtime(
         socket.send(
           JSON.stringify({
             type: 'connection_init',
-            payload: { authorization: await f.token(tenant) },
+            payload: { authorization: assertion ?? (await f.token(tenant)) },
           }),
         );
         assert.deepEqual(JSON.parse(String((await ack)[0])), { type: 'connection_ack' });
@@ -250,6 +250,106 @@ const start = (socket: WebSocket, id: string) =>
       payload: { query: 'subscription { notice(tenantHint:"spoofed") }' },
     }),
   );
+
+test(
+  'Public WSS rejects genuinely signed expired or unscoped credentials before source allocation and admits a later valid owner',
+  { timeout: 10000 },
+  async () => {
+    const r = await runtime();
+    try {
+      for (const token of [
+        await r.f.token('tenant-a', 'other:scope'),
+        await r.f.token('tenant-a', 'graphql:read', Math.floor(Date.now() / 1000) - 30),
+      ]) {
+        await assert.rejects(r.connect('tenant-a', token));
+        await until(() => r.f.service.stats().activeOperations === 0);
+        assert.equal(r.config.acquired(), 0);
+        assert.ok(!r.f.logs().includes(token));
+      }
+      const valid = await r.connect();
+      start(valid, 'accepted');
+      await until(() => r.config.acquired() === 1);
+      const event = once(valid, 'message');
+      await r.publish('tenant-a', 'valid-after-denial');
+      assert.deepEqual(JSON.parse(String((await event)[0])), {
+        type: 'next',
+        id: 'accepted',
+        payload: { data: { notice: 'valid-after-denial' } },
+      });
+      assert.equal(r.f.service.health().subscriptionsReady, true);
+    } finally {
+      await r.close();
+    }
+  },
+);
+
+test(
+  'Public WSS heartbeat responses cannot extend an expired signed credential or retain its source',
+  { timeout: 20000 },
+  async () => {
+    const r = await runtime({ deadlineMs: 500 });
+    try {
+      const expiresAt = Math.floor(Date.now() / 1000) + 3,
+        token = await r.f.token('tenant-a', 'graphql:read', expiresAt),
+        socket = await r.connect('tenant-a', token);
+      let heartbeats = 0;
+      socket.on('message', (raw) => {
+        if (JSON.parse(String(raw)).type === 'ping') {
+          heartbeats++;
+          socket.send('{"type":"pong"}');
+        }
+      });
+      const first = new Promise<unknown>((resolve) =>
+        socket.on('message', (raw) => {
+          const message = JSON.parse(String(raw));
+          if (message.type === 'next') resolve(message);
+        }),
+      );
+      start(socket, 'expiring');
+      await until(() => r.config.acquired() === 1);
+      await r.publish('tenant-a', 'before-expiry');
+      assert.deepEqual(await first, {
+        type: 'next',
+        id: 'expiring',
+        payload: { data: { notice: 'before-expiry' } },
+      });
+      // Verification retains the authentication provider's configured clock tolerance.
+      await once(socket, 'close');
+      assert.ok(Date.now() >= expiresAt * 1000);
+      assert.ok(heartbeats > 0);
+      await until(() => r.config.retired() === 1 && r.f.service.stats().activeSubscriptions === 0);
+      assert.equal(r.f.service.stats().activeOperations, 0);
+      assert.equal(r.f.service.health().subscriptionsReady, true);
+      const denied = await send(
+        r.f.origin,
+        { query: '{ ping }' },
+        {
+          ca: r.tls.ca,
+          headers: { authorization: token },
+        },
+      );
+      assert.equal(denied.status, 401);
+      const healthy = await r.connect('tenant-b'),
+        later = new Promise<unknown>((resolve) =>
+          healthy.on('message', (raw) => {
+            const message = JSON.parse(String(raw));
+            if (message.type === 'next') resolve(message);
+          }),
+        );
+      start(healthy, 'other-owner');
+      await until(() => r.config.acquired() === 2);
+      await r.publish('tenant-b', 'after-expiry');
+      assert.deepEqual(await later, {
+        type: 'next',
+        id: 'other-owner',
+        payload: { data: { notice: 'after-expiry' } },
+      });
+      assert.ok(!r.f.logs().includes(token));
+    } finally {
+      await r.close();
+    }
+  },
+);
 
 for (const http2 of [false, true])
   test(
