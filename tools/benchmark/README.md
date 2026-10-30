@@ -76,6 +76,9 @@ remote cleanup and literal allowed commands against the owned OpenSSH server.
 The [Redis comparison](redis.md) checks portable operation results, actual server
 state and ephemeral subscriber observations before optional bounded roundtrips.
 
+The [SQL query comparison](sql-query.md) checks actual PostgreSQL bound rows,
+bigint precision, pool release and four isolated instrumentation profiles.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
