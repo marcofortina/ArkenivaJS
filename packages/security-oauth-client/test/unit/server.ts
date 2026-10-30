@@ -76,7 +76,10 @@ export async function startServer(tls?: Readonly<{ key: Buffer; cert: Buffer }>)
       if (url.pathname === '/.well-known/openid-configuration') {
         counts.discovery++;
         if (mode.discoveryPayload !== undefined || mode.discoveryStatus !== 200) {
-          send(mode.discoveryStatus, mode.discoveryPayload ?? {});
+          send(
+            mode.discoveryStatus,
+            mode.discoveryPayload === undefined ? {} : mode.discoveryPayload,
+          );
           return;
         }
         send(200, {

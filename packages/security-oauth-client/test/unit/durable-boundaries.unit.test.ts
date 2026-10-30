@@ -246,6 +246,10 @@ test('OAuth rejects malformed native discovery documents and authentication poli
       { ...baseline, code_challenge_methods_supported: null },
     ]) {
       f.server.mode.discoveryPayload = payload;
+      const received = await fetch(f.server.issuer + '/.well-known/openid-configuration').then(
+        (response) => response.json(),
+      );
+      assert.deepEqual(received, payload);
       await assert.rejects(f.instance());
     }
     f.server.mode.discoveryPayload = undefined;
