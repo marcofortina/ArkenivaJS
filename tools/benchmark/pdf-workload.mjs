@@ -2,9 +2,18 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts, PDFSignature, PDFName, rgb, degrees } from 'pdf-lib';
+import { pdfInspectFixture, pdfInspectExpected, pdfInspectDescriptor } from './pdf-fixture.mjs';
+
+export const pdfFixture = Object.freeze({
+  first: 'owned-pdf-private-first',
+  second: 'owned-pdf-private-second',
+  added: 'owned-pdf-private-added',
+  title: 'owned-pdf-private-title',
+});
 
 export const pdfSettings = {
   defaults: { maxBytes: 1048576, maxPages: 8, maxTextItems: 128, maxDecodeMs: 10000 },
@@ -35,6 +44,24 @@ async function save(document) {
   return bytes;
 }
 
+async function nativeTask(source) {
+  const path = import.meta.resolve('pdfjs-dist/legacy/build/pdf.mjs'),
+    engine = await import(path),
+    root = dirname(dirname(dirname(fileURLToPath(path))));
+  return engine.getDocument({
+    data: new Uint8Array(source),
+    verbosity: 0,
+    useWorkerFetch: false,
+    standardFontDataUrl: join(root, 'standard_fonts') + sep,
+    cMapUrl: join(root, 'cmaps') + sep,
+    useSystemFonts: false,
+    useWasm: false,
+    disableFontFace: true,
+    isEvalSupported: false,
+    enableXfa: false,
+  });
+}
+
 /** Direct pinned native engines on an explicitly small unsigned, inactive corpus. */
 export function nativePdf() {
   return {
@@ -54,37 +81,34 @@ export function nativePdf() {
       };
     },
     async inspect(source) {
-      const document = await PDFDocument.load(source);
+      const document = await PDFDocument.load(source, { updateMetadata: false });
       const signed =
         document.catalog.has(PDFName.of('Perms')) ||
         document
           .getForm()
           .getFields()
           .some((field) => field instanceof PDFSignature);
-      return {
-        pages: document.getPageCount(),
-        encrypted: document.isEncrypted,
-        signed,
-        ...(document.getTitle() === undefined ? {} : { title: document.getTitle() }),
-        ...(document.getAuthor() === undefined ? {} : { author: document.getAuthor() }),
-      };
+      const task = await nativeTask(source);
+      try {
+        const parsed = await task.promise,
+          { info } = await parsed.getMetadata();
+        assert.equal(parsed.numPages, document.getPageCount());
+        assert.equal(info.IsEncrypted === true, document.isEncrypted);
+        assert.equal(info.Title, document.getTitle());
+        assert.equal(info.Author, document.getAuthor());
+        return {
+          pages: parsed.numPages,
+          encrypted: document.isEncrypted,
+          signed: signed || info.IsSignaturesPresent === true,
+          ...(info.Title === undefined ? {} : { title: info.Title }),
+          ...(info.Author === undefined ? {} : { author: info.Author }),
+        };
+      } finally {
+        await task.destroy();
+      }
     },
     async extractText(source) {
-      const path = import.meta.resolve('pdfjs-dist/legacy/build/pdf.mjs'),
-        engine = await import(path),
-        root = dirname(dirname(dirname(fileURLToPath(path))));
-      const task = engine.getDocument({
-        data: new Uint8Array(source),
-        verbosity: 0,
-        useWorkerFetch: false,
-        standardFontDataUrl: join(root, 'standard_fonts') + sep,
-        cMapUrl: join(root, 'cmaps') + sep,
-        useSystemFonts: false,
-        useWasm: false,
-        disableFontFace: true,
-        isEvalSupported: false,
-        enableXfa: false,
-      });
+      const task = await nativeTask(source);
       try {
         const document = await task.promise,
           pages = [];
@@ -122,6 +146,75 @@ export function nativePdf() {
       const document = await PDFDocument.load(source);
       await draw(document, spec);
       return save(document);
+    },
+  };
+}
+
+/** Inspect one fixed document per callback and independently verify every private metadata report. */
+export function pdfInspectWorkload(service) {
+  const source = pdfInspectFixture(),
+    before = Buffer.from(source),
+    reports = [];
+  let inspections = 0,
+    reportBytes = 0,
+    completed = false;
+  return {
+    workload: {
+      async 'inspect-fixed-one-page-pdf'() {
+        assert.equal(completed, false);
+        assert.ok(reports.length < 120, 'The private PDF inspection report capacity is exceeded');
+        const result = await service.inspect(source);
+        assert.deepEqual(result, pdfInspectExpected);
+        assert.deepEqual(source, before);
+        const encoded = JSON.stringify(result),
+          bytes = Buffer.byteLength(encoded);
+        assert.ok(bytes > 0 && bytes <= 2048 && reportBytes + bytes <= 262144);
+        reports.push(encoded);
+        inspections++;
+        reportBytes += bytes;
+        return result.pages;
+      },
+    },
+    async complete(records) {
+      assert.equal(completed, false);
+      completed = true;
+      try {
+        assert.equal(records.length, 1);
+        assert.equal(records[0].operation, 'inspect-fixed-one-page-pdf');
+        const count = records[0].sampleCount + records[0].warmupIterations;
+        assert.ok(Number.isSafeInteger(count) && count > 0 && count <= 120);
+        assert.equal(reports.length, count);
+        assert.equal(inspections, count);
+        assert.deepEqual(source, before);
+        const document = await PDFDocument.load(source, { updateMetadata: false }),
+          text = await nativePdf().extractText(source),
+          digest = createHash('sha256');
+        assert.equal(document.getPageCount(), pdfInspectExpected.pages);
+        assert.equal(document.isEncrypted, false);
+        assert.equal(document.getTitle(), pdfInspectExpected.title);
+        assert.equal(document.getAuthor(), pdfInspectExpected.author);
+        assert.deepEqual(texts(text), [pdfFixture.first]);
+        for (const encoded of reports) {
+          assert.deepEqual(JSON.parse(encoded), pdfInspectExpected);
+          digest.update(encoded);
+        }
+        return {
+          actualInspectOperations: inspections,
+          checkedInspectionReports: reports.length,
+          inspectedPages: inspections * pdfInspectDescriptor.pages,
+          consumedInputBytes: source.length * inspections,
+          inputSha256: pdfInspectDescriptor.sha256,
+          reportBytes,
+          reportSha256: digest.digest('hex'),
+          independentPdfLibPages: document.getPageCount(),
+          independentPdfJsPages: text.length,
+          independentTextVerified: true,
+          inputUnchanged: true,
+          retainedReportsAfterCompletion: 0,
+        };
+      } finally {
+        reports.length = 0;
+      }
     },
   };
 }
