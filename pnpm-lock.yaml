@@ -2423,6 +2423,9 @@ importers:
       '@arkenivajs/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@arkenivajs/database-mysql':
+        specifier: workspace:*
+        version: link:../../packages/database-mysql
       '@arkenivajs/database-postgres':
         specifier: workspace:*
         version: link:../../packages/database-postgres
@@ -2558,6 +2561,9 @@ importers:
       mailparser:
         specifier: 3.12.4
         version: 3.12.4
+      mysql2:
+        specifier: 3.24.6
+        version: 3.24.6(@types/node@22.20.5)
       nats:
         specifier: 2.29.3
         version: 2.29.3(patch_hash=f58ef54c31b92dbb1a5df622551011d56d875589f5723a9a275950dc1d0096d8)
