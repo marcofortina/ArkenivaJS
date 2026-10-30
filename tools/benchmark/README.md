@@ -142,7 +142,8 @@ bounded smoke reconciles every result with retained raw latency and separately
 reports supervised whole-lifecycle resources.
 
 The [SOAP HTTPS verification](soap.md) checks actual native WSDL interoperability,
-server-observed calls, explicit TLS trust and real SDK privacy.
+server-observed calls, explicit TLS trust and real SDK privacy. Its bounded smoke
+reconciles actual decoded XML receipts and supervised client lifecycle resources.
 
 The [gRPC mTLS verification](grpc.md) checks native unary/streaming protobuf fidelity,
 independent server counts and actual framework chain/revocation checks.

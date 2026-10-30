@@ -42,6 +42,7 @@
     "json": "node json.mjs",
     "test:integration:json": "node --test test/json-smoke.integration.test.mjs",
     "soap": "node soap.mjs",
+    "test:integration:soap": "node --test test/soap-smoke.integration.test.mjs",
     "grpc": "node grpc.mjs",
     "graphql": "node graphql.mjs",
     "magiclink": "node magiclink.mjs",

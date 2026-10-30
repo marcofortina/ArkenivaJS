@@ -56,6 +56,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:mail
         env:
           ARKENIVA_MAIL_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify measured SOAP calls and independent XML receipts
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:soap
+        env:
+          ARKENIVA_SOAP_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

@@ -6,6 +6,7 @@ import { Agent } from 'node:https';
 import { readFile } from 'node:fs/promises';
 import { createClientAsync, HttpClient, Client } from 'soap';
 import axios from 'axios';
+import { createHash } from 'node:crypto';
 
 export function soapConnection(fixture) {
   try {
@@ -116,6 +117,43 @@ export async function nativeSoap(fixture, wrongName = false) {
   };
 }
 
+const observations = new WeakMap();
+
+/** Aggregate private fixture receipts, never individual correlation IDs in public evidence. */
+export function soapReceiptDigest(rows) {
+  assert.ok(Array.isArray(rows) && rows.length <= 512);
+  const digest = createHash('sha256').update('arkenivajs.soap.benchmark.receipts.v1\n');
+  for (const row of rows) {
+    assert.match(row.receipt, /^[a-f0-9-]{36}$/);
+    assert.ok(row.index === 0 || row.index === 1);
+    assert.equal(row.quantity, 12);
+    digest.update(JSON.stringify([row.receipt, row.index, row.quantity]) + '\n');
+  }
+  return digest.digest('hex');
+}
+
+export function verifySoapResult(result) {
+  assert.equal(result.status, 200);
+  assert.deepEqual({ ...result.data }, { quantity: 12 });
+  assert.equal(typeof result.correlationId, 'string');
+  assert.ok(result.correlationId.length > 0 && result.correlationId.length <= 128);
+  assert.ok(!/[\r\n]/.test(result.correlationId));
+  const receipt = result.headers['x-owned-soap-receipt'];
+  assert.match(receipt, /^[a-f0-9-]{36}$/);
+  return receipt;
+}
+
+function captureResult(state, result, index) {
+  const receipt = verifySoapResult(result);
+  assert.ok(state.receipts.length < 128, 'The owned SOAP receipt capacity is exceeded');
+  assert.equal(state.localCorrelations.has(result.correlationId), false);
+  assert.equal(state.serverReceipts.has(receipt), false);
+  state.localCorrelations.add(result.correlationId);
+  state.serverReceipts.add(receipt);
+  state.receipts.push({ receipt, index, quantity: result.data.quantity });
+  state.inputs[index]++;
+}
+
 export async function verifySoap(service, fixture) {
   const client = await service.createClient('comparison.v1');
   try {
@@ -123,13 +161,24 @@ export async function verifySoap(service, fixture) {
     const description = client.describe();
     assert.equal(description.protocol, '1.1');
     assert.deepEqual([...description.operations], ['ReadStock']);
+    const state = {
+      receipts: [],
+      localCorrelations: new Set(),
+      serverReceipts: new Set(),
+      inputs: [0, 0],
+      verificationCalls: 0,
+      callbacks: 0,
+      completed: 0,
+      active: 0,
+      peakActive: 0,
+      lease: undefined,
+    };
+    observations.set(service, state);
     const correlations = [];
     for (let index = 0; index < 2; index++) {
       const result = await client.call('ReadStock', { sku: fixture.marker + '-' + index });
-      assert.equal(result.status, 200);
-      assert.deepEqual({ ...result.data }, { quantity: 12 });
-      assert.equal(typeof result.correlationId, 'string');
-      assert.ok(result.correlationId.length > 0);
+      captureResult(state, result, index);
+      state.verificationCalls++;
       correlations.push(result.correlationId);
     }
     assert.notEqual(correlations[0], correlations[1]);
@@ -143,4 +192,106 @@ export async function verifySoap(service, fixture) {
   } finally {
     await client.close();
   }
+}
+
+/** Reuse one owned lease while each callback performs an actual verified HTTPS exchange. */
+export function soapWorkload(service, fixture) {
+  const state = observations.get(service);
+  assert.ok(state, 'SOAP corpus verification must precede workload execution');
+  return {
+    'read-stock-verified-https': async () => {
+      assert.equal(state.active, 0);
+      state.callbacks++;
+      state.active++;
+      state.peakActive = Math.max(state.peakActive, state.active);
+      try {
+        // Lease setup occurs during the first warmup callback, not the retained samples.
+        state.lease ??= service.createClient('comparison.v1');
+        const client = await state.lease,
+          index = (state.callbacks - 1) % 2;
+        captureResult(
+          state,
+          await client.call('ReadStock', { sku: fixture.marker + '-' + index }),
+          index,
+        );
+        state.completed++;
+        return true;
+      } finally {
+        state.active--;
+      }
+    },
+  };
+}
+
+export async function soapObservations(service, { measure, records }) {
+  const state = observations.get(service);
+  assert.ok(state, 'SOAP corpus verification must precede completion');
+  if (state.lease) {
+    await (await state.lease).close();
+    state.lease = undefined;
+  }
+  assert.equal(state.callbacks, state.completed);
+  assert.equal(state.active, 0);
+  assert.ok(state.peakActive <= 1);
+  if (measure) {
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'read-stock-verified-https');
+    assert.equal(record.sampleCount, 100);
+    assert.equal(record.warmupIterations, 20);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    assert.ok(record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0));
+    assert.equal(state.callbacks, record.sampleCount + record.warmupIterations);
+  } else assert.equal(records.length, 0);
+  const totalCalls = state.verificationCalls + state.completed;
+  assert.equal(state.receipts.length, totalCalls);
+  assert.equal(state.localCorrelations.size, totalCalls);
+  assert.equal(state.serverReceipts.size, totalCalls);
+  const receiptDigest = soapReceiptDigest(state.receipts);
+  state.receipts.length = 0;
+  state.localCorrelations.clear();
+  state.serverReceipts.clear();
+  return {
+    actualCallCallbacks: state.callbacks,
+    successfulDecodedCalls: state.completed,
+    verificationCalls: state.verificationCalls,
+    totalCalls,
+    inputCounts: [...state.inputs],
+    distinctLocalCorrelations: totalCalls,
+    distinctServerReceipts: totalCalls,
+    receiptDigest,
+    activeCallbacks: state.active,
+    peakConcurrentCallbacks: state.peakActive,
+    retainedReceipts: state.receipts.length,
+    ownedWorkloadLeases: Number(!!state.lease),
+  };
+}
+
+export function requireSoapProcessTreeResource(resource) {
+  assert.ok(resource, 'SOAP sampling requires complete parser process resource accounting');
+  assert.equal(resource.scope, 'whole-supervised-lifecycle');
+  assert.equal(resource.allChildrenWaited, true);
+  assert.equal(resource.remainingOwnedProcesses, 0);
+  assert.equal(resource.pythonObserverIncluded, false);
+  assert.equal(resource.externalServerResourcesIncluded, false);
+  assert.equal(resource.descendantDiscoveryQuality.inaccessibleReads, 0);
+  assert.equal(resource.descendantDiscoveryQuality.traversalLimitExceeded, false);
+  assert.equal(resource.rssReadQuality.inaccessibleReads, 0);
+  assert.equal(resource.rssReadQuality.allObservedReadsAccessible, true);
+  assert.ok(
+    Number.isSafeInteger(resource.samplingRounds) &&
+      resource.samplingRounds > 0 &&
+      resource.samplingRounds <= 10000,
+  );
+  for (const key of [
+    'elapsedMs',
+    'userCpuSeconds',
+    'systemCpuSeconds',
+    'maxSamplingGapMs',
+    'largestSingleProcessRssBytes',
+    'sampledSummedRssPeakBytes',
+    'sampledLargestSingleRssBytes',
+  ])
+    assert.ok(Number.isFinite(resource[key]) && resource[key] >= 0);
 }
