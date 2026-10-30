@@ -668,6 +668,8 @@ jobs:
         run: pnpm --filter @arkenivajs/realtime test:integration:nats
       - name: Verify authenticated GraphQL WSS delivery across independent NATS-backed processes
         run: pnpm --filter @arkenivajs/graphql test:integration:nats
+      - name: Verify the shared counter guide through independently installed public artifacts
+        run: pnpm test:packed:examples --integration graphql
       - name: Verify production GraphQL authority and shared subscription policy on the disposable runner
         env:
           ARKENIVA_GRAPHQL_DISPOSABLE_NETWORK: '1'
