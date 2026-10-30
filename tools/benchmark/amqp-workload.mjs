@@ -270,3 +270,128 @@ export async function verifyAmqp(service, fixture) {
     }
   }
 }
+
+export const amqpIterations = 100;
+export const amqpWarmupIterations = 20;
+const workloads = new WeakMap();
+
+/** A timed callback waits for the publisher confirm, independently of later queue readback. */
+export function amqpWorkload(service, fixture) {
+  assert.equal(workloads.has(service), false);
+  const state = { submitted: 0, confirmed: 0, pending: false, messages: new Map() };
+  workloads.set(service, state);
+  const body = Buffer.alloc(1024, 173);
+  Buffer.from(fixture.marker).copy(body);
+  return {
+    async publishConfirmed() {
+      assert.equal(state.pending, false, 'The AMQP smoke workload is sequential');
+      assert.ok(
+        state.submitted < amqpIterations + amqpWarmupIterations,
+        'The AMQP smoke publication bound is exceeded',
+      );
+      const sequence = ++state.submitted,
+        messageId = fixture.smokeMessagePrefix + '.' + sequence,
+        headers = { note: fixture.marker, sequence, enabled: true };
+      state.pending = true;
+      try {
+        const receipt = await service.publish({
+          connection: 'events',
+          exchange: fixture.exchange,
+          routingKey: 'native',
+          messageId,
+          body: Buffer.from(body),
+          headers,
+          mandatory: true,
+          persistent: false,
+        });
+        assert.equal(receipt.messageId, messageId);
+        assert.equal(receipt.status, 'confirmed');
+        state.messages.set(messageId, { body, headers });
+        state.confirmed++;
+        return receipt.status;
+      } finally {
+        state.pending = false;
+      }
+    },
+  };
+}
+
+/** A separate native observer verifies every confirmed message after the timed interval. */
+export async function completeAmqpWorkload(service, { fixture, measure, records }) {
+  if (!measure) {
+    assert.equal(workloads.has(service), false);
+    assert.deepEqual(records, []);
+    return {
+      workloadPublications: 0,
+      measuredPublications: 0,
+      warmupPublications: 0,
+      confirmedPublications: 0,
+      independentlyReadMessages: 0,
+      independentlyReadBytes: 0,
+    };
+  }
+  const state = workloads.get(service),
+    expected = amqpIterations + amqpWarmupIterations;
+  assert.ok(state);
+  assert.equal(state.pending, false);
+  assert.equal(state.submitted, expected);
+  assert.equal(state.confirmed, expected);
+  assert.equal(state.messages.size, expected);
+  assert.equal(records.length, 1);
+  const [record] = records;
+  assert.equal(record.operation, 'publishConfirmed');
+  assert.equal(record.sampleCount, amqpIterations);
+  assert.equal(record.warmupIterations, amqpWarmupIterations);
+  assert.equal(record.rawLatency.unit, 'milliseconds');
+  assert.equal(record.rawLatency.values.length, record.sampleCount);
+  assert.ok(record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0));
+  const observer = await connectAmqp(fixture),
+    seen = new Set(),
+    failures = [];
+  let channel,
+    bytes = 0;
+  try {
+    channel = await observer.createChannel();
+    channel.on('error', (cause) => failures.push(cause));
+    for (let index = 0; index < expected; index++) {
+      const message = await channel.get(fixture.nativeQueue, { noAck: false });
+      assert.ok(message, 'A confirmed AMQP smoke publication was absent from its owned queue');
+      const messageId = message.properties.messageId,
+        owned = state.messages.get(messageId);
+      assert.ok(owned, 'An unexpected message reached the owned AMQP smoke queue');
+      assert.equal(seen.has(messageId), false, 'An AMQP smoke message was read more than once');
+      assert.equal(message.fields.exchange, fixture.exchange);
+      assert.equal(message.fields.routingKey, 'native');
+      assert.equal(message.fields.redelivered, false);
+      assert.equal(message.properties.deliveryMode, 1);
+      assert.deepEqual(message.content, owned.body);
+      assert.deepEqual({ ...message.properties.headers }, owned.headers);
+      seen.add(messageId);
+      bytes += message.content.length;
+      channel.ack(message);
+    }
+    assert.equal(await channel.get(fixture.nativeQueue, { noAck: false }), false);
+    for (const queue of [fixture.serviceQueue, fixture.nativeQueue]) {
+      const remaining = await channel.checkQueue(queue);
+      assert.equal(remaining.messageCount, 0);
+      assert.equal(remaining.consumerCount, 0);
+    }
+    assert.equal(failures.length, 0);
+    assert.equal(bytes, expected * 1024);
+    return {
+      workloadPublications: state.submitted,
+      measuredPublications: record.sampleCount,
+      warmupPublications: record.warmupIterations,
+      confirmedPublications: state.confirmed,
+      independentlyReadMessages: seen.size,
+      independentlyReadBytes: bytes,
+    };
+  } finally {
+    try {
+      await channel?.close();
+    } finally {
+      await observer.close();
+    }
+    workloads.delete(service);
+  }
+}
