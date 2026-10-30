@@ -97,6 +97,11 @@ operation timeout is 1–30,000 ms. Global input/output defaults are 1 MiB, maxi
 actually settles, including after cancellation; uncooperative providers cause a
 bounded shutdown failure rather than an invented cleanup success.
 
+Iterator cleanup must confirm `{done: true}`. Failed or incomplete source cleanup
+blocks new streams and publication for that owner. Failed broadcast cleanup blocks
+new broadcast subscriptions and publication. Shutdown preserves the failure; a new
+application owner is required after the provider has been repaired.
+
 Imperative `websocket`/`sse` registration is available only from dependency
 initialization before listen. Late registration fails `EK_LIFECYCLE_STATE`.
 `close()` rejects new work, cancels active streams and drains owned resources;

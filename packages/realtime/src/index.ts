@@ -257,7 +257,7 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
           const signal =
             selected.signal === undefined ? undefined : captureAbortSignal(selected.signal);
           if (signal?.aborted) throw failure('EK_ABORTED');
-          if (closed) throw failure('EK_REALTIME_CLOSED');
+          if (closed || sourceCleanupFailed) throw failure('EK_REALTIME_CLOSED');
           if (!ready()) throw failure('EK_LIFECYCLE_STATE');
           if (!verifiedTenant(auth, tenant)) throw failure('EK_REALTIME_AUTH');
           if (!broadcast) throw failure('EK_UNSUPPORTED_CAPABILITY');
@@ -321,7 +321,8 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
           for (const route of routes) {
             if (server.hasRoute({ method: 'GET', url: route.path })) throw failure();
             const preflight = async (request: FastifyRequest, reply: FastifyReply) => {
-              if (closed || !ready() || owner.aborted) throw failure('EK_REALTIME_CLOSED');
+              if (closed || sourceCleanupFailed || !ready() || owner.aborted)
+                throw failure('EK_REALTIME_CLOSED');
               if (connections.size + admissions.size >= settings.runtime.maxConcurrent)
                 throw failure('EK_REALTIME_BACKPRESSURE');
               const snapshot = requestIdentity(request, settings);

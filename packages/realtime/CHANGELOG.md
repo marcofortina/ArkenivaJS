@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Reject incomplete SSE cleanup receipts and prevent new allocations after uncertain source or broadcast retirement.
 - Report failed SSE iterator cleanup during service shutdown even after its peer disconnects.
 - Capture source, cursor, authority and iterator callbacks without executable
   function metadata, preserving their original receiver and method identity.
