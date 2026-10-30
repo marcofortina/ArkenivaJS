@@ -51,6 +51,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
           plugins: dependencies = [],
           http,
           databases,
+          security,
           configure,
           dispose,
           telemetryOptions,
@@ -77,6 +78,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
         service: { name: adapter.name + '-comparison', version: '1.0.0', environment: 'test' },
         ...(http ? { http } : {}),
         ...(databases ? { databases } : {}),
+        ...(security ? { security } : {}),
         ...(mode === 'STANDARD' || mode === 'DETAILED'
           ? { telemetry: { mode: mode.toLowerCase(), samplingRatio: 1 } }
           : {}),

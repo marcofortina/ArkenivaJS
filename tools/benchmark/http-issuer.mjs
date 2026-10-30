@@ -15,12 +15,17 @@ export async function createIssuer() {
     use: 'sig',
   };
   let origin;
+  const requests = { discovery: 0, jwks: 0, unknown: 0 };
   const server = createServer((request, reply) => {
     reply.setHeader('content-type', 'application/json');
-    if (request.url === '/keys') reply.end(JSON.stringify({ keys: [key] }));
-    else if (request.url === '/.well-known/openid-configuration')
+    if (request.url === '/keys') {
+      requests.jwks++;
+      reply.end(JSON.stringify({ keys: [key] }));
+    } else if (request.url === '/.well-known/openid-configuration') {
+      requests.discovery++;
       reply.end(JSON.stringify({ issuer: origin, jwks_uri: origin + '/keys' }));
-    else {
+    } else {
+      requests.unknown++;
       reply.statusCode = 404;
       reply.end('{}');
     }
@@ -34,6 +39,7 @@ export async function createIssuer() {
   return {
     origin,
     audience: 'api://performance',
+    observations: () => Object.freeze({ ...requests }),
     async token(options = {}) {
       assert.ok(options && typeof options === 'object');
       return new SignJWT({ tenant_id: 'synthetic-tenant', scope: 'orders:read', ...options.claims })

@@ -42,6 +42,7 @@
     "soap": "node soap.mjs",
     "grpc": "node grpc.mjs",
     "magiclink": "node magiclink.mjs",
+    "auth": "node auth.mjs",
     "test:integration:magiclink": "node --test test/magiclink-workload.integration.test.mjs",
     "test:integration:mariadb-query": "node --test test/mariadb-query-workload.integration.test.mjs",
     "test:integration:mysql-query": "node --test test/mysql-query-workload.integration.test.mjs",
