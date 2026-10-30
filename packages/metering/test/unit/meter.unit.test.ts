@@ -727,3 +727,114 @@ test('EK-METER-001 cleanup reports every thrown value as a typed failure and clo
     assert.equal(calls, 1);
   }
 });
+
+test('Metering cannot replace tenant verification through custom binding metadata', async () => {
+  const f = fixture(),
+    tenant = { ...f.mint('tenant-A') };
+  let binds = 0;
+  Object.defineProperty(f.auth.isVerifiedTenant, 'bind', {
+    value: () => {
+      binds++;
+      return () => true;
+    },
+  });
+  const meter = createMeter(f.options);
+  try {
+    assert.throws(() => meter.start({ tenant, operation: 'forged' }), code('EK_TENANT_UNVERIFIED'));
+    assert.equal(binds, 0);
+    assert.equal(meter.snapshot().activeSessions, 0);
+    assert.equal(f.events.length, 0);
+  } finally {
+    await meter.close();
+  }
+});
+
+test('Metering retains inherited verifier identity and rejects executable authority metadata', async () => {
+  const f = fixture(),
+    tenant = f.mint('tenant-A');
+  let metadataReads = 0;
+  class Authority {
+    available = true;
+    isVerifiedTenant(value: unknown): value is VerifiedTenantContext {
+      assert.ok(this instanceof Authority);
+      return this.available && value === tenant;
+    }
+  }
+  const auth = new Authority();
+  const original = auth.isVerifiedTenant;
+  for (const name of ['bind', 'call', 'apply'])
+    Object.defineProperty(original, name, {
+      get() {
+        metadataReads++;
+        throw new Error('Verifier metadata must not execute');
+      },
+    });
+  const meter = createMeter({ ...f.options, auth });
+  auth.isVerifiedTenant = (_value: unknown): _value is VerifiedTenantContext => true;
+  try {
+    const session = meter.start({ tenant, operation: 'verified' });
+    session.end('ok');
+    auth.available = false;
+    assert.throws(
+      () => meter.start({ tenant, operation: 'revoked' }),
+      code('EK_TENANT_UNVERIFIED'),
+    );
+    assert.equal(metadataReads, 0);
+  } finally {
+    await meter.close();
+  }
+  const trap = () => {
+    metadataReads++;
+    throw new Error('Authority metadata must not execute');
+  };
+  for (const bad of [
+    new Proxy(auth, { get: trap, getOwnPropertyDescriptor: trap }),
+    Object.defineProperty({}, 'isVerifiedTenant', { get: trap }),
+    { isVerifiedTenant: new Proxy(() => true, { apply: trap }) },
+    Object.create(new Proxy(auth, { getOwnPropertyDescriptor: trap })),
+    Array.from({ length: 33 }).reduce<object>(
+      (previous) => Object.create(previous) as object,
+      auth,
+    ),
+  ]) {
+    assert.throws(
+      () => createMeter({ ...f.options, auth: bad as never }),
+      code('EK_CONFIG_INVALID'),
+    );
+  }
+  assert.throws(
+    () => createMeter(Object.defineProperty({ ...f.options }, 'auth', { get: trap })),
+    code('EK_CONFIG_INVALID'),
+  );
+  assert.equal(metadataReads, 0);
+});
+
+test('Metering rejects asynchronous provenance without executing promise method metadata or exporting an event', async () => {
+  const f = fixture(),
+    tenant = f.mint('tenant-A');
+  let metadataReads = 0;
+  const verify = () => {
+    const result = Promise.reject(new Error('private-async-provenance-failure'));
+    for (const name of ['then', 'catch'])
+      Object.defineProperty(result, name, {
+        get() {
+          metadataReads++;
+          throw new Error('Promise metadata must not execute');
+        },
+      });
+    return result;
+  };
+  const meter = createMeter({ ...f.options, auth: { isVerifiedTenant: verify as never } });
+  try {
+    assert.throws(
+      () => meter.start({ tenant, operation: 'invalid' }),
+      code('EK_TENANT_UNVERIFIED'),
+    );
+    await delay(0);
+    assert.equal(metadataReads, 0);
+    assert.equal(meter.snapshot().activeSessions, 0);
+    assert.equal(f.events.length, 0);
+  } finally {
+    await meter.close();
+  }
+});
