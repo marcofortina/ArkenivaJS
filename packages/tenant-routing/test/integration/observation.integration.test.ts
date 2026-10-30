@@ -5,7 +5,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { COMPONENTS, type Plugin, type Telemetry } from '@arkenivajs/core';
+import { within } from '@arkenivajs/core/support';
 import { telemetryPlugin } from '@arkenivajs/telemetry';
 import { fixture, send, settings } from '../http-fixture.js';
 import { registryContentChecksum } from '../../dist/registry.js';
@@ -39,6 +41,126 @@ interface Envelope {
   resourceMetrics?: { scopeMetrics: { metrics: Metric[] }[] }[];
   resourceSpans?: { scopeSpans: { spans: Span[] }[] }[];
 }
+
+test('Public shutdown drops queued routing events explicitly while retiring an aborted physical exporter without retry', async () => {
+  let entered!: () => void,
+    finished!: () => void,
+    release!: () => void,
+    calls = 0,
+    active = 0;
+  const started = new Promise<void>((done) => {
+      entered = done;
+    }),
+    retired = new Promise<void>((done) => {
+      finished = done;
+    }),
+    gate = new Promise<void>((done) => {
+      release = done;
+    }),
+    counters = new Map<string, number>();
+  const telemetry: Telemetry = {
+    measure: async (_name, work) => work(),
+    withSpan: async (_name, work) => work(),
+    addCounter(name, value = 1) {
+      counters.set(name, (counters.get(name) ?? 0) + value);
+    },
+    recordHistogram() {},
+    setGauge() {},
+    flush: async () => {},
+  };
+  const provider: Plugin = {
+    id: 'telemetry',
+    version: '1.0.0',
+    capabilities: new Set(['telemetry']),
+    init(context) {
+      context.provide(COMPONENTS.telemetry, telemetry);
+    },
+    close() {},
+  };
+  const f = await fixture(
+    {
+      ...settings(),
+      eventExporter: {
+        async export(_batch, options) {
+          calls++;
+          active++;
+          entered();
+          try {
+            await Promise.race([
+              gate,
+              new Promise<void>((done) =>
+                options.signal!.addEventListener('abort', () => done(), { once: true }),
+              ),
+            ]);
+            assert.equal(options.signal!.aborted, true);
+          } finally {
+            active--;
+            finished();
+          }
+        },
+      },
+    },
+    { telemetry: { mode: 'standard' }, plugins: [provider] },
+  );
+  try {
+    const authorization = await f.token();
+    for (const id of ['one', 'two']) {
+      const response = await send(f.origin, '/api/orders/' + id, { headers: { authorization } });
+      assert.equal(response.status, 200, response.body);
+      if (id === 'one') await within(() => started, { timeoutMs: 2000 });
+    }
+    await nextTurn();
+    assert.deepEqual(f.service.events!.stats(), {
+      queued: 1,
+      inFlight: 1,
+      exported: 0,
+      dropped: 0,
+      failedExports: 0,
+    });
+    await assert.rejects(f.app.stop({ timeoutMs: 100 }));
+    await within(() => retired, { timeoutMs: 2000 });
+    assert.equal(active, 0);
+    assert.equal(calls, 1);
+    assert.equal(counters.get('arkenivajs.routing.events.dropped'), 2);
+    assert.equal(counters.get('arkenivajs.routing.events.failed_exports'), 1);
+    assert.equal(counters.get('arkenivajs.routing.events.exported') ?? 0, 0);
+    await assert.rejects(f.service.events!.flush(), { code: 'EK_RESOURCE_CLOSED' });
+    assert.doesNotMatch(f.logs(), /Bearer |private-registry-load-failure/);
+  } finally {
+    release();
+    await f.close().catch((error: unknown) => {
+      assert.equal((error as { code?: unknown }).code, 'EK_PLUGIN_FAILED');
+    });
+  }
+  const delivered: TenantRoutingEventV1[] = [],
+    healthy = await fixture({
+      ...settings(),
+      eventExporter: {
+        async export(batch) {
+          delivered.push(...batch);
+        },
+      },
+    });
+  try {
+    const response = await send(healthy.origin, '/api/orders/healthy', {
+      headers: { authorization: await healthy.token() },
+    });
+    assert.equal(response.status, 200, response.body);
+    await healthy.service.events!.flush();
+    assert.equal(delivered.length, 1);
+    assert.equal(delivered[0]!.quality.complete, true);
+    assert.deepEqual(healthy.service.events!.stats(), {
+      queued: 0,
+      inFlight: 0,
+      exported: 1,
+      dropped: 0,
+      failedExports: 0,
+    });
+    assert.equal(calls, 1);
+  } finally {
+    await healthy.close();
+  }
+});
 
 test(
   'Actual OTLP routing evidence keeps private registry identities out of bounded metrics and preserves W3C parentage',
