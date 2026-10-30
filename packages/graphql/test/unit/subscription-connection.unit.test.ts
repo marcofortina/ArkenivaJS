@@ -29,6 +29,7 @@ async function runtime(
     revalidateMs?: number;
     deadlineMs?: number;
     authorize?: () => boolean;
+    owner?: AbortSignal;
   } = {},
 ) {
   const tls = await tlsFiles();
@@ -143,7 +144,7 @@ async function runtime(
           request.id,
           scopes,
           executions,
-          signal,
+          options.owner ? AbortSignal.any([signal, options.owner]) : signal,
           (scope) => {
             assert.ok(active.size < 128);
             active.add(scope);
@@ -280,6 +281,88 @@ const start = (socket: WebSocket, id = 'one', tenantHint = 'tenant-b') =>
       },
     }),
   );
+
+test(
+  'An actual WSS owner abort retires the live source and preserves the unrelated HTTP listener',
+  { timeout: 10000 },
+  async () => {
+    const owner = new AbortController(),
+      r = await runtime({ owner: owner.signal });
+    try {
+      const socket = await r.connect();
+      start(socket);
+      await until(() => r.allocated() === 1 && r.active.size === 0);
+      const closed = once(socket, 'close');
+      owner.abort();
+      await closed;
+      await r.owners[0]!.completion;
+      assert.equal(r.closed(), 1);
+      assert.equal(r.active.size, 0);
+      assert.equal(r.owners[0]!.stats().wireOpen, false);
+      assert.equal(r.owners[0]!.stats().pendingWrites, 0);
+      const response = await send(
+        r.f.origin,
+        { query: '{ ping }' },
+        { ca: r.ca, headers: { authorization: await r.f.token() } },
+      );
+      assert.deepEqual(response.json(), { data: { ping: 'pong' } });
+    } finally {
+      await r.close();
+    }
+  },
+);
+
+test(
+  'An already aborted WSS owner cannot acquire a source or retain a native connection',
+  { timeout: 10000 },
+  async () => {
+    const r = await runtime({ owner: AbortSignal.abort() });
+    try {
+      const socket = await r.connect('tenant-a', false);
+      if (socket.readyState !== socket.CLOSED) await once(socket, 'close');
+      await Promise.all(r.owners.map((connection) => connection.completion));
+      assert.equal(r.allocated(), 0);
+      assert.equal(r.active.size, 0);
+      assert.equal(r.owners.length, 1);
+      assert.equal(r.owners[0]!.stats().closed, true);
+      assert.equal(r.owners[0]!.stats().wireOpen, false);
+    } finally {
+      await r.close();
+    }
+  },
+);
+
+test(
+  'Actual native invalid UTF8 text closes only its WSS peer and confirms source retirement before another tenant proceeds',
+  { timeout: 10000 },
+  async () => {
+    const r = await runtime();
+    try {
+      const socket = await r.connect();
+      start(socket);
+      await until(() => r.allocated() === 1 && r.active.size === 0);
+      const closed = once(socket, 'close');
+      socket.send(Buffer.from([0xff]), { binary: false });
+      await closed;
+      await r.owners[0]!.completion;
+      assert.equal(r.closed(), 1);
+      assert.equal(r.owners[0]!.stats().pendingWrites, 0);
+      const healthy = await r.connect('tenant-b');
+      start(healthy, 'two');
+      await until(() => r.allocated() === 2 && r.active.size === 0);
+      const answer = once(healthy, 'message');
+      r.publish('tenant-b', 'healthy-after-native-error');
+      assert.deepEqual(JSON.parse(String((await answer)[0])), {
+        type: 'next',
+        id: 'two',
+        payload: { data: { notice: 'healthy-after-native-error' } },
+      });
+      assert.equal(r.owners[1]!.stats().failed, false);
+    } finally {
+      await r.close();
+    }
+  },
+);
 async function until(check: () => boolean) {
   for (let index = 0; index < 100 && !check(); index++) await delay(5);
   assert.ok(check());
