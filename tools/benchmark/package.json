@@ -59,7 +59,7 @@
     "test:integration:amqp": "node --test test/amqp-workload.integration.test.mjs",
     "test:integration:nats": "node --test test/nats-workload.integration.test.mjs",
     "test:integration:redis": "node --test test/redis-workload.integration.test.mjs",
-    "test:integration:sftp": "node --test test/sftp-workload.integration.test.mjs",
+    "test:integration:sftp": "node --test --test-concurrency=1 test/sftp-workload.integration.test.mjs test/sftp-smoke.integration.test.mjs",
     "test:integration:oauth": "node --test test/oauth-workload.integration.test.mjs",
     "test:integration:ldap": "node --test test/ldap-workload.integration.test.mjs",
     "test:integration:webhooks": "node --test test/webhooks-workload.integration.test.mjs",

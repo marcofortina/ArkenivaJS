@@ -95,8 +95,11 @@ test(
         if (row.quality) assert.ok(row.quality.metricSeries > 0);
       }
       const rejected = join(directory, 'sample');
+      const env = { ...process.env };
+      delete env.ARKENIVA_SFTP_BENCHMARK_DISPOSABLE;
       await assert.rejects(
         promisify(execFile)(process.execPath, [script, '--smoke', rejected], {
+          env,
           timeout: 5000,
           maxBuffer: 1048576,
         }),

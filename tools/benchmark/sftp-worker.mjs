@@ -3,12 +3,21 @@
 
 import { sftpPlugin, SFTP_CAPABILITY, SSH_CAPABILITY } from '@arkenivajs/sftp';
 import { runPureWorker } from './pure-worker.mjs';
-import { sftpSettings, nativeSftp, verifySftp } from './sftp-workload.mjs';
+import {
+  sftpSettings,
+  nativeSftp,
+  verifySftp,
+  sftpWorkload,
+  sftpObservations,
+} from './sftp-workload.mjs';
 
 const key = Symbol('sftp-comparison');
 runPureWorker({
   name: 'sftp',
   asynchronous: true,
+  iterations: 100,
+  warmupIterations: 20,
+  retainRawSamples: true,
   native: nativeSftp,
   framework(fixture) {
     const owner = sftpSettings(fixture);
@@ -32,8 +41,7 @@ runPureWorker({
     };
   },
   verify: verifySftp,
-  workload() {
-    throw new Error('SFTP sampling requires first-byte, backpressure and peak-buffer measurements');
-  },
+  workload: sftpWorkload,
+  complete: sftpObservations,
   close: (service) => service.close(),
 });

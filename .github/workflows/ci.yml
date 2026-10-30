@@ -301,6 +301,8 @@ jobs:
         run: pnpm --filter @arkenivajs/sftp test:integration
       - name: Verify four native SFTP/SSH profiles and exact remote cleanup
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:sftp
+        env:
+          ARKENIVA_SFTP_BENCHMARK_DISPOSABLE: '1'
       - run: pnpm --filter @arkenivajs/example-sftp test:integration
       - name: Verify the public SSH consumer using packed artifacts
         run: pnpm test:packed:examples --integration sftp

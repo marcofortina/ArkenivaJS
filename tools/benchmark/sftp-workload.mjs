@@ -6,6 +6,8 @@ import { createHash } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setImmediate } from 'node:timers/promises';
+import { setTimeout as delay } from 'node:timers/promises';
+import { performance } from 'node:perf_hooks';
 import SftpClient from 'ssh2-sftp-client';
 import { quote } from 'shell-quote';
 
@@ -255,4 +257,326 @@ export async function verifySftp(service, fixture) {
   } finally {
     await cleanupSftp(service, fixture);
   }
+}
+
+export const sftpSampleBytes = 65536;
+export const sftpPressureBytes = 262144;
+const observations = new WeakMap();
+
+/** The finite synthetic corpus is never a credential or customer document. */
+export function sftpCorpus(fixture, size) {
+  assert.ok([sftpSampleBytes, sftpPressureBytes].includes(size));
+  assert.equal(typeof fixture.marker, 'string');
+  assert.ok(fixture.marker.length > 0 && fixture.marker.length <= 128);
+  const data = Buffer.alloc(size);
+  for (let offset = 0; offset < size; offset += 32)
+    createHash('sha256')
+      .update(fixture.marker)
+      .update(':' + offset)
+      .digest()
+      .copy(data, offset);
+  return data;
+}
+
+export function sftpSamplePath(fixture, pressure = false) {
+  assert.match(fixture.root, /^\/home\/transfer\/data$/);
+  assert.match(fixture.fileStem, /^owned-comparison-[a-f0-9]{32}$/);
+  return fixture.root + '/' + fixture.fileStem + (pressure ? '.pressure' : '.sample');
+}
+
+/** Independently inspect persisted bytes through the approved native SDK outside timed calls. */
+export async function inspectSftpFile(client, fixture, pressure = false) {
+  const path = sftpSamplePath(fixture, pressure),
+    expected = sftpCorpus(fixture, pressure ? sftpPressureBytes : sftpSampleBytes),
+    metadata = await client.stat(path);
+  assert.equal(metadata.isFile, true);
+  assert.equal(metadata.size, expected.length);
+  const stream = client.createReadStream(path, { highWaterMark: 65536 }),
+    hash = createHash('sha256');
+  let bytes = 0;
+  try {
+    for await (const part of stream) {
+      assert.ok(bytes + part.length <= expected.length);
+      assert.deepEqual(part, expected.subarray(bytes, bytes + part.length));
+      hash.update(part);
+      bytes += part.length;
+    }
+    assert.equal(bytes, expected.length);
+    assert.equal(hash.digest('hex'), createHash('sha256').update(expected).digest('hex'));
+    await waitUntil(() => stream.isClosed === true, 1000);
+    return { bytes, digestVerified: true, nativeHandleClosed: true };
+  } finally {
+    stream.destroy();
+  }
+}
+
+export async function sftpSmallDownload(
+  service,
+  fixture,
+  expected = sftpCorpus(fixture, sftpSampleBytes),
+) {
+  assert.equal(expected.length, sftpSampleBytes);
+  const path = sftpSamplePath(fixture),
+    digest = createHash('sha256'),
+    began = performance.now();
+  let bytes = 0,
+    callbacks = 0,
+    active = 0,
+    maximumDeliveredChunkBytes = 0,
+    firstByteMs = null;
+  const receipt = await service.files.download('owned', path, async (part) => {
+    assert.equal(++active, 1);
+    try {
+      assert.ok(part instanceof Uint8Array && part.length > 0);
+      assert.ok(bytes + part.length <= expected.length);
+      firstByteMs ??= performance.now() - began;
+      callbacks++;
+      maximumDeliveredChunkBytes = Math.max(maximumDeliveredChunkBytes, part.length);
+      assert.deepEqual(Buffer.from(part), expected.subarray(bytes, bytes + part.length));
+      digest.update(part);
+      bytes += part.length;
+    } finally {
+      active--;
+    }
+  });
+  const elapsedMs = performance.now() - began;
+  assert.equal(active, 0);
+  assert.equal(bytes, expected.length);
+  assert.ok(callbacks > 0 && firstByteMs !== null && firstByteMs <= elapsedMs);
+  assert.equal(receipt.remotePath, path);
+  assert.equal(receipt.transferredBytes, bytes);
+  assert.equal(receipt.sha256, digest.digest('hex'));
+  return {
+    bytes,
+    callbacks,
+    firstByteMs,
+    elapsedMs,
+    bytesPerSecond: (bytes * 1000) / elapsedMs,
+    maximumDeliveredChunkBytes,
+    digestVerified: true,
+    receiptVerified: true,
+    concurrentDestinationCallbacksMaximum: 1,
+  };
+}
+
+export function sftpWorkload(service, fixture) {
+  assert.equal(observations.has(service), false);
+  const tuning = configureSftpSmokeClient(service),
+    state = [],
+    expected = sftpCorpus(fixture, sftpSampleBytes);
+  observations.set(service, { values: state, tuning });
+  return {
+    'download-validated-byte-stream': async () => {
+      assert.ok(state.length < 128, 'The SFTP observation capacity is exceeded');
+      const value = await sftpSmallDownload(service, fixture, expected);
+      state.push(value);
+      return value.bytes;
+    },
+  };
+}
+
+/** Apply the same documented upstream TCP setting to every measured profile, outside callbacks. */
+export function configureSftpSmokeClient(service) {
+  const client = service.files.native('owned');
+  assert.ok(client instanceof SftpClient);
+  const transport = client.client;
+  assert.equal(typeof transport.setNoDelay, 'function');
+  const returned = transport.setNoDelay(true);
+  assert.equal(returned, transport);
+  return { clientTcpNoDelay: true, documentedNativeClientReturned: returned === transport };
+}
+
+async function waitUntil(predicate, timeoutMs) {
+  const began = performance.now();
+  while (!predicate()) {
+    assert.ok(performance.now() - began < timeoutMs, 'The owned SFTP observation timed out');
+    await delay(2);
+  }
+}
+
+/** Pause only the real destination; passively observe pinned SDK read-ahead, not server buffers. */
+export async function sftpPressureProbe(service, fixture) {
+  const client = service.files.native('owned'),
+    previous = Object.getOwnPropertyDescriptor(client, 'createReadStream'),
+    original = client.createReadStream,
+    expected = sftpCorpus(fixture, sftpPressureBytes),
+    path = sftpSamplePath(fixture, true),
+    digest = createHash('sha256');
+  assert.equal(typeof original, 'function');
+  let stream,
+    release,
+    firstByteMs = null,
+    bytes = 0,
+    callbacks = 0,
+    active = 0,
+    settled = false,
+    peakObservedSdkReadableQueueBytes = 0,
+    maximumDeliveredChunkBytes = 0;
+  const held = new Promise((resolve) => {
+      release = resolve;
+    }),
+    began = performance.now();
+  Object.defineProperty(client, 'createReadStream', {
+    configurable: true,
+    writable: true,
+    value(...args) {
+      assert.equal(this, client);
+      assert.equal(args[0], path);
+      assert.equal(args[1].highWaterMark, 65536);
+      assert.equal(stream, undefined);
+      stream = Reflect.apply(original, this, args);
+      return stream;
+    },
+  });
+  const observe = () => {
+    if (!stream) return;
+    assert.ok(Number.isSafeInteger(stream.bytesRead) && stream.bytesRead >= 0);
+    assert.ok(Number.isSafeInteger(stream.readableLength) && stream.readableLength >= 0);
+    peakObservedSdkReadableQueueBytes = Math.max(
+      peakObservedSdkReadableQueueBytes,
+      stream.readableLength,
+    );
+  };
+  const task = service.files
+    .download('owned', path, async (part) => {
+      assert.equal(++active, 1);
+      try {
+        assert.ok(part instanceof Uint8Array && part.length > 0);
+        assert.ok(bytes + part.length <= expected.length);
+        firstByteMs ??= performance.now() - began;
+        callbacks++;
+        maximumDeliveredChunkBytes = Math.max(maximumDeliveredChunkBytes, part.length);
+        assert.deepEqual(Buffer.from(part), expected.subarray(bytes, bytes + part.length));
+        digest.update(part);
+        bytes += part.length;
+        if (callbacks === 1) await held;
+      } finally {
+        active--;
+      }
+    })
+    .finally(() => {
+      settled = true;
+    });
+  void task.catch(() => undefined);
+  try {
+    await waitUntil(() => callbacks === 1 || settled, 1500);
+    assert.equal(settled, false);
+    assert.equal(active, 1);
+    assert.ok(stream);
+    const plateauDeadline = performance.now() + 1000;
+    let stable = 0,
+      last = -1;
+    while (stable < 3) {
+      await delay(10);
+      observe();
+      assert.ok(
+        performance.now() < plateauDeadline,
+        'The real SDK did not reach a pre-EOF plateau',
+      );
+      assert.equal(callbacks, 1);
+      assert.equal(settled, false);
+      assert.ok(stream.bytesRead < expected.length, 'SDK read-ahead reached EOF before pressure');
+      stable = stream.bytesRead === last && stream.readableLength > 0 ? stable + 1 : 0;
+      last = stream.bytesRead;
+    }
+    const sdkBytesReadAtPlateau = stream.bytesRead,
+      sdkReadableQueueBytesAtPlateau = stream.readableLength,
+      holdBegan = performance.now();
+    for (let index = 0; index < 5; index++) {
+      await delay(10);
+      observe();
+      assert.equal(stream.bytesRead, sdkBytesReadAtPlateau);
+      assert.equal(stream.readableLength, sdkReadableQueueBytesAtPlateau);
+      assert.equal(callbacks, 1);
+      assert.equal(active, 1);
+      assert.equal(settled, false);
+      assert.equal(stream.readableEnded, false);
+    }
+    const actualConsumerHoldMs = performance.now() - holdBegan,
+      sdkBytesReadAfterHold = stream.bytesRead,
+      destinationSettledDuringHold = settled,
+      sdkReachedEofDuringHold = stream.bytesRead >= expected.length || stream.readableEnded;
+    release();
+    const receipt = await task;
+    observe();
+    await waitUntil(() => stream.isClosed === true, 1000);
+    assert.equal(bytes, expected.length);
+    assert.equal(receipt.remotePath, path);
+    assert.equal(receipt.transferredBytes, bytes);
+    assert.equal(receipt.sha256, digest.digest('hex'));
+    assert.equal(stream.bytesRead, bytes);
+    assert.equal(active, 0);
+    assert.ok(callbacks > 1);
+    return {
+      bytes,
+      callbacks,
+      firstByteMs,
+      elapsedMs: performance.now() - began,
+      actualConsumerHoldMs,
+      sdkBytesReadAtPlateau,
+      sdkBytesReadAfterHold,
+      sdkReadableQueueBytesAtPlateau,
+      peakObservedSdkReadableQueueBytes,
+      maximumDeliveredChunkBytes,
+      concurrentDestinationCallbacksMaximum: 1,
+      destinationSettledDuringHold,
+      sdkReachedEofDuringHold,
+      nativeHandleClosed: stream.isClosed,
+      digestVerified: true,
+      observedScope: 'client-sdk-readable-only',
+      opaqueSshSocketServerBufferBytes: null,
+      remoteProducerPressureEstablished: false,
+    };
+  } finally {
+    release();
+    await task.catch(() => undefined);
+    try {
+      if (stream) {
+        stream.destroy();
+        await waitUntil(() => stream.isClosed === true, 1000);
+      }
+    } finally {
+      if (previous) Object.defineProperty(client, 'createReadStream', previous);
+      else delete client.createReadStream;
+      assert.equal(client.createReadStream, original);
+    }
+  }
+}
+
+export function summarizeSftpMeasurements(values, record) {
+  assert.equal(record.operation, 'download-validated-byte-stream');
+  assert.equal(record.sampleCount, 100);
+  assert.equal(record.warmupIterations, 20);
+  assert.equal(values.length, record.sampleCount + record.warmupIterations);
+  assert.equal(record.rawLatency.values.length, record.sampleCount);
+  return {
+    actualCallbacks: values.length,
+    warmupCallbacks: record.warmupIterations,
+    measuredCallbacks: record.sampleCount,
+    downloadBytes: values.reduce((total, value) => total + value.bytes, 0),
+    destinationCallbacks: values.reduce((total, value) => total + value.callbacks, 0),
+    measurements: values.map((value, index) => ({
+      ...value,
+      phase: index < record.warmupIterations ? 'warmup' : 'measured',
+    })),
+  };
+}
+
+export async function sftpObservations(service, { fixture, measure, records }) {
+  if (!measure) return undefined;
+  const state = observations.get(service);
+  assert.ok(state);
+  observations.delete(service);
+  assert.equal(records.length, 1);
+  const streams = summarizeSftpMeasurements(state.values, records[0]),
+    pressure = await sftpPressureProbe(service, fixture),
+    healthy = await sftpSmallDownload(service, fixture);
+  assert.equal(healthy.bytes, sftpSampleBytes);
+  return {
+    ...state.tuning,
+    streams,
+    pressure,
+    postProbeHealthy: true,
+    uploadTimingSupported: false,
+  };
 }
