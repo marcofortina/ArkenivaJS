@@ -9,6 +9,17 @@ measured profiles. Only opt-in `--smoke` dynamically loads the Linux supervisor.
 Definitions without that opt-in and every `--verify` invocation retain the original
 direct fork and report shape. Each adapter documents its explicitly enabled scope.
 
+A trusted adapter may also declare the own data property `profileTimeoutMs` for
+supervised smoke. It must be an integer from 30,000 through 120,000 milliseconds;
+the default remains 30,000. Accessors and invalid values fail before comparison
+effects. A custom budget requires explicit supervision and applies separately to
+each complete Node profile lifecycle, including startup, verification, warmup,
+measurement, independent completion checks, export and physical cleanup. It never
+changes public operation deadlines, memory limits, permission flags, sample counts
+or the supervisor's existing 120-second absolute ceiling. Only an explicit smoke
+override adds `profileTimeoutMs` to the report. Defaults and every `--verify`
+retain their prior report shape and original direct-fork verification budget.
+
 For opt-in measurements, each row appends `processTreeResource` while `resource`
 continues to describe the original measured-window worker observations. The separate
 `processTreeResourceCoverage` states that user/system CPU seconds cover the entire
