@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [SAML verification](saml.md) checks actual signed requests/responses, verified
+metadata, correlated identities and replay/tampering/audience rejection.
+
 The [mTLS verification](mtls.md) checks actual mutual TLS key possession and
 asynchronous chain/CRL authorization before HTTP/2 application traffic.
 

@@ -2510,6 +2510,9 @@ importers:
       '@arkenivajs/security-password':
         specifier: workspace:*
         version: link:../../packages/security-password
+      '@arkenivajs/security-saml':
+        specifier: workspace:*
+        version: link:../../packages/security-saml
       '@arkenivajs/security-sessions':
         specifier: workspace:*
         version: link:../../packages/security-sessions
@@ -2564,12 +2567,18 @@ importers:
       '@js-temporal/polyfill':
         specifier: 0.5.1
         version: 0.5.1
+      '@node-saml/node-saml':
+        specifier: 5.1.0
+        version: 5.1.0
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
       '@simplewebauthn/server':
         specifier: 14.0.3
         version: 14.0.3
+      '@xmldom/xmldom':
+        specifier: 0.8.15
+        version: 0.8.15
       '@zxing/library':
         specifier: 0.21.3
         version: 0.21.3
