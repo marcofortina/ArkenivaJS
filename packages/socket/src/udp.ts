@@ -10,7 +10,7 @@ import type {
   UdpSocketHandle,
   SocketNetworkAddress,
 } from './contracts.js';
-import { address, addressKey, capture, failure, operation } from './policy.js';
+import { address, addressKey, capture, failure, operation, payload } from './policy.js';
 import { counters, lifecycle } from './lifecycle.js';
 import type { Observation } from './observation.js';
 
@@ -191,23 +191,18 @@ export function udpServer(
     sendBytes = 0;
   async function send(
     target: SocketNetworkAddress,
-    data: Uint8Array,
+    bytes: Buffer,
     input?: OperationOptions,
   ): Promise<void> {
     const options = operation(input, policy.shutdownTimeoutMs);
     if (options.signal?.aborted) throw failure('EK_ABORTED');
     if ((base.state !== 'LISTENING' && base.state !== 'DRAINING') || !socket)
       throw failure('EK_SOCKET_CLOSED');
-    if (
-      !(data instanceof Uint8Array) ||
-      data.byteLength > policy.maxReplyBytes ||
-      target.family !== (policy.family === 'udp4' ? 'IPv4' : 'IPv6')
-    )
+    if (target.family !== (policy.family === 'udp4' ? 'IPv4' : 'IPv6'))
       throw failure('EK_SOCKET_DATAGRAM');
-    if (sends >= policy.maxConcurrentHandlers || sendBytes + data.length > 16777216)
+    if (sends >= policy.maxConcurrentHandlers || sendBytes + bytes.length > 16777216)
       throw failure('EK_SOCKET_CAPACITY');
-    const bytes = Buffer.from(data),
-      started = performance.now();
+    const started = performance.now();
     sends++;
     sendBytes += bytes.length;
     let timer: ReturnType<typeof setTimeout> | undefined,
@@ -278,22 +273,21 @@ export function udpServer(
     stats: base.stats,
     async reply(input: UdpDatagram, data: Uint8Array, options?: OperationOptions) {
       const origin = input && typeof input === 'object' ? origins.get(input) : undefined;
-      if (
-        !origin ||
-        !origin.active ||
-        !(data instanceof Uint8Array) ||
-        origin.sent + data.length >
-          Math.min(policy.maxReplyBytes, origin.received * policy.maxReplyAmplificationFactor)
-      )
-        throw failure('EK_SOCKET_DATAGRAM');
+      if (!origin || !origin.active) throw failure('EK_SOCKET_DATAGRAM');
+      const bytes = payload(
+        data,
+        Math.min(policy.maxReplyBytes, origin.received * policy.maxReplyAmplificationFactor) -
+          origin.sent,
+        'EK_SOCKET_DATAGRAM',
+      );
       // Reserve the total amplification budget before awaiting a native send callback.
-      origin.sent += data.length;
-      await send(origin.remote, data, options);
+      origin.sent += bytes.length;
+      await send(origin.remote, bytes, options);
     },
     async sendTo(input: SocketNetworkAddress, data: Uint8Array, options?: OperationOptions) {
       const target = address(input);
       if (!policy.allowlist.has(addressKey(target))) throw failure('EK_SOCKET_DATAGRAM');
-      await send(target, data, options);
+      await send(target, payload(data, policy.maxReplyBytes, 'EK_SOCKET_DATAGRAM'), options);
     },
   });
   return handle;

@@ -101,6 +101,11 @@ Multiple replies share the original budget, reserved before native send. Explici
 `sendTo` requires `allowOutboundDestinations:true` plus `destinationAllowlist` of
 exact literal `IPv4:port` or `[IPv6]:port` strings of the listener's family. No
 DNS or user-selected fallback destination is used. Empty datagrams remain empty.
+Outbound stream/datagram payloads are bounded and copied through native
+typed-array slots, including nonzero-offset views. Instance `length`,
+`byteLength`, `buffer`, `byteOffset`, iterator and conversion metadata are not
+evaluated. Proxy views and shared backing memory are rejected before native
+submission; reply reservations use the actual captured byte count.
 Overload drops are counted; ordering, packet loss and delivery are native UDP
 properties and are never converted into reliability promises.
 

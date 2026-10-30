@@ -63,6 +63,202 @@ async function stop(application: Application) {
   await application.stop({ timeoutMs: 1000 });
 }
 
+test('TCP payload bounds and copies use native byte slots without evaluating instance metadata', async () => {
+  const { application, service } = await app();
+  let resolve!: (peer: SocketPeer) => void,
+    effects = 0;
+  const ready = new Promise<SocketPeer>((done) => {
+    resolve = done;
+  });
+  const listener = service.createTcpServer(
+    { name: 'native-bytes', port: 0, maxPendingWriteBytes: 4 },
+    (peer) => {
+      resolve(peer);
+    },
+  );
+  let client: net.Socket | undefined, owned: SocketPeer | undefined;
+  try {
+    await listener.start();
+    client = await connect(listener);
+    const peer = (owned = await ready);
+    const oversized = new Uint8Array(5);
+    Object.defineProperty(oversized, 'length', {
+      get() {
+        effects++;
+        return 0;
+      },
+    });
+    await assert.rejects(peer.send(oversized), code('EK_SOCKET_CAPACITY'));
+    for (const value of [
+      new Uint8Array(new SharedArrayBuffer(4)),
+      new Proxy(new Uint8Array(4), {}),
+    ])
+      await assert.rejects(peer.send(value), code('EK_SOCKET_CAPACITY'));
+    const payload = new Uint8Array([99, 0, 1, 254, 255, 99]).subarray(1, 5);
+    for (const field of [
+      'length',
+      'byteLength',
+      'buffer',
+      'byteOffset',
+      Symbol.iterator,
+      'valueOf',
+    ])
+      Object.defineProperty(payload, field, {
+        get() {
+          effects++;
+          throw new Error('Byte metadata must not execute');
+        },
+      });
+    const received: Buffer[] = [];
+    client.on('data', (chunk: Buffer) => received.push(chunk));
+    await peer.send(payload);
+    await peer.end();
+    await once(client, 'end');
+    assert.deepEqual(Buffer.concat(received), Buffer.from([0, 1, 254, 255]));
+    assert.equal(effects, 0);
+    assert.equal(listener.stats().sentApplicationBytes, 4);
+  } finally {
+    owned?.close();
+    client?.destroy();
+    await stop(application);
+  }
+});
+
+test('UDP outbound payloads preserve native bytes and reject hidden size overflow before sending', async () => {
+  const { application, service } = await app(),
+    client = dgram.createSocket('udp4');
+  let effects = 0;
+  try {
+    client.bind(0, '127.0.0.1');
+    await once(client, 'listening');
+    const target = { address: '127.0.0.1', family: 'IPv4' as const, port: client.address().port };
+    const listener = service.createUdpServer(
+      {
+        name: 'native-outbound',
+        port: 0,
+        family: 'udp4',
+        maxReplyBytes: 4,
+        allowOutboundDestinations: true,
+        destinationAllowlist: ['127.0.0.1:' + target.port],
+      },
+      () => undefined,
+    );
+    await listener.start();
+    const oversized = new Uint8Array(5);
+    Object.defineProperties(oversized, {
+      byteLength: {
+        get() {
+          effects++;
+          return 0;
+        },
+      },
+      length: {
+        get() {
+          effects++;
+          return 0;
+        },
+      },
+    });
+    await assert.rejects(listener.sendTo(target, oversized), code('EK_SOCKET_DATAGRAM'));
+    for (const value of [
+      new Uint8Array(new SharedArrayBuffer(4)),
+      new Proxy(new Uint8Array(4), {}),
+    ])
+      await assert.rejects(listener.sendTo(target, value), code('EK_SOCKET_DATAGRAM'));
+    const payload = new Uint8Array([99, 0, 1, 254, 255, 99]).subarray(1, 5);
+    for (const field of [
+      'length',
+      'byteLength',
+      'buffer',
+      'byteOffset',
+      Symbol.iterator,
+      'valueOf',
+    ])
+      Object.defineProperty(payload, field, {
+        get() {
+          effects++;
+          throw new Error('Byte metadata must not execute');
+        },
+      });
+    const received = once(client, 'message');
+    await listener.sendTo(target, payload);
+    assert.deepEqual((await received)[0], Buffer.from([0, 1, 254, 255]));
+    assert.equal(effects, 0);
+    assert.equal(listener.stats().sentApplicationBytes, 4);
+  } finally {
+    client.close();
+    await stop(application);
+  }
+});
+
+test('UDP reply amplification uses actual native payload size before reserving or sending bytes', async () => {
+  const { application, service } = await app(),
+    client = dgram.createSocket('udp4');
+  let effects = 0,
+    resolve!: () => void,
+    reject!: (error: unknown) => void;
+  const handled = new Promise<void>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  try {
+    const listener = service.createUdpServer(
+      {
+        name: 'native-replies',
+        port: 0,
+        family: 'udp4',
+        maxReplyBytes: 4,
+        maxReplyAmplificationFactor: 1,
+      },
+      async (datagram, socket) => {
+        try {
+          const oversized = new Uint8Array(2);
+          Object.defineProperty(oversized, 'length', {
+            get() {
+              effects++;
+              return 0;
+            },
+          });
+          await assert.rejects(socket.reply(datagram, oversized), code('EK_SOCKET_DATAGRAM'));
+          const payload = new Uint8Array([42]);
+          for (const field of [
+            'length',
+            'byteLength',
+            'buffer',
+            'byteOffset',
+            Symbol.iterator,
+            'valueOf',
+          ])
+            Object.defineProperty(payload, field, {
+              get() {
+                effects++;
+                throw new Error('Byte metadata must not execute');
+              },
+            });
+          await socket.reply(datagram, payload);
+          await assert.rejects(
+            socket.reply(datagram, new Uint8Array([42])),
+            code('EK_SOCKET_DATAGRAM'),
+          );
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      },
+    );
+    await listener.start();
+    const received = once(client, 'message');
+    client.send(Buffer.from([1]), listener.boundAddress!.network!.port, '127.0.0.1');
+    await handled;
+    assert.deepEqual((await received)[0], Buffer.from([42]));
+    assert.equal(effects, 0);
+    assert.equal(listener.stats().sentApplicationBytes, 1);
+  } finally {
+    client.close();
+    await stop(application);
+  }
+});
+
 test('TCP native byte streams preserve arbitrary bytes, half-close and accurate payload counters', async () => {
   const { application, service } = await app();
   try {
