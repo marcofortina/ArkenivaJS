@@ -131,6 +131,9 @@ test('EK-METER-001 JSONL refuses escaped/symlinked/insecure/torn files without a
       code('EK_METER_EXPORT'),
     );
     await writeFile(join(workspace, 'public'), 'unchanged\n', { mode: 0o644 });
+    // Creation modes are filtered by umask; establish the unsafe permission case explicitly.
+    await chmod(join(workspace, 'public'), 0o644);
+    assert.equal((await stat(join(workspace, 'public'))).mode & 0o777, 0o644);
     await assert.rejects(
       createJsonlExporter({ workspace, path: 'public' }),
       code('EK_METER_EXPORT'),

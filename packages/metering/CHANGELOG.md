@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Establish explicit unsafe permissions in the JSONL rejection fixture independently of the process umask; preserve collector policy and production behavior.
 - Capture tenant verification with its original receiver without executable metadata, and observe invalid asynchronous failures without trusting promise method overrides.
 
 - Register the tenant routing operation count as a standard technical quantity without changing the event envelope.
