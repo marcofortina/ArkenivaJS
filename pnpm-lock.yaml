@@ -2387,6 +2387,9 @@ importers:
       '@arkenivajs/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@arkenivajs/data-identifiers':
+        specifier: workspace:*
+        version: link:../../packages/data-identifiers
       '@arkenivajs/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -2456,6 +2459,9 @@ importers:
       tinybench:
         specifier: 6.2.2
         version: 6.2.2
+      uuid:
+        specifier: 14.0.3
+        version: 14.0.3
 
 packages:
 
