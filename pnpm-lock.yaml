@@ -2390,6 +2390,9 @@ importers:
       '@arkenivajs/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@arkenivajs/cache':
+        specifier: workspace:*
+        version: link:../../packages/cache
       '@arkenivajs/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -2420,6 +2423,9 @@ importers:
       '@arkenivajs/database-postgres':
         specifier: workspace:*
         version: link:../../packages/database-postgres
+      '@arkenivajs/database-redis':
+        specifier: workspace:*
+        version: link:../../packages/database-redis
       '@arkenivajs/diagnostics':
         specifier: workspace:*
         version: link:../../packages/diagnostics
@@ -2537,6 +2543,9 @@ importers:
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
+      redis:
+        specifier: 6.3.0
+        version: 6.3.0(@opentelemetry/api@1.10.0)
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@22.20.5)
