@@ -96,7 +96,8 @@ The [webhook verification](webhooks.md) checks native signature interoperability
 unchanged body bytes and one-use nonce claims against actual PostgreSQL state.
 
 The [LDAP verification](ldap.md) compares actual verified service/user binds and
-directory lookups without claiming incomplete native child resource measurements.
+directory lookups. Its opt-in bounded smoke adds exact native readbacks and
+separately reports supervised native-descendant lifecycle resources.
 
 The [OAuth machine-grant verification](oauth.md) checks actual HTTPS token requests,
 persisted SQL grant budgets and private SDK exports in four isolated profiles.
