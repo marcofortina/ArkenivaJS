@@ -2501,6 +2501,9 @@ importers:
       validator:
         specifier: 13.15.35
         version: 13.15.35
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
       yauzl:
         specifier: 3.4.0
         version: 3.4.0
