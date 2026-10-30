@@ -71,6 +71,7 @@
     "config": "node config.mjs",
     "logging": "node logging.mjs",
     "csv": "node csv.mjs",
+    "test:integration:csv": "node --test test/csv-smoke.integration.test.mjs",
     "mail": "node mail.mjs",
     "test:integration:mail": "node --test test/mail-smoke.integration.test.mjs",
     "password": "node password.mjs",

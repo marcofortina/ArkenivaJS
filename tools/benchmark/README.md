@@ -59,7 +59,9 @@ The [SMTP verification](mail.md) checks actual STARTTLS authentication and recei
 MIME attachments through an owned temporary server in four isolated profiles.
 
 The [CSV verification](csv.md) exchanges native/public CSV and TSV streams,
-including one-shot fragmented UTF-8 sources and exact text fields.
+including one-shot fragmented UTF-8 sources and exact text fields. Its bounded
+streaming smoke observes first bytes/rows, actual byte/row throughput and separate
+lazy-source backpressure probes with explicit queue-observation coverage.
 
 The [logging comparison](logging.md) validates actual acknowledged JSON rows,
 redaction, child bindings and level filtering before optional local sampling.
