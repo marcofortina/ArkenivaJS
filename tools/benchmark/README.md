@@ -70,6 +70,9 @@ one-shot sources and awaited targets without claiming incomplete child measureme
 The [PDF verification](pdf.md) exchanges actual searchable documents, metadata,
 rotated text and ordered merged pages through the same four isolated profiles.
 
+The [SFTP/SSH verification](sftp.md) checks pinned-host file exchange, actual hashes,
+remote cleanup and literal allowed commands against the owned OpenSSH server.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.
