@@ -10,6 +10,12 @@ import { GraphQLError } from 'graphql';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 export const GRAPHQL_COMPARISON = Symbol('graphql.comparison');
+const execution = new WeakMap();
+export const graphqlSmokeScenarios = Object.freeze([
+  'simple-query',
+  'own-row-query',
+  'idempotent-mutation-retry',
+]);
 
 export function graphqlCoordinates(fixture) {
   const issuer = new URL(fixture.issuer);
@@ -31,7 +37,11 @@ export function graphqlCorpus(fixture) {
     ]),
     receipts = new Map();
   let mutations = 0,
-    privateReads = 0;
+    privateReads = 0,
+    received = 0,
+    completed = 0;
+  const statuses = Object.create(null),
+    callbacks = { counter: 0, customer: 0, mutation: 0 };
   const denied = () =>
     new GraphQLError('The field is forbidden', {
       extensions: { code: 'EK_GQL_FORBIDDEN' },
@@ -43,10 +53,12 @@ export function graphqlCorpus(fixture) {
   const resolvers = {
     Query: {
       counter(_parent, _args, context) {
+        callbacks.counter++;
         if (!authorized(context)) throw denied();
         return counters.get(context.auth.tenantId);
       },
       customer(_parent, args, context) {
+        callbacks.customer++;
         if (!authorized(context)) throw denied();
         const id = context.auth.tenantId === fixture.tenant ? '1' : '2';
         return args.id !== id
@@ -63,6 +75,7 @@ export function graphqlCorpus(fixture) {
     },
     Mutation: {
       increment(_parent, args, context) {
+        callbacks.mutation++;
         if (!authorized(context, true)) throw denied();
         const key = JSON.stringify([context.auth.tenantId, args.key]);
         if (receipts.has(key)) return receipts.get(key);
@@ -82,6 +95,19 @@ export function graphqlCorpus(fixture) {
     authorized,
     denied,
     stats: () => ({ mutations, privateReads, receipts: receipts.size }),
+    received: () => {
+      received++;
+    },
+    completed(status) {
+      completed++;
+      statuses[status] = (statuses[status] ?? 0) + 1;
+    },
+    protocol: () => ({
+      received,
+      completed,
+      statuses: { ...statuses },
+      callbacks: { ...callbacks },
+    }),
   };
 }
 
@@ -97,6 +123,8 @@ export async function nativeGraphql(fixture) {
       },
     });
   server.decorateRequest('comparisonContext', null);
+  server.addHook('onRequest', async () => corpus.received());
+  server.addHook('onResponse', async (_request, reply) => corpus.completed(reply.statusCode));
   server.addHook('preValidation', async (incoming, reply) => {
     try {
       const header = incoming.headers.authorization;
@@ -131,7 +159,12 @@ export async function nativeGraphql(fixture) {
       jit: 0,
     });
     const address = await server.listen({ host: '127.0.0.1', port: 0 });
-    return { api: { address: () => address }, stats: corpus.stats, close: () => server.close() };
+    return {
+      api: { address: () => address },
+      stats: corpus.stats,
+      protocol: corpus.protocol,
+      close: () => server.close(),
+    };
   } catch (error) {
     await server.close();
     throw error;
@@ -211,6 +244,10 @@ export async function verifyGraphql(service, fixture) {
     assert.deepEqual((await send({ query: '{ counter }' }, token)).body, { data: { counter: 1 } });
   assert.equal((await send({ query: '{' })).status, 400);
   assert.deepEqual(service.stats(), { mutations: 2, privateReads: 0, receipts: 2 });
+  execution.set(service, {
+    verified: service.protocol(),
+    callbacks: Object.fromEntries(graphqlSmokeScenarios.map((name) => [name, 0])),
+  });
   return {
     authenticatedRequests: 9,
     rejectedCredentials: 3,
@@ -218,5 +255,90 @@ export async function verifyGraphql(service, fixture) {
     idempotencyReceipts: 2,
     deniedPrivateGetterReads: 0,
     isolatedTenants: 2,
+  };
+}
+
+/** Timed callbacks retain the same HTTPS validation and consume complete native responses. */
+export function graphqlWorkload(service, fixture) {
+  const state = execution.get(service);
+  assert.ok(state, 'Verify the GraphQL service before preparing its workload');
+  const perform = async (name, input, expected) => {
+    const response = await graphqlRequest(service, fixture, input, fixture.token);
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body, { data: expected });
+    state.callbacks[name]++;
+    return response.body;
+  };
+  return {
+    'simple-query': () => perform('simple-query', { query: '{ counter }' }, { counter: 1 }),
+    'own-row-query': () =>
+      perform(
+        'own-row-query',
+        {
+          query: 'query OwnRow($id: ID!) { customer(id: $id) { id label } }',
+          operationName: 'OwnRow',
+          variables: { id: '1' },
+        },
+        { customer: { id: '1', label: fixture.marker } },
+      ),
+    'idempotent-mutation-retry': () =>
+      perform(
+        'idempotent-mutation-retry',
+        {
+          query: 'mutation RetryExistingAction($key: ID!) { increment(key: $key) }',
+          operationName: 'RetryExistingAction',
+          variables: { key: 'same-owned-action' },
+        },
+        { increment: 1 },
+      ),
+  };
+}
+
+/** Independent server receipts must account for every completed callback and verified request. */
+export function graphqlObservations(service, { measure, records }) {
+  const state = execution.get(service);
+  assert.ok(state);
+  const protocol = service.protocol(),
+    total = Object.values(state.callbacks).reduce((sum, count) => sum + count, 0);
+  assert.equal(protocol.received, state.verified.received + total);
+  assert.equal(protocol.completed, protocol.received);
+  assert.equal(protocol.statuses[200], state.verified.statuses[200] + total);
+  assert.equal(protocol.statuses[400], state.verified.statuses[400]);
+  assert.equal(protocol.statuses[401], state.verified.statuses[401]);
+  assert.ok(
+    Object.keys(protocol.statuses).every((status) => ['200', '400', '401'].includes(status)),
+  );
+  assert.deepEqual(service.stats(), { mutations: 2, privateReads: 0, receipts: 2 });
+  assert.equal(
+    protocol.callbacks.counter,
+    state.verified.callbacks.counter + state.callbacks['simple-query'],
+  );
+  assert.equal(
+    protocol.callbacks.customer,
+    state.verified.callbacks.customer + state.callbacks['own-row-query'],
+  );
+  assert.equal(
+    protocol.callbacks.mutation,
+    state.verified.callbacks.mutation + state.callbacks['idempotent-mutation-retry'],
+  );
+  if (measure) {
+    assert.deepEqual(
+      records.map((record) => record.operation),
+      [...graphqlSmokeScenarios],
+    );
+    for (const record of records) {
+      assert.equal(record.warmupIterations, 20);
+      assert.equal(record.sampleCount, 100);
+      assert.equal(state.callbacks[record.operation], record.warmupIterations + record.sampleCount);
+    }
+  }
+  return {
+    actualHttpRequests: protocol.completed,
+    authenticatedHttpRequests: protocol.completed - protocol.statuses[401],
+    expectedGraphqlChildren: protocol.statuses[200],
+    workloadCallbacks: { ...state.callbacks },
+    actualResolverCallbacks: protocol.callbacks,
+    physicalMutations: service.stats().mutations,
+    retainedReceipts: service.stats().receipts,
   };
 }

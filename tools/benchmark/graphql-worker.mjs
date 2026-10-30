@@ -18,10 +18,16 @@ import {
   graphqlCorpus,
   nativeGraphql,
   verifyGraphql,
+  graphqlWorkload,
+  graphqlObservations,
 } from './graphql-workload.mjs';
 
 export const graphqlAdapter = {
   name: 'graphql',
+  asynchronous: true,
+  iterations: 100,
+  warmupIterations: 20,
+  retainRawSamples: true,
   native: nativeGraphql,
   async framework(fixture, mode) {
     const corpus = graphqlCorpus(fixture),
@@ -66,9 +72,15 @@ export const graphqlAdapter = {
         capabilities: new Set(),
         dependencies: ['graphql', 'api', ...(metered ? ['metering'] : [])],
         init(context) {
+          const api = context.require(COMPONENTS.api);
+          api.native().addHook('onRequest', async () => corpus.received());
+          api
+            .native()
+            .addHook('onResponse', async (_request, reply) => corpus.completed(reply.statusCode));
           context.provide(GRAPHQL_COMPARISON, {
-            api: context.require(COMPONENTS.api),
+            api,
             stats: corpus.stats,
+            protocol: corpus.protocol,
             ...(metered ? { meter: context.require(COMPONENTS.meter), workspace } : {}),
           });
         },
@@ -79,10 +91,13 @@ export const graphqlAdapter = {
     };
   },
   verify: verifyGraphql,
-  async complete(service) {
-    if (!service.meter) return { technicalUsageEnabled: false };
+  workload: graphqlWorkload,
+  async complete(service, context) {
     await setImmediate();
+    const observations = graphqlObservations(service, context);
+    if (!service.meter) return { ...observations, technicalUsageEnabled: false };
     await service.meter.flush();
+    assert.equal(service.meter.snapshot().activeSessions, 0);
     const events = (await readFile(join(service.workspace, 'usage.jsonl'), 'utf8'))
       .trim()
       .split('\n')
@@ -90,7 +105,9 @@ export const graphqlAdapter = {
       .map((line) => parseMeteringEvent(JSON.parse(line)));
     const children = events.filter((event) => event.operation.startsWith('graphql.')),
       parents = events.filter((event) => event.operation === 'POST /graphql');
-    assert.ok(children.length >= 8);
+    assert.equal(children.length, observations.expectedGraphqlChildren);
+    assert.equal(parents.length, observations.authenticatedHttpRequests);
+    assert.equal(events.length, children.length + parents.length);
     assert.equal(new Set(children.map((event) => event.tenantId)).size, 2);
     for (const child of children) {
       const parent = parents.find((event) => event.operationId === child.parentOperationId);
@@ -100,6 +117,7 @@ export const graphqlAdapter = {
       assert.ok(Object.values(child.counters).every((counter) => counter.unit !== 'bytes'));
     }
     return {
+      ...observations,
       technicalUsageEnabled: true,
       graphqlChildren: children.length,
       httpParents: parents.length,
