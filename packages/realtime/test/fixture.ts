@@ -61,12 +61,16 @@ export async function fixture(
   if (!address || typeof address !== 'object')
     throw new Error('The realtime issuer is unavailable');
   authority = 'http://127.0.0.1:' + address.port;
-  const reservation = createServer();
-  await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve));
-  const reserved = reservation.address();
-  await new Promise<void>((resolve) => reservation.close(() => resolve()));
-  if (!reserved || typeof reserved !== 'object')
-    throw new Error('The realtime fixture port is unavailable');
+  let port = 0;
+  if (configuration.environment && configuration.environment !== 'test') {
+    const reservation = createServer();
+    await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve));
+    const reserved = reservation.address();
+    await new Promise<void>((resolve) => reservation.close(() => resolve()));
+    if (!reserved || typeof reserved !== 'object')
+      throw new Error('The realtime fixture port is unavailable');
+    port = reserved.port;
+  }
   let logs = '';
   const sink = new Writable({
     write(chunk: Buffer, _encoding, done) {
@@ -133,7 +137,7 @@ export async function fixture(
         : {}),
       http: {
         host: '127.0.0.1',
-        port: reserved.port,
+        port,
         ...(transport ? { protocol: 'https' as const, ...transport } : {}),
       },
       security: {
