@@ -7,6 +7,8 @@
     "start": "node foundation.mjs",
     "metering": "node metering.mjs",
     "sql": "node sql.mjs",
+    "sql-query": "node sql-query.mjs",
+    "test:integration:sql-query": "node --test test/sql-query-workload.integration.test.mjs",
     "postgres": "node postgres.mjs",
     "http": "node http.mjs",
     "mfa": "node mfa.mjs",

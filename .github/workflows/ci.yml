@@ -401,6 +401,8 @@ jobs:
       - name: Start an independently owned benchmark telemetry collector
         run: docker compose -p arkenivajs-benchmark-otel -f packages/telemetry/test/fixtures/compose.yaml up -d
       - run: pnpm coverage:postgres
+      - name: Verify four SQL query profiles against actual PostgreSQL and verified TLS
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:sql-query
       - name: Verify isolated native password profiles and persisted KDF admission
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:password
       - name: Verify native webhook signatures and durable one-use nonce claims
