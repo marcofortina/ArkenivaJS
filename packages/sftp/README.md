@@ -51,6 +51,15 @@ Register the plugin before application startup. After `app.start()`, resolve
 factories and imports perform no provider or network I/O. Application shutdown
 aborts work and acknowledges physical socket closure. The plugin owns clients.
 
+Operation cancellation captures a native signal before admission. Later caller
+hook replacement cannot alter success or abort cleanup. Proxy signals, shadowed
+lifecycle hooks and prototype traversal beyond 64 levels fail with
+`EK_CONFIG_INVALID`.
+
+SSH output, exit and close listeners are attached inside the native channel
+callback before asynchronous continuation. Fast command completion retains its
+observed status; missing status and truncated output still never imply success.
+
 ## Deployment trust and bounds
 
 Profiles are trusted deployment configuration, never request input. A profile has

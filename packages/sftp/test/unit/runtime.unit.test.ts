@@ -4,10 +4,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
+import { Duplex, PassThrough } from 'node:stream';
+import { setImmediate, clearImmediate } from 'node:timers';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import ssh2 from 'ssh2';
 const { Server, utils } = ssh2;
 import type { Connection as ServerConnection } from 'ssh2';
+import type { Client, ClientChannel } from 'ssh2';
 import { KitError, createApplication } from '@arkenivajs/core';
 import { sftpPlugin, SFTP_CAPABILITY, SSH_CAPABILITY } from '../../dist/index.js';
 import { capture } from '../../dist/settings.js';
@@ -374,4 +377,101 @@ test('A timed-out request acknowledges retained application work before releasin
   release();
   await request.done;
   assert.equal(done, true);
+});
+
+test('SFTP requests retain owned cancellation hooks after later caller mutation', async () => {
+  for (const cancelled of [false, true]) {
+    const controller = new AbortController();
+    let release!: () => void,
+      effects = 0;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const request = new Request(
+      1000,
+      { signal: controller.signal },
+      new AbortController().signal,
+      () => undefined,
+      async () => {
+        await hold;
+        return true;
+      },
+    );
+    Object.defineProperty(controller.signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+    try {
+      if (cancelled) {
+        controller.abort();
+        await assert.rejects(request.result, code('EK_ABORTED'));
+      }
+      release();
+      if (!cancelled) assert.equal(await request.result, true);
+      await request.done;
+      assert.equal(effects, 0);
+    } finally {
+      release();
+      await request.done;
+    }
+  }
+});
+test('SSH captures native exit status synchronously inside the channel callback before yielding', async (t) => {
+  const f = await fixture(),
+    managed = managedService(capture(f.settings), new AbortController().signal, () => true);
+  let immediate: ReturnType<typeof setImmediate> | undefined;
+  try {
+    await managed.init();
+    const native = managed.sftp.native('fixture') as ReturnType<typeof managed.sftp.native> & {
+      client: Client;
+    };
+    const channel = new Duplex({
+      autoDestroy: false,
+      read() {},
+      write(_chunk, _encoding, done) {
+        done();
+      },
+    }) as Duplex & { stderr: PassThrough; close(): void };
+    channel.stderr = new PassThrough();
+    channel.close = () => channel.destroy();
+    t.mock.method(native.client, 'exec', ((
+      _command: string,
+      callback: (error: Error | undefined, channel: ClientChannel) => void,
+    ) => {
+      callback(undefined, channel as unknown as ClientChannel);
+      channel.emit('exit', 0);
+      immediate = setImmediate(() => {
+        channel.push(Buffer.from('owned'));
+        channel.push(null);
+        channel.emit('close');
+      });
+      return native.client;
+    }) as typeof native.client.exec);
+    const result = await managed.ssh.exec('fixture', 'report', { value: 'owned' });
+    assert.equal(result.exitCode, 0);
+    assert.equal(Buffer.from(result.stdout).toString(), 'owned');
+    assert.equal(result.truncated, false);
+  } finally {
+    if (immediate) clearImmediate(immediate);
+    await managed.close();
+    await f.close();
+  }
+});
+test('SFTP operation controls reject proxy signals and excessive prototype depth without evaluating traps', () => {
+  let effects = 0;
+  const signal = new AbortController().signal;
+  const proxy = new Proxy(signal, {
+    getPrototypeOf(target) {
+      effects++;
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  assert.throws(() => operation({ signal: proxy }, 1000), code('EK_CONFIG_INVALID'));
+  assert.equal(effects, 0);
+  const deep = new AbortController().signal;
+  let prototype: object = AbortSignal.prototype;
+  for (let index = 0; index < 65; index++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(deep, prototype);
+  assert.throws(() => operation({ signal: deep }, 1000), code('EK_CONFIG_INVALID'));
 });
