@@ -2459,6 +2459,9 @@ importers:
       '@arkenivajs/documents-pdf':
         specifier: workspace:*
         version: link:../../packages/documents-pdf
+      '@arkenivajs/graphql':
+        specifier: workspace:*
+        version: link:../../packages/graphql
       '@arkenivajs/grpc':
         specifier: workspace:*
         version: link:../../packages/grpc
@@ -2633,6 +2636,9 @@ importers:
       fflate:
         specifier: 0.8.3
         version: 0.8.3
+      graphql:
+        specifier: 16.14.2
+        version: 16.14.2
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
@@ -2648,6 +2654,9 @@ importers:
       mariadb:
         specifier: 3.5.4
         version: 3.5.4
+      mercurius:
+        specifier: 16.12.1
+        version: 16.12.1(graphql@16.14.2)
       mongodb:
         specifier: 7.7.0
         version: 7.7.0
