@@ -137,6 +137,25 @@ Comparative native performance, remote CI and release acceptance remain separate
 requirements. CONNECT, WebSocket upgrades, open/dynamic forwarding and HTTP
 caching are outside this adapter's scope.
 
+An additional large-stream integration suite runs only on an explicitly owned
+disposable VM or CI runner after building:
+
+```sh
+ARKENIVA_PROXY_PRESSURE_DISPOSABLE=1 node --test packages/proxy/dist-test/integration/pressure.integration.test.js
+```
+
+Separate upstream and proxy Node processes exchange a 1 GiB response and a 1 GiB
+request with fixed reused chunks and SHA-256 receipts, without writing payloads
+to files. Actual signed identities protect the proxy while sensitive forwarding
+headers remain absent upstream. Slow consumers, held request bodies, aborted
+peers and a healthy concurrent tenant exercise physical stream retirement.
+Each server worker has a 128 MiB old-space ceiling. Sampled proxy heap,
+array-buffer and RSS growth must stay below 96, 128 and 192 MiB respectively;
+measured sender queues stay below 128 KiB. These conservative fixture ceilings
+are functional checks, with `releaseGate:false`; they do not establish production
+capacity, equivalent native overhead, repeated performance budgets or soak
+acceptance.
+
 `@arkenivajs/proxy/support` exposes `createFixedUpstreamPool` for framework
 adapter authors. It reuses the same canonical origin, hostname/CIDR and
 connect-time DNS policy without registering routes. CA material is read with a
