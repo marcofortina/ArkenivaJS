@@ -10,6 +10,7 @@ already be available; the harness installs no host package or trust anchor.
 
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation oauth --verify /private/oauth-verification
+pnpm --filter @arkenivajs/benchmark-foundation oauth --smoke /private/oauth-smoke
 ```
 
 The parent creates an owned HTTPS authorization server with a fresh temporary
@@ -34,9 +35,36 @@ or lifecycle policy. Crypto plugin startup checks real ephemeral encryption/MAC
 test keys even though this machine-grant corpus creates no refresh state.
 The loopback bridge is test infrastructure, not a production provider deployment.
 
-Only `--verify` is supported, with no latency/resource samples and
-`releaseGate: false`. Interactive OIDC/PKCE, refresh rotation, revocation,
-provider failure performance, dedicated-runner budgets, five paired repetitions
-and a one-hour soak remain separate scenarios. The integration suite also proves
-untrusted TLS rejection, unauthorized provider rejection, namespace confinement
-and deletion of the temporary certificate directory.
+`--verify` preserves the original eight grants without latency/resource samples.
+`--smoke` adds 20 warmup grants and exactly 100 retained Tinybench samples per
+profile. Each sequential callback awaits the actual HTTPS token response and
+PostgreSQL technical-budget operation. The bounded private corpus holds at most
+120 additional results per profile and is cleared after completion. Every result
+is checked outside timing for a distinct opaque token, approved scope/audience,
+Bearer type, finite expiry and absence of a refresh reference. No callback is
+retried by the harness. PKCE, interactive authorization state and nonce do not
+apply to this client-credentials grant and are not measured.
+
+The parent independently requires 488 authenticated token requests, authority
+decisions and committed SQL budget increments in smoke mode. It re-reads every
+touched budget row and the SQL aggregate; discovery occurs once for each of the
+four profiles, and authorization/refresh/revocation endpoints remain unused.
+The real 1000-per-minute budget is unchanged. Returned opaque-token contents are
+validated privately by the worker; the issuer exposes request counters, without
+token introspection or a token issuance ledger. These checks establish protocol
+and durable-count reconciliation, not independent proof of an opaque token's
+downstream acceptance. Tokens and their fingerprints never enter reports or
+telemetry.
+
+Worker resource readings include its crypto threadpool during warmup and
+sampling. The parent HTTPS issuer, provider bridge, SQL client and PostgreSQL
+server resources are excluded and separately unknown (`null`); no process-tree
+supervision or system CA override is added. These readings do not establish
+complete resource parity or end-to-end OAuth equivalence.
+
+Reports retain `releaseGate: false`. Interactive OIDC/PKCE, refresh rotation,
+revocation, provider failure performance, dedicated-runner budgets, five paired
+repetitions and a one-hour soak remain separate scenarios. The integration suite
+also proves untrusted TLS rejection, unauthorized provider rejection, namespace
+confinement and deletion of the temporary certificate directory. Unsupported
+modes reject before fixture allocation.

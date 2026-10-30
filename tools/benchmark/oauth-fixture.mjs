@@ -28,9 +28,16 @@ export async function startOAuthFixture() {
       ['mac', randomBytes(32)],
     ]),
     tasks = new Set();
-  const state = { reads: 0, writes: 0, authorizations: 0 };
+  const state = { reads: 0, writes: 0, committedWrites: 0, authorizations: 0 },
+    budgetRows = new Map();
   const owner = createHash('sha256').update('arkenivajs.oauth.technical-budget.v1').digest('hex');
   let issuer, backend, bridge;
+  const durableCount = async () => {
+    const result = await backend.app.sql.query('main', {
+      text: `SELECT COALESCE(sum((body::jsonb->>'count')::integer),0)::integer AS count FROM ${backend.schema}.security_records WHERE namespace='oauth.budgets.v1'`,
+    });
+    return result.rows[0].count;
+  };
   const close = async () => {
     if (bridge) {
       bridge.closeAllConnections();
@@ -98,6 +105,10 @@ export async function startOAuthFixture() {
       },
     };
     bridge = createServer((request, response) => {
+      if (tasks.size >= 8) {
+        response.writeHead(503, { connection: 'close' }).end();
+        return;
+      }
       const task = (async () => {
         const supplied = Buffer.from(String(request.headers['x-owned-provider'] ?? '')),
           expected = Buffer.from(bearer);
@@ -135,6 +146,10 @@ export async function startOAuthFixture() {
             assert.equal(args.length, 2);
             result = await backend.store.read(...args, { timeoutMs: 5000 });
             state.reads++;
+            if (!budgetRows.has(args[1])) {
+              assert.ok(budgetRows.size < 8);
+              budgetRows.set(args[1], { initial: result?.count ?? 0, committed: 0 });
+            }
           } else {
             assert.equal(args.length, 4);
             const next = args[3];
@@ -153,6 +168,11 @@ export async function startOAuthFixture() {
             assert.equal(next.expiresAt, new Date((next.minute + 2) * 60000).toISOString());
             result = await backend.store.compareAndSet(...args, { timeoutMs: 5000 });
             state.writes++;
+            if (result.committed) {
+              assert.ok(budgetRows.has(args[1]));
+              budgetRows.get(args[1]).committed++;
+              state.committedWrites++;
+            }
           }
         }
         response
@@ -192,11 +212,48 @@ export async function startOAuthFixture() {
           value.toString('hex'),
         ]),
       ],
-      async durableCount() {
-        const result = await backend.app.sql.query('main', {
-          text: `SELECT COALESCE(sum((body::jsonb->>'count')::integer),0)::integer AS count FROM ${backend.schema}.security_records WHERE namespace='oauth.budgets.v1'`,
-        });
-        return result.rows[0].count;
+      durableCount,
+      async verify(expectedGrants) {
+        assert.ok(
+          Number.isSafeInteger(expectedGrants) && expectedGrants >= 8 && expectedGrants <= 488,
+        );
+        const persistedGrants = await durableCount();
+        assert.equal(persistedGrants, expectedGrants);
+        assert.equal(issuer.counts.token, expectedGrants);
+        assert.equal(issuer.counts.discovery, 4);
+        for (const operation of ['authorize', 'refresh', 'revoke', 'jwks'])
+          assert.equal(issuer.counts[operation], 0);
+        assert.equal(state.authorizations, expectedGrants);
+        assert.equal(state.reads, expectedGrants);
+        assert.equal(state.writes, expectedGrants);
+        assert.equal(state.committedWrites, expectedGrants);
+        let persistedDelta = 0;
+        for (const [id, baseline] of budgetRows) {
+          const record = await backend.store.read('oauth.budgets.v1', id, { timeoutMs: 5000 });
+          assert.equal(record.kind, 'oauth-budget-v1');
+          assert.equal(record.ownerKey, owner);
+          assert.equal(record.count, baseline.initial + baseline.committed);
+          persistedDelta += record.count - baseline.initial;
+        }
+        assert.equal(persistedDelta, expectedGrants);
+        return {
+          persistedGrants,
+          actualTokenRequests: issuer.counts.token,
+          authorizedGrants: state.authorizations,
+          persistedBudgetDelta: persistedDelta,
+          committedBudgetWrites: state.committedWrites,
+          budgetRows: budgetRows.size,
+          discoveryRequests: issuer.counts.discovery,
+          interactiveAuthorizationRequests: issuer.counts.authorize,
+          refreshRequests: issuer.counts.refresh,
+          revocationRequests: issuer.counts.revoke,
+          parentIssuerResources: null,
+          parentProviderResources: null,
+          postgresServerResources: null,
+          tokenValidationScope:
+            'Worker checks token contents privately; independent parent verifies issuer request and durable budget counts, without opaque-token introspection',
+          releaseGate: false,
+        };
       },
       close,
     };

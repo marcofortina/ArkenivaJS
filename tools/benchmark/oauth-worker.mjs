@@ -4,7 +4,16 @@
 import { cryptoPlugin } from '@arkenivajs/security-crypto';
 import { oauthClientPlugin, OAUTH_CLIENT_CAPABILITY } from '@arkenivajs/security-oauth-client';
 import { runPureWorker } from './pure-worker.mjs';
-import { oauthPorts, oauthSettings, nativeOAuth, verifyOAuth } from './oauth-workload.mjs';
+import {
+  oauthPorts,
+  oauthSettings,
+  nativeOAuth,
+  verifyOAuth,
+  oauthIterations,
+  oauthWarmupIterations,
+  oauthWorkload,
+  completeOAuthWorkload,
+} from './oauth-workload.mjs';
 
 runPureWorker({
   name: 'oauth',
@@ -31,9 +40,9 @@ runPureWorker({
     };
   },
   verify: verifyOAuth,
-  workload() {
-    throw new Error(
-      'OAuth performance sampling requires an explicit paired authorization and durable-state workload',
-    );
-  },
+  iterations: oauthIterations,
+  warmupIterations: oauthWarmupIterations,
+  retainRawSamples: true,
+  workload: oauthWorkload,
+  complete: completeOAuthWorkload,
 });
