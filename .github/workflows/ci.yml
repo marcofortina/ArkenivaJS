@@ -84,6 +84,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:socket
         env:
           ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify measured HTTPS proxy receipts and independent upstream counts
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:proxy
+        env:
+          ARKENIVA_PROXY_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

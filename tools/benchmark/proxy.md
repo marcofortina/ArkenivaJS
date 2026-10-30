@@ -7,6 +7,7 @@ Build the workspace, including the proxy conformance fixtures, then run:
 
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation proxy --verify /private/proxy-verification
+ARKENIVA_PROXY_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation proxy --smoke /private/proxy-smoke
 ```
 
 Four isolated profiles compare the actual pinned `@fastify/http-proxy@11.6.5`
@@ -36,5 +37,29 @@ digest verification, while both proxy paths forward streams through the native
 backend. Full streaming saturation, cancellation, redirects and cross-process
 resource accounting remain separate conformance/measurement work.
 
-Only `--verify` is supported. Reports retain `releaseGate: false`; matched-load
-performance budgets, five paired repetitions and the one-hour soak remain open.
+Optional smoke requires the explicit disposable marker before PKI allocation or
+evidence creation. Each profile collects 100 actual Tinybench GET samples after
+20 warmup callbacks, with concurrency one. Every callback consumes the complete
+131,072-byte response, computes its SHA256 receipt, and retires its own native
+HTTP client socket. The worker retains 120 compact status, byte-count, media-type
+and digest receipts with an explicit cap of 128, rather than retaining a buffer
+for every response. One bounded response buffer exists while consuming each
+fixed synthetic request; this is not arbitrary-response buffering or large-file
+pressure acceptance.
+
+Parent observation is independently bounded at 512 receipts. It verifies exactly
+488 upstream requests: four original POSTs and 484 GETs including the original
+four verification GETs. Every completed response contains 131,072 payload bytes,
+for 63,963,136 response bytes in total; the four POST bodies total 524,288 request
+bytes. Method, query, request digest, response completion and stripped spoofed
+headers remain mandatory. No observer handler remains pending at completion.
+These are actual payload counters, not TLS wire-byte or monetary attribution.
+
+Timing includes the native HTTP observer, complete response consumption, digest
+and physical client retirement. Worker CPU/RSS includes both that observer and
+the local proxy; parent HTTPS-origin resources remain explicitly unknown and
+excluded. Existing verified upstream pooling remains unchanged, so these samples
+do not claim fresh TLS handshakes. Original wrong-hostname rejection and native
+500/public 502 distinctions remain verified. Reports retain `releaseGate: false`;
+full SSRF/authorization-policy parity, resource parity, calibrated matched-load
+budgets, five paired repetitions and the one-hour soak remain open.

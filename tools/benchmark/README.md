@@ -35,6 +35,8 @@ WebSocket/SSE admission, exact wire data and scoped cursor replay.
 
 The [fixed HTTPS proxy verification](proxy.md) checks actual streamed binary
 forwarding, unchanged query semantics and upstream credential isolation.
+Its bounded GET smoke checks every response digest against independently counted
+upstream calls and completed payload bytes, with no retained response corpus.
 
 The [etcd verification](etcd.md) checks actual binary state, exact revisions,
 concurrent CAS, ordered watch events and independently observed lease renewal. Its
