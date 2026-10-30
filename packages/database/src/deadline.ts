@@ -3,6 +3,8 @@
 
 import { performance } from 'node:perf_hooks';
 import { KitError, DEFAULT_SQL_TIMEOUT_MS } from '@arkenivajs/core';
+import { captureAbortSignal } from '@arkenivajs/core/support';
+import { types } from 'node:util';
 import type { OperationOptions } from '@arkenivajs/core';
 
 /** One owned deadline covers queueing and native work; closing always removes listeners and timers. */
@@ -13,22 +15,37 @@ export class SqlDeadline {
   readonly signal = this.controller.signal;
 
   constructor(options: OperationOptions = {}, lifetime?: AbortSignal) {
-    if (!options || typeof options !== 'object' || Array.isArray(options))
+    if (
+      !options ||
+      typeof options !== 'object' ||
+      types.isProxy(options) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(options))
+    )
       throw new KitError({
         code: 'EK_CONFIG_INVALID',
         message: 'SQL operation options must be an object',
       });
-    const timeout = options.timeoutMs ?? DEFAULT_SQL_TIMEOUT_MS;
+    const timeoutProperty = Object.getOwnPropertyDescriptor(options, 'timeoutMs'),
+      signalProperty = Object.getOwnPropertyDescriptor(options, 'signal');
     if (
-      !Number.isSafeInteger(timeout) ||
-      timeout <= 0 ||
-      (options.signal !== undefined && !(options.signal instanceof AbortSignal))
+      (timeoutProperty && !('value' in timeoutProperty)) ||
+      (signalProperty && !('value' in signalProperty))
     )
+      throw new KitError({
+        code: 'EK_CONFIG_INVALID',
+        message: 'SQL operation controls require data properties',
+      });
+    const timeout = timeoutProperty?.value ?? DEFAULT_SQL_TIMEOUT_MS;
+    if (!Number.isSafeInteger(timeout) || timeout <= 0)
       throw new KitError({
         code: 'EK_CONFIG_INVALID',
         message: 'SQL deadline requires a positive integer timeout and an AbortSignal',
       });
-    for (const signal of [options.signal, lifetime]) {
+    // Capture both sources before attaching any listener or allocating a deadline timer.
+    const requested =
+        signalProperty?.value === undefined ? undefined : captureAbortSignal(signalProperty.value),
+      ownedLifetime = lifetime === undefined ? undefined : captureAbortSignal(lifetime);
+    for (const signal of [requested, ownedLifetime]) {
       if (!signal) continue;
       const cancel = () =>
         this.abort(

@@ -99,6 +99,37 @@ async function eventually(check: () => boolean | Promise<boolean>): Promise<void
   }
 }
 
+test('Live PostgreSQL queries and transactions retain native cancellation cleanup after caller hook replacement', async () => {
+  const app = await started();
+  let effects = 0;
+  try {
+    for (const transaction of [false, true]) {
+      const controller = new AbortController();
+      const pending = transaction
+        ? app.sql.transaction(
+            'main',
+            async (tx) =>
+              (await tx.query<{ value: number }>({ text: 'SELECT 42 AS value' })).rows[0] ?? null,
+            { signal: controller.signal },
+          )
+        : app.sql.queryOne<{ value: number }>(
+            'main',
+            { text: 'SELECT 42 AS value' },
+            { signal: controller.signal },
+          );
+      Object.defineProperty(controller.signal, 'removeEventListener', {
+        value() {
+          effects++;
+        },
+      });
+      assert.equal((await pending)?.value, 42);
+      assert.equal(effects, 0);
+      assert.equal(await app.sql.ping('main'), true);
+    }
+  } finally {
+    await app.stop();
+  }
+});
 test('EK-DB-001 live PostgreSQL uses verified TLS and a non-superuser with exact scalar, binary and temporal values', async () => {
   const app = await started();
   try {

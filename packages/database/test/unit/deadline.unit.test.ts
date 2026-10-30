@@ -6,12 +6,95 @@ import assert from 'node:assert/strict';
 import { setTimeout as pause } from 'node:timers/promises';
 import { getEventListeners } from 'node:events';
 import { KitError, DEFAULT_SQL_TIMEOUT_MS } from '@arkenivajs/core';
+import type { OperationOptions } from '@arkenivajs/core';
 import { SqlDeadline } from '@arkenivajs/database/support';
 
 const code =
   (expected: string) =>
   (error: unknown): boolean =>
     error instanceof KitError && error.code === expected;
+
+test('SQL deadlines retain owned cancellation cleanup after request and lifetime hook replacement', async () => {
+  const request = new AbortController(),
+    lifetime = new AbortController();
+  const deadline = new SqlDeadline({ signal: request.signal }, lifetime.signal);
+  let effects = 0;
+  for (const signal of [request.signal, lifetime.signal])
+    Object.defineProperty(signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+  try {
+    assert.equal(await deadline.run(() => 42), 42);
+  } finally {
+    deadline.close();
+  }
+  assert.equal(effects, 0);
+});
+
+test('SQL deadlines reject executable options and forged lifetime signals before attaching listeners', () => {
+  let effects = 0;
+  const signal = new AbortController().signal;
+  const trap = () => {
+    effects++;
+    throw new Error('Deadline control traps must not execute');
+  };
+  const inputs: OperationOptions[] = [
+    Object.defineProperty({}, 'signal', {
+      get() {
+        effects++;
+        return signal;
+      },
+    }),
+    Object.defineProperty({}, 'timeoutMs', {
+      get() {
+        effects++;
+        return 1000;
+      },
+    }),
+    new Proxy({}, { getPrototypeOf: trap, get: trap, ownKeys: trap }),
+    { signal: new Proxy(signal, { getPrototypeOf: trap, get: trap }) },
+  ];
+  const deep = new AbortController().signal;
+  let prototype: object = AbortSignal.prototype;
+  for (let depth = 0; depth < 65; depth++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(deep, prototype);
+  inputs.push({ signal: deep });
+  for (const input of inputs) {
+    let deadline: SqlDeadline | undefined;
+    try {
+      assert.throws(() => {
+        deadline = new SqlDeadline(input);
+      }, code('EK_CONFIG_INVALID'));
+    } finally {
+      deadline?.close();
+    }
+  }
+  for (const lifetime of [
+    {
+      aborted: false,
+      addEventListener() {
+        effects++;
+      },
+      removeEventListener() {
+        effects++;
+      },
+    },
+    new Proxy(signal, { getPrototypeOf: trap, get: trap }),
+  ]) {
+    let deadline: SqlDeadline | undefined;
+    try {
+      assert.throws(() => {
+        deadline = new SqlDeadline({ signal }, lifetime as AbortSignal);
+      }, code('EK_CONFIG_INVALID'));
+    } finally {
+      deadline?.close();
+    }
+  }
+  assert.equal(effects, 0);
+  assert.equal(getEventListeners(signal, 'abort').length, 0);
+});
 
 test('EK-DB-001 an omitted SQL deadline schedules the documented fifteen-second default', (context) => {
   const scheduled = context.mock.method(globalThis, 'setTimeout');
@@ -43,8 +126,9 @@ test('EK-CORE-001 SQL deadlines preserve values and errors while closing listene
       (error) => error === primary,
     );
     assert.equal(getEventListeners(deadline.signal, 'abort').length, 0);
-    assert.equal(getEventListeners(controller.signal, 'abort').length, 1);
-    assert.equal(getEventListeners(lifetime.signal, 'abort').length, 1);
+    // Native composition does not attach caller-visible JavaScript lifecycle hooks.
+    assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
+    assert.equal(getEventListeners(lifetime.signal, 'abort').length, 0);
   } finally {
     deadline.close();
     deadline.close();

@@ -100,6 +100,37 @@ async function eventually(check: () => boolean): Promise<void> {
   }
 }
 
+test('Live MariaDB queries and transactions retain native cancellation cleanup after caller hook replacement', async () => {
+  const app = await started();
+  let effects = 0;
+  try {
+    for (const transaction of [false, true]) {
+      const controller = new AbortController();
+      const pending = transaction
+        ? app.sql.transaction(
+            'main',
+            async (tx) =>
+              (await tx.query<{ value: number }>({ text: 'SELECT 42 AS value' })).rows[0] ?? null,
+            { signal: controller.signal },
+          )
+        : app.sql.queryOne<{ value: number }>(
+            'main',
+            { text: 'SELECT 42 AS value' },
+            { signal: controller.signal },
+          );
+      Object.defineProperty(controller.signal, 'removeEventListener', {
+        value() {
+          effects++;
+        },
+      });
+      assert.equal((await pending)?.value, 42);
+      assert.equal(effects, 0);
+      assert.equal(await app.sql.ping('main'), true);
+    }
+  } finally {
+    await app.stop();
+  }
+});
 test('EK-SEC-001 live MariaDB authenticates a scoped account with verified TLS and explicit UTC/UTF-8', async () => {
   const app = await started(endpoint, 2, mariadbPlugin(), false, 2);
   try {
