@@ -65,3 +65,61 @@ test('Remote paths are canonical POSIX paths and membership checks never accept 
   for (const value of ['relative', '/incoming\\escape', '/incoming\nfile'])
     assert.throws(() => remotePath(value));
 });
+
+test('SFTP captures the original secret method and receiver without evaluating callable metadata', async () => {
+  let effects = 0,
+    calls = 0;
+  const provider = {
+    async get(this: unknown, reference: string) {
+      assert.equal(this, provider);
+      assert.equal(reference, 'owned');
+      calls++;
+      return { bytes: Buffer.from('disposable'), keyVersion: 'one' };
+    },
+  };
+  for (const field of ['name', 'length', 'bind'])
+    Object.defineProperty(provider.get, field, {
+      get() {
+        effects++;
+        return field === 'length' ? 1 : 'unused';
+      },
+    });
+  const captured = capture({ ...settings(), secretProvider: provider });
+  assert.equal(effects, 0);
+  assert.equal(calls, 0);
+  provider.get = async () => {
+    throw new Error('Later method replacement must not run');
+  };
+  assert.equal((await captured.getSecret('owned')).keyVersion, 'one');
+  assert.equal(calls, 1);
+  assert.equal(effects, 0);
+});
+test('SFTP rejects proxy secret authorities, callbacks and hidden usage classification without evaluating traps', () => {
+  let effects = 0;
+  const target = settings().secretProvider;
+  const trap = () => {
+    effects++;
+    throw new Error('Provider proxy traps must not execute');
+  };
+  const proxies = [
+    new Proxy(target, { getPrototypeOf: trap, getOwnPropertyDescriptor: trap, get: trap }),
+    { get: new Proxy(target.get, { apply: trap, get: trap, getOwnPropertyDescriptor: trap }) },
+    Object.assign(
+      Object.create(new Proxy({}, { getOwnPropertyDescriptor: trap, getPrototypeOf: trap })),
+      { get: target.get },
+    ) as typeof target,
+  ];
+  for (const secretProvider of proxies)
+    assert.throws(
+      () => capture({ ...settings(), secretProvider }),
+      (error: unknown) => error instanceof KitError && error.code === 'EK_CONFIG_INVALID',
+    );
+  assert.equal(effects, 0);
+  let prototype: object = { usage: 'test-only' };
+  for (let depth = 0; depth < 65; depth++) prototype = Object.create(prototype) as object;
+  const provider = Object.assign(Object.create(prototype), { get: target.get }) as typeof target;
+  assert.throws(
+    () => capture({ ...settings(), secretProvider: provider }),
+    (error: unknown) => error instanceof KitError && error.code === 'EK_CONFIG_INVALID',
+  );
+});

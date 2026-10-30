@@ -62,6 +62,11 @@ observed status; missing status and truncated output still never imply success.
 
 ## Deployment trust and bounds
 
+The secret provider retains its captured method and original receiver. Callable
+`bind`, `name` and `length` properties are never evaluated; later method replacement
+cannot change the captured authority. Proxy providers/callbacks, accessors and
+classification hidden beyond 64 prototype levels fail configuration validation.
+
 Profiles are trusted deployment configuration, never request input. A profile has
 `name`, `host`, `port`, `username`, `privateKeyRef`, `knownHostSha256` and
 `allowedRemoteRoots`. Pins are OpenSSH `SHA256:` fingerprints of the raw public
