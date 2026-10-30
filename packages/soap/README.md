@@ -76,6 +76,10 @@ type CredentialBundle = {
 ```
 
 At least one credential mode is required when `credentialsRef` is present.
+The original provider method and receiver are captured once. Custom binding
+metadata cannot substitute another provider; accessors and proxy methods or
+prototype metadata are rejected before native resources open.
+
 Provider results require nonempty versioned bytes and an unexpired expiration
 when supplied. Malformed data, unknown fields, invalid key/certificate material
 and provider failures deny the operation. No cached credential fallback exists.
