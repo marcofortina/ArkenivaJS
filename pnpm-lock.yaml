@@ -2549,6 +2549,9 @@ importers:
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
+      '@arkenivajs/tenant-routing':
+        specifier: workspace:*
+        version: link:../../packages/tenant-routing
       '@arkenivajs/upload':
         specifier: workspace:*
         version: link:../../packages/upload
@@ -2612,6 +2615,9 @@ importers:
       bwip-js:
         specifier: 4.11.4
         version: 4.11.4
+      canonicalize:
+        specifier: 5.1.0
+        version: 5.1.0
       cockatiel:
         specifier: 3.2.1
         version: 3.2.1

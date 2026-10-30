@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [HTTPS tenant-routing verification](routing.md) checks authenticated local
+dispatch, private capability discovery and actual parented technical usage.
+
 The [HTTPS GraphQL verification](graphql.md) checks native and public authenticated
 queries, guarded properties, tenant-bound idempotency and actual technical usage.
 
