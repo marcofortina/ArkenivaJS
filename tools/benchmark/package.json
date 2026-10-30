@@ -18,13 +18,15 @@
     "identifiers": "node identifiers.mjs",
     "validation": "node validation.mjs",
     "dns": "node dns.mjs",
-    "diagnostics": "node diagnostics.mjs"
+    "diagnostics": "node diagnostics.mjs",
+    "time": "node time.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
     "@arkenivajs/config": "workspace:*",
     "@arkenivajs/core": "workspace:*",
     "@arkenivajs/data-identifiers": "workspace:*",
+    "@arkenivajs/data-time": "workspace:*",
     "@arkenivajs/data-validation": "workspace:*",
     "@arkenivajs/database": "workspace:*",
     "@arkenivajs/database-postgres": "workspace:*",
@@ -39,6 +41,7 @@
     "@arkenivajs/security-webauthn": "workspace:*",
     "@arkenivajs/security-x509": "workspace:*",
     "@arkenivajs/telemetry": "workspace:*",
+    "@js-temporal/polyfill": "0.5.1",
     "@simplewebauthn/browser": "14.0.0",
     "@simplewebauthn/server": "14.0.3",
     "ajv": "8.20.0",
