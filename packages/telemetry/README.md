@@ -29,6 +29,12 @@ before callbacks execute. Unrelated baggage and identity fields are never read.
 
 `flush(options?)` waits for SDK buffers and in-flight exporter work within the caller deadline. Abort/timeout uses `EK_ABORTED`/`EK_TIMEOUT`; exporter rejection uses `EK_BACKEND_UNAVAILABLE`. `close(options?)` ends active diagnostic spans, stops periodic export and closes providers once; concurrent closes share completion. All new work after close uses `EK_RESOURCE_CLOSED`. A callback already running remains application-owned. `stats()` exposes local start/end, active/pending, export failure, dropped metric/span and instrument/series counts; it is not historical storage. `native()` returns the owned vendor providers and permits extensions outside adapter cardinality/redaction guarantees.
 
+Flush and new shutdown requests capture native cancellation and positive integer
+deadlines before SDK work. Accessors, proxies and invalid timeouts are rejected
+without export or provider shutdown. A rejected malformed close leaves the
+instance usable and permits a later valid close. An omitted or undefined deadline
+uses the configured export timeout; unrelated option fields are not read.
+
 Tests use actual SDK HTTP exports to disposable receivers, test W3C parents across concurrent asynchronous scopes, resource metadata, histogram buckets, queue pressure, exporter failure and cleanup. The integration fixture runs a real digest-pinned collector with bounded resources. Receiver acknowledgments mean collector acceptance, not durable long-term storage.
 
 Run the actual collector integration on a disposable Docker host (or inside a dedicated VM):

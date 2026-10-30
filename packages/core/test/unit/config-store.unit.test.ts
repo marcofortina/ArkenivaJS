@@ -198,6 +198,39 @@ test('Bounded operations preserve values and reject failure, abort and timeout',
   await assert.rejects(work, code('EK_ABORTED'));
 });
 
+test('Operation options reject proxies before reflection or callback execution', async () => {
+  let effects = 0,
+    calls = 0;
+  const options = new Proxy(
+    { timeoutMs: 100 },
+    {
+      getPrototypeOf(target) {
+        effects++;
+        return Reflect.getPrototypeOf(target);
+      },
+      getOwnPropertyDescriptor(target, key) {
+        effects++;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    },
+  );
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  for (const request of [options, revoked.proxy])
+    await assert.rejects(
+      within(() => {
+        calls++;
+      }, request),
+      code('EK_CONFIG_INVALID'),
+    );
+  assert.equal(effects, 0);
+  assert.equal(calls, 0);
+  assert.equal(
+    await within(() => 42, { timeoutMs: 100, signal: new AbortController().signal }),
+    42,
+  );
+});
+
 test('Long deadlines retain their duration without overflowing native Node timers', async () => {
   for (const timeoutMs of [2_147_483_648, Number.MAX_SAFE_INTEGER]) {
     assert.equal(

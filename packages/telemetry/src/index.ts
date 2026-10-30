@@ -41,7 +41,13 @@ import type {
   ApplicationOptions,
   Plugin,
 } from '@arkenivajs/core';
-import { copyData, freezeData, SEMVER_PATTERN, within } from '@arkenivajs/core/support';
+import {
+  captureAbortSignal,
+  copyData,
+  freezeData,
+  SEMVER_PATTERN,
+  within,
+} from '@arkenivajs/core/support';
 export type { Telemetry, MeasureOptions } from '@arkenivajs/core';
 
 /** Primitive attribute values accepted by the bounded telemetry policy. */
@@ -108,6 +114,19 @@ function ownField<T>(input: unknown, name: string): T | undefined {
   return descriptor?.value as T | undefined;
 }
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
+
+/** Validate deadlines before SDK export or shutdown can begin. */
+function deadlineOptions(input: OperationOptions, fallback: number) {
+  const requested = ownField<unknown>(input, 'timeoutMs'),
+    signal = ownField<unknown>(input, 'signal'),
+    timeoutMs = requested === undefined ? fallback : requested;
+  if (typeof timeoutMs !== 'number' || !positive(timeoutMs))
+    throw invalid('Telemetry timeout must be a positive integer');
+  return Object.freeze({
+    timeoutMs,
+    ...(signal === undefined ? {} : { signal: captureAbortSignal(signal) }),
+  });
+}
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
   'routing.kind',
@@ -1083,22 +1102,17 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     setGauge: (name, value, fields) => sample('gauge', name, value, fields),
     async flush(request: OperationOptions = {}) {
       open();
+      const requested = deadlineOptions(request, timeout);
       const failed = counters.exportFailures;
       // Keep the adapter deadline authoritative instead of racing SDK timeout errors.
-      const sdkTimeout = Math.min(
-        2_147_483_647,
-        Math.max(timeout, request.timeoutMs ?? timeout) + 1000,
-      );
+      const sdkTimeout = Math.min(2_147_483_647, Math.max(timeout, requested.timeoutMs) + 1000);
       try {
-        await within(
-          async () => {
-            await Promise.all([
-              traces?.forceFlush({ timeoutMillis: sdkTimeout }),
-              metrics?.forceFlush({ timeoutMillis: sdkTimeout }),
-            ]);
-          },
-          { timeoutMs: request.timeoutMs ?? timeout, ...request },
-        );
+        await within(async () => {
+          await Promise.all([
+            traces?.forceFlush({ timeoutMillis: sdkTimeout }),
+            metrics?.forceFlush({ timeoutMillis: sdkTimeout }),
+          ]);
+        }, requested);
       } catch (cause) {
         if (cause instanceof KitError) throw cause;
         throw new KitError({
@@ -1152,6 +1166,12 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     },
     close(request: OperationOptions = {}) {
       if (closing) return closing;
+      let requested: ReturnType<typeof deadlineOptions>;
+      try {
+        requested = deadlineOptions(request, timeout);
+      } catch (error) {
+        return Promise.reject(error);
+      }
       closed = true;
       for (const current of active) {
         current.setStatus({ code: SpanStatusCode.ERROR });
@@ -1162,19 +1182,16 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       storage.disable();
       const shutdown = Promise.allSettled([
         traces?.shutdown(),
-        metrics?.shutdown({ timeoutMillis: request.timeoutMs ?? timeout }),
+        metrics?.shutdown({ timeoutMillis: requested.timeoutMs }),
       ]);
-      closing = within(
-        async () => {
-          const results = await shutdown;
-          if (results.some((result) => result.status === 'rejected'))
-            throw new KitError({
-              code: 'EK_BACKEND_UNAVAILABLE',
-              message: 'Telemetry shutdown failed',
-            });
-        },
-        { timeoutMs: request.timeoutMs ?? timeout, ...request },
-      );
+      closing = within(async () => {
+        const results = await shutdown;
+        if (results.some((result) => result.status === 'rejected'))
+          throw new KitError({
+            code: 'EK_BACKEND_UNAVAILABLE',
+            message: 'Telemetry shutdown failed',
+          });
+      }, requested);
       return closing;
     },
   };

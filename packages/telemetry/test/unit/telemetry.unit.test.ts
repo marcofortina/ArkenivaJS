@@ -556,6 +556,93 @@ test('EK-OTEL-001 rejected exporters report typed failures without altering comp
   }
 });
 
+test('Telemetry invalid flush and close deadlines leave owned providers open and perform no exporter I/O', async () => {
+  const target = await receiver(),
+    telemetry = createTelemetry({ ...options(target.endpoint), exportIntervalMs: 60000 });
+  try {
+    await telemetry.withSpan('pending.before.validation', () => 42);
+    telemetry.addCounter('validation.pending', 1);
+    for (const timeoutMs of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      await assert.rejects(telemetry.flush({ timeoutMs }), code('EK_CONFIG_INVALID'));
+      await assert.rejects(telemetry.close({ timeoutMs }), code('EK_CONFIG_INVALID'));
+      assert.ok(telemetry.native().traces);
+      assert.equal(await telemetry.measure('still.open', () => 42), 42);
+    }
+    await delay(20);
+    assert.equal(target.data.length, 0);
+    await telemetry.flush({ timeoutMs: 2000 });
+    assert.ok(target.data.some((entry) => entry.path === '/v1/traces'));
+    assert.ok(target.data.some((entry) => entry.path === '/v1/metrics'));
+  } finally {
+    try {
+      await telemetry.close();
+    } finally {
+      await target.close();
+    }
+  }
+});
+
+test('Telemetry deadline captures reject accessors and proxies without effects while accepting actual native cancellation', async () => {
+  const telemetry = createTelemetry({ service, mode: 'off' });
+  let effects = 0;
+  const accessor = (key: string) =>
+    Object.defineProperty({}, key, {
+      enumerable: true,
+      get() {
+        effects++;
+        return key === 'timeoutMs' ? 100 : new AbortController().signal;
+      },
+    });
+  const proxy = new Proxy(
+    { timeoutMs: 100 },
+    {
+      getPrototypeOf(target) {
+        effects++;
+        return Reflect.getPrototypeOf(target);
+      },
+      getOwnPropertyDescriptor(target, key) {
+        effects++;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+      get(target, key, receiver) {
+        effects++;
+        return Reflect.get(target, key, receiver);
+      },
+    },
+  );
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  try {
+    for (const method of ['flush', 'close'] as const)
+      for (const request of [
+        accessor('timeoutMs'),
+        accessor('signal'),
+        proxy,
+        revoked.proxy,
+        { signal: { aborted: false } },
+        { timeoutMs: null },
+        null,
+        [],
+      ])
+        await assert.rejects(telemetry[method](request as never), code('EK_CONFIG_INVALID'));
+    assert.equal(effects, 0);
+    assert.equal(await telemetry.measure('after.invalid.options', () => 7), 7);
+    await assert.rejects(telemetry.flush({ signal: AbortSignal.abort() }), code('EK_ABORTED'));
+    await telemetry.flush({ timeoutMs: undefined, signal: new AbortController().signal } as never);
+    const ignored = Object.defineProperty({ timeoutMs: 100 }, 'unrelated', {
+      enumerable: true,
+      get() {
+        effects++;
+        throw new Error('Unrelated options must not execute');
+      },
+    });
+    await telemetry.flush(ignored);
+    assert.equal(effects, 0);
+  } finally {
+    await telemetry.close();
+  }
+});
+
 test('EK-OTEL-001 off, minimal and zero sampling modes expose actual configuration and close resources', async () => {
   const off = createTelemetry({ service, mode: 'off' });
   assert.deepEqual(off.status(), {
