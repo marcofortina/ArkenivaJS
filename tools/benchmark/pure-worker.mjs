@@ -137,6 +137,8 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
               : () => {
                   last = work();
                 },
+            // Explicit mode prevents Tinybench from probing the callback with an extra call.
+            { async: adapter.asynchronous === true },
           );
           await bench.run();
           const result = bench.tasks[0].result;
