@@ -24,7 +24,8 @@
     "compression": "node compression.mjs",
     "config": "node config.mjs",
     "logging": "node logging.mjs",
-    "csv": "node csv.mjs"
+    "csv": "node csv.mjs",
+    "mail": "node mail.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -41,6 +42,7 @@
     "@arkenivajs/diagnostics": "workspace:*",
     "@arkenivajs/dns": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
+    "@arkenivajs/mail": "workspace:*",
     "@arkenivajs/metering": "workspace:*",
     "@arkenivajs/security": "workspace:*",
     "@arkenivajs/security-apikey": "workspace:*",
@@ -61,6 +63,8 @@
     "fflate": "0.8.3",
     "ipaddr.js": "2.5.0",
     "jose": "6.2.13",
+    "mailparser": "3.12.4",
+    "nodemailer": "10.2.1",
     "otplib": "13.5.0",
     "pg": "8.23.1",
     "pg-connection-string": "2.14.1",
@@ -68,6 +72,7 @@
     "pino": "10.4.0",
     "qrcode": "1.5.4",
     "sharp": "0.35.5",
+    "smtp-server": "3.21.1",
     "tinybench": "6.2.2",
     "uuid": "14.0.3",
     "validator": "13.15.35",

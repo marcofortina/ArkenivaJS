@@ -65,7 +65,14 @@ export async function runPureComparison(definition, args = process.argv.slice(2)
         const child = fork(definition.worker, [], {
           execPath: process.execPath,
           execArgv: ['--max-old-space-size=256'],
-          env: { NODE_ENV: 'test', LANG: 'C.UTF-8', TZ: 'UTC' },
+          env: {
+            NODE_ENV: 'test',
+            LANG: 'C.UTF-8',
+            TZ: 'UTC',
+            ...(definition.trustAnchorFile
+              ? { NODE_EXTRA_CA_CERTS: definition.trustAnchorFile }
+              : {}),
+          },
           stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
         });
         active = child;
