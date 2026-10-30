@@ -190,6 +190,7 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
         : undefined;
       let registrationOpen = true,
         closed = false,
+        sourceCleanupFailed = false,
         closing: Promise<void> | undefined;
       const register = (route: Route) => {
         if (closed) throw failure('EK_REALTIME_CLOSED');
@@ -211,7 +212,9 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
                 Promise.all([...connections].map((connection) => connection.completion)),
                 Promise.allSettled([...admissions]),
                 closingBroadcast,
-              ]).then(() => undefined),
+              ]).then(() => {
+                if (sourceCleanupFailed) throw failure('EK_BACKEND_UNAVAILABLE');
+              }),
             { timeoutMs: settings.runtime.timeoutMs },
           );
         })());
@@ -366,7 +369,8 @@ export function realtimePlugin(input: RealtimePluginSettings): Plugin {
                 auth,
                 snapshot,
                 owner,
-                () => {
+                (cleanupFailed) => {
+                  sourceCleanupFailed ||= cleanupFailed;
                   connections.delete(connection);
                   const remaining = (tenantCounts.get(key) ?? 1) - 1;
                   if (remaining) tenantCounts.set(key, remaining);

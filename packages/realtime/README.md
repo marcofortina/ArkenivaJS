@@ -65,7 +65,8 @@ injection rejected. Durable sources must implement `validateCursor` to check
 ownership and retention before response headers. Throw `new SseCursorError('expired')`
 for HTTP 410 or `'invalid'` for HTTP 409. Pubsub sources reject every resume cursor
 with 409. No source fabricates history. Cancellation aborts the source signal and
-calls iterator cleanup. The application owns persistent event storage and its
+calls iterator cleanup. A failed iterator cleanup remains visible as a sanitized
+service shutdown failure after the peer has disconnected. The application owns persistent event storage and its
 retention/order policy; see the [PostgreSQL source](../../examples/postgres/realtime.md).
 
 `publish(channel, bytes, verifiedTenant, options?)` requires a configured shared

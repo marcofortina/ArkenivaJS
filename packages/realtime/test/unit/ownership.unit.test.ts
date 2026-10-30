@@ -7,9 +7,115 @@ import { once } from 'node:events';
 import { get } from 'node:http';
 import { setImmediate } from 'node:timers/promises';
 import WebSocket from 'ws';
-import { COMPONENTS } from '@arkenivajs/core';
+import { COMPONENTS, KitError } from '@arkenivajs/core';
 import type { MessageBus, Plugin } from '@arkenivajs/core';
+import type { SseEvent } from '../../dist/index.js';
 import { fixture, sseRequest } from '../fixture.js';
+
+for (const mode of ['throw', 'reject', 'late-reject'])
+  test(
+    `An SSE iterator return ${mode} remains visible after the disconnected connection has retired`,
+    { timeout: 10000 },
+    async () => {
+      let returned!: () => void,
+        rejectCleanup = () => {};
+      const cleanup = new Promise<void>((resolve) => {
+        returned = resolve;
+      });
+      const f = await fixture({
+        sseSources: {
+          events: {
+            kind: 'pubsub',
+            subscribe(context) {
+              let sent = false;
+              const iterator: AsyncIterableIterator<SseEvent> = {
+                [Symbol.asyncIterator]() {
+                  return this;
+                },
+                async next() {
+                  if (!sent) {
+                    sent = true;
+                    return {
+                      done: false as const,
+                      value: { id: 'owned_1', type: 'update', data: 'owned event' },
+                    };
+                  }
+                  if (!context.signal.aborted)
+                    await new Promise<void>((resolve) =>
+                      context.signal.addEventListener('abort', () => resolve(), { once: true }),
+                    );
+                  return { done: true as const, value: undefined };
+                },
+                return(): Promise<never> {
+                  returned();
+                  const error = new Error('Private failed SSE cleanup diagnostic');
+                  if (mode === 'throw') throw error;
+                  if (mode === 'late-reject')
+                    return new Promise<never>((_resolve, reject) => {
+                      rejectCleanup = () => reject(error);
+                    });
+                  return Promise.reject(error);
+                },
+              };
+              return iterator;
+            },
+          },
+        },
+      });
+      let closeError: unknown, stopError: unknown;
+      const authorization = await f.token();
+      const request = get(f.origin + '/events', {
+        headers: { authorization, accept: 'text/event-stream' },
+      });
+      request.on('error', () => undefined);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          request.once('response', (response) => {
+            response.on('error', () => undefined);
+            response.once('data', () => {
+              response.destroy();
+              resolve();
+            });
+          });
+          request.once('error', reject);
+        });
+        await cleanup;
+        await setImmediate();
+        const first = f.service.close(),
+          repeated = f.service.close();
+        assert.equal(first, repeated);
+        const result = first.then(
+          () => null,
+          (error: unknown) => error,
+        );
+        if (mode === 'late-reject') {
+          let settled = false;
+          void result.then(() => {
+            settled = true;
+          });
+          await setImmediate();
+          assert.equal(settled, false);
+          rejectCleanup();
+        }
+        closeError = await result;
+      } finally {
+        rejectCleanup();
+        request.destroy();
+        stopError = await f.close().then(
+          () => null,
+          (error: unknown) => error,
+        );
+      }
+      assert.ok(closeError instanceof KitError);
+      assert.equal(closeError.code, 'EK_BACKEND_UNAVAILABLE');
+      assert.doesNotMatch(
+        JSON.stringify(closeError.toSafeJSON()),
+        /Private failed SSE cleanup diagnostic/,
+      );
+      assert.ok(stopError instanceof Error);
+      assert.doesNotMatch(f.logs(), /Private failed SSE cleanup diagnostic/);
+    },
+  );
 
 test(
   'Disconnect retains initial authentication capacity until the actual authority settles',
