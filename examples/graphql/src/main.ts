@@ -2,13 +2,25 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { createApplication } from '@arkenivajs/core';
-import type { ApplicationOptions } from '@arkenivajs/core';
+import type { Application, ApplicationOptions } from '@arkenivajs/core';
 import { apiPlugin } from '@arkenivajs/api';
 import { graphqlPlugin, GRAPHQL_CAPABILITY } from '@arkenivajs/graphql';
 import type { GraphqlService, GraphqlSubscriptionSettings } from '@arkenivajs/graphql';
 import { securityPlugin } from '@arkenivajs/security';
 import { loggingPlugin } from '@arkenivajs/logging';
 import type { Writable } from 'node:stream';
+
+/** Administrative diagnostics expose fixed health/activity fields without query or variable data. */
+export function logGraphqlDiagnostics(app: Application): void {
+  const graphql = app.resolve<GraphqlService>(GRAPHQL_CAPABILITY),
+    status = graphql.health(),
+    counters = graphql.stats();
+  app.logger.info('GraphQL health', { ready: status.ready, schemaLoaded: status.schemaLoaded });
+  app.logger.info('GraphQL activity', {
+    operations: counters.operations,
+    rejected: counters.rejected,
+  });
+}
 
 /** Small application-owned demonstration store; deploy an independently authorized shared data layer. */
 export async function createGraphqlExample(options: {
