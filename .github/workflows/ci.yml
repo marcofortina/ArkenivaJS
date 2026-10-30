@@ -76,6 +76,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:pdf
         env:
           ARKENIVA_PDF_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify fresh mTLS sessions and independent peer revocation policy
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:mtls
+        env:
+          ARKENIVA_MTLS_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

@@ -27,6 +27,8 @@ metadata, correlated identities and replay/tampering/audience rejection.
 
 The [mTLS verification](mtls.md) checks actual mutual TLS key possession and
 asynchronous chain/CRL authorization before HTTP/2 application traffic.
+Its bounded smoke checks fresh non-resumed sessions, exact authorized responses
+and physical closure against independent server and peer-policy counts.
 
 The [authenticated realtime verification](realtime.md) checks actual signed-JWT
 WebSocket/SSE admission, exact wire data and scoped cursor replay.

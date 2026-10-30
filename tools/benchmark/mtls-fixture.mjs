@@ -8,15 +8,23 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fixture as pkiFixture } from '../../packages/security-mtls/dist-test/fixture.js';
 
 /** The parent owns actual key material, HTTP/2 mutual TLS and independent OpenSSL path/CRL checks. */
-export async function startMtlsFixture() {
+export async function startMtlsFixture(sampleHandshakes = false) {
+  assert.equal(typeof sampleHandshakes, 'boolean');
   const pki = await pkiFixture(),
     material = pki.materials.get('server');
   const bearer = randomBytes(32).toString('base64url'),
     marker = 'owned-mtls-private-response';
   const sessions = new Set(),
     work = new Set(),
-    admitted = new WeakMap();
-  const counts = { applicationRequests: 0, serverPeerChecks: 0, clientPeerChecks: 0 };
+    admitted = new WeakMap(),
+    streamsPerSession = new WeakMap();
+  const counts = {
+    applicationRequests: 0,
+    serverPeerChecks: 0,
+    clientPeerChecks: 0,
+    freshSessions: 0,
+    resumedSessions: 0,
+  };
   const policy = (role) => ({
     trustRootsRef: 'fixture',
     allowedIdentities: [...pki.profiles[role].allowedIdentities],
@@ -32,12 +40,22 @@ export async function startMtlsFixture() {
     rejectUnauthorized: true,
   });
   server.on('session', (session) => {
+    if (sessions.size >= 4) {
+      session.destroy();
+      return;
+    }
     sessions.add(session);
+    streamsPerSession.set(session, 0);
     session.once('close', () => sessions.delete(session));
     session.on('error', () => undefined);
-    const verification = (async () => {
+    let verification;
+    verification = (async () => {
       assert.equal(session.socket.authorized, true);
       assert.equal(session.socket.alpnProtocol, 'h2');
+      assert.equal(session.socket.getProtocol(), 'TLSv1.3');
+      if (session.socket.isSessionReused()) counts.resumedSessions++;
+      else counts.freshSessions++;
+      assert.equal(session.socket.isSessionReused(), false);
       const identity = await pki.trustProvider.verifyChainAndRevocation(
         {
           peerDer: session.socket.getPeerCertificate().raw,
@@ -49,7 +67,10 @@ export async function startMtlsFixture() {
       assert.deepEqual(identity.uriSans, ['spiffe://fixture/client']);
       counts.serverPeerChecks++;
       return true;
-    })().catch(() => false);
+    })()
+      .catch(() => false)
+      .finally(() => work.delete(verification));
+    work.add(verification);
     admitted.set(session, verification);
   });
   server.on('stream', (stream, headers) => {
@@ -58,6 +79,8 @@ export async function startMtlsFixture() {
       assert.equal(await admitted.get(stream.session), true);
       assert.equal(headers[':method'], 'GET');
       assert.equal(headers[':path'], '/exchange');
+      assert.equal(streamsPerSession.get(stream.session), 0);
+      streamsPerSession.set(stream.session, 1);
       counts.applicationRequests++;
       stream.respond({ ':status': 200, 'content-type': 'application/octet-stream' });
       stream.end(marker);
@@ -67,6 +90,10 @@ export async function startMtlsFixture() {
     work.add(task);
   });
   const bridge = createServer((request, response) => {
+    if (work.size >= 8) {
+      response.writeHead(503, { connection: 'close' }).end();
+      return;
+    }
     const task = (async () => {
       assert.equal(request.method, 'POST');
       assert.equal(request.url, '/verify');
@@ -101,12 +128,21 @@ export async function startMtlsFixture() {
   const close = async () => {
     try {
       bridge.closeAllConnections();
-      for (const session of sessions) session.destroy();
+      const closed = [...sessions].map(
+        (session) =>
+          new Promise((done) => {
+            session.once('close', done);
+            session.destroy();
+          }),
+      );
       await Promise.all([
         new Promise((done) => bridge.close(done)),
         new Promise((done) => server.close(done)),
+        ...closed,
       ]);
       await Promise.allSettled([...work]);
+      assert.equal(sessions.size, 0);
+      assert.equal(work.size, 0);
     } finally {
       await pki.close();
     }
@@ -144,15 +180,38 @@ export async function startMtlsFixture() {
       close,
       unavailable: (value) => pki.unavailable(value),
       revokeServer: () => pki.revoke('server'),
-      observations: () => ({ ...counts }),
+      observations: () => ({
+        applicationRequests: counts.applicationRequests,
+        serverPeerChecks: counts.serverPeerChecks,
+        clientPeerChecks: counts.clientPeerChecks,
+      }),
       verify(profiles) {
         assert.equal(counts.applicationRequests, profiles);
         assert.equal(counts.clientPeerChecks, profiles);
         assert.ok(counts.serverPeerChecks >= profiles);
+        if (sampleHandshakes) {
+          assert.equal(profiles, 484);
+          assert.equal(counts.serverPeerChecks, profiles);
+          assert.equal(counts.freshSessions, profiles);
+          assert.equal(counts.resumedSessions, 0);
+          assert.equal(sessions.size, 0);
+          assert.equal(work.size, 0);
+        }
         return {
           actualAuthorizedHttp2Requests: counts.applicationRequests,
           actualClientPeerCrlChecks: counts.clientPeerChecks,
           actualServerPeerCrlChecks: counts.serverPeerChecks,
+          ...(sampleHandshakes
+            ? {
+                independentlyObservedFreshTls13Sessions: counts.freshSessions,
+                resumedTlsSessions: counts.resumedSessions,
+                activeSessions: sessions.size,
+                pendingProviderWork: work.size,
+                parentServerResources: null,
+                parentPkiProviderResources: null,
+                parentOpenSslDescendantResources: null,
+              }
+            : {}),
           releaseGate: false,
         };
       },

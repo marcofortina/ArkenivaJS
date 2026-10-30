@@ -6,6 +6,10 @@ import { X509Certificate } from 'node:crypto';
 import { connect } from 'node:http2';
 import { once } from 'node:events';
 
+export const mtlsIterations = 100;
+export const mtlsWarmupIterations = 20;
+export const mtlsMaximumRetainedResults = 128;
+
 export function mtlsConnection(fixture) {
   const endpoint = new URL(fixture.endpoint),
     bridge = new URL(fixture.bridgeUrl);
@@ -105,12 +109,15 @@ export async function verifyMtls(service, fixture) {
   const options = service.toNodeClientOptions(prepared);
   assert.equal(options.rejectUnauthorized, true);
   assert.equal(options.servername, 'localhost');
+  assert.equal(options.session, undefined);
   const session = connect(fixture.endpoint, options);
   session.on('error', () => undefined);
-  const closed = once(session, 'close').catch(() => undefined);
+  const closed = new Promise((done) => session.once('close', done));
   try {
     await once(session, 'connect');
     assert.equal(session.socket.authorized, true);
+    assert.equal(session.socket.getProtocol(), 'TLSv1.3');
+    assert.equal(session.socket.isSessionReused(), false);
     assert.equal(session.socket.alpnProtocol, 'h2');
     const identity = await service.verifyPeer(
       session.socket.getPeerCertificate().raw,
@@ -144,4 +151,68 @@ export async function verifyMtls(service, fixture) {
     session.destroy();
     await closed;
   }
+}
+
+/** Sampling owns each physical exchange until its TLS session has closed. */
+export function createMtlsSampling(exchange) {
+  assert.equal(typeof exchange, 'function');
+  const results = [];
+  let active = false,
+    closed = false;
+  return {
+    workload: {
+      async freshHandshake() {
+        assert.equal(closed, false);
+        assert.equal(active, false);
+        assert.ok(results.length < mtlsIterations + mtlsWarmupIterations);
+        assert.ok(results.length < mtlsMaximumRetainedResults);
+        active = true;
+        try {
+          const result = await exchange();
+          results.push(result);
+          return result;
+        } finally {
+          active = false;
+        }
+      },
+    },
+    complete({ measure, records }) {
+      try {
+        assert.equal(active, false);
+        if (!measure) {
+          assert.equal(results.length, 0);
+          assert.deepEqual(records, []);
+          return { sampledHandshakes: 0, warmupHandshakes: 0, checkedExchanges: 0 };
+        }
+        assert.equal(records.length, 1);
+        const record = records[0];
+        assert.equal(record.operation, 'freshHandshake');
+        assert.equal(record.sampleCount, mtlsIterations);
+        assert.equal(record.warmupIterations, mtlsWarmupIterations);
+        assert.equal(record.rawLatency.unit, 'milliseconds');
+        assert.equal(record.rawLatency.values.length, record.sampleCount);
+        assert.equal(results.length, record.sampleCount + record.warmupIterations);
+        for (const result of results)
+          assert.deepEqual(result, {
+            actualMutualTlsHandshake: true,
+            negotiatedHttp2: true,
+            asynchronousPeerCrlVerifiedBeforeRequest: true,
+            actualAuthorizedResponse: true,
+          });
+        return {
+          sampledHandshakes: record.sampleCount,
+          warmupHandshakes: record.warmupIterations,
+          checkedExchanges: results.length,
+          freshNonResumedTls13: true,
+          physicalSessionsClosed: true,
+          peakRetainedResults: results.length,
+          maximumRetainedResults: mtlsMaximumRetainedResults,
+          activeCallbacks: 0,
+        };
+      } finally {
+        closed = true;
+        results.length = 0;
+      }
+    },
+  };
 }

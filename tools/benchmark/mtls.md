@@ -7,6 +7,7 @@ Build the workspace, including the private PKI conformance fixture, then run:
 
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation mtls --verify /private/mtls-verification
+ARKENIVA_MTLS_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation mtls --smoke /private/mtls-smoke
 ```
 
 Four isolated profiles compare actual Node TLS/HTTP2 with the public mTLS plugin
@@ -38,6 +39,26 @@ reference omits framework full material validation, generation provenance,
 atomic reload, admission and cancellation ownership. This private test PKI is
 not a production secret/trust provider or a mesh identity boundary.
 
-Only `--verify` is supported until complete provider/server process resource
-accounting is available. Reports retain `releaseGate: false`; full matched-load
-campaigns, five repetitions and the one-hour soak remain separate work.
+Optional smoke requires the explicit disposable marker before PKI allocation or
+evidence creation. Each profile retains 100 actual Tinybench samples after 20
+warmup callbacks, with concurrency one. Every callback creates a new HTTP/2
+connection, asserts actual TLS1.3 negotiation and non-resumption on the socket,
+awaits the real asynchronous peer/CRL policy, consumes one exact authorized
+response, and waits for physical session closure. No Agent, supplied TLS session
+or connection pool can substitute an existing authenticated connection.
+
+These samples include profile material preparation, handshake, peer-policy I/O,
+HTTP/2 exchange and cleanup; they do not isolate native TLS handshake latency.
+The parent independently requires 484 distinct non-resumed sessions and exactly
+484 requests and successful peer checks per role, including four untimed
+verification exchanges. Each session accepts exactly one application stream.
+Completion requires no remaining parent sessions or provider work. Worker
+results are private and bounded at120, with an explicit128 retention cap; all
+responses must retain the original successful peer-policy and exchange evidence.
+
+Worker CPU/RSS excludes the parent HTTP/2 server, PKI provider and its OpenSSL
+descendants. Those parent resource observations remain explicitly unknown;
+there is no complete process-tree resource parity claim. The existing30-second
+profile controller limit remains unchanged. Reports retain `releaseGate: false`;
+calibrated budgets, full matched-load campaigns, five repetitions and the
+one-hour soak remain separate work.
