@@ -90,6 +90,7 @@ export function copyData<T>(input: T, seen = new Set<unknown>()): T {
     return input;
   }
   if (
+    types.isProxy(input) ||
     seen.size >= 64 ||
     seen.has(input) ||
     (!Array.isArray(input) &&

@@ -4,6 +4,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import {
   context as globalContext,
   trace,
@@ -93,6 +94,19 @@ export interface ManagedTelemetry extends Telemetry {
   native(): Readonly<{ traces: TracerProvider | undefined; metrics: MeterProvider | undefined }>;
 }
 const invalid = (message: string) => new KitError({ code: 'EK_CONFIG_INVALID', message });
+
+/** Read only an own data field; unrelated carrier fields never need inspection. */
+function ownField<T>(input: unknown, name: string): T | undefined {
+  if (!input || typeof input !== 'object' || types.isProxy(input) || Array.isArray(input))
+    throw invalid('Telemetry input must be a plain record');
+  const prototype = Object.getPrototypeOf(input);
+  if (prototype !== Object.prototype && prototype !== null)
+    throw invalid('Telemetry input must be a plain record');
+  const descriptor = Object.getOwnPropertyDescriptor(input, name);
+  if (descriptor && !('value' in descriptor))
+    throw invalid('Telemetry input must use data properties');
+  return descriptor?.value as T | undefined;
+}
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 const namePattern = /^[a-zA-Z][a-zA-Z0-9_.-]{0,127}(?![\s\S])/;
 const labels = new Set([
@@ -639,21 +653,23 @@ export const DURATION_BUCKETS_SECONDS: readonly number[] = Object.freeze([
 
 /** EK-OTEL-001: bounded SDK metrics and sampled spans with instance-local async context. */
 export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
-  const mode = input?.mode ?? 'standard';
-  const ratio = input?.samplingRatio ?? (mode === 'detailed' ? 1 : mode === 'standard' ? 0.1 : 0);
-  const timeout = input?.exportTimeoutMs ?? 5000,
-    interval = input?.exportIntervalMs ?? 10_000;
-  const queueCapacity = input?.spanQueueCapacity ?? 2048,
-    maxActive = input?.maxActiveSpans ?? 2048;
-  const maxInstruments = input?.maxInstruments ?? 64,
-    maxSeries = input?.maxSeriesPerInstrument ?? 128;
+  const options = freezeData(copyData(input));
+  const mode = options?.mode ?? 'standard';
+  const ratio = options?.samplingRatio ?? (mode === 'detailed' ? 1 : mode === 'standard' ? 0.1 : 0);
+  const timeout = options?.exportTimeoutMs ?? 5000,
+    interval = options?.exportIntervalMs ?? 10_000;
+  const queueCapacity = options?.spanQueueCapacity ?? 2048,
+    maxActive = options?.maxActiveSpans ?? 2048;
+  const maxInstruments = options?.maxInstruments ?? 64,
+    maxSeries = options?.maxSeriesPerInstrument ?? 128;
   if (
-    !input?.service ||
-    typeof input.service.name !== 'string' ||
-    !/^[a-z][a-z0-9-]{0,62}(?![\s\S])/.test(input.service.name) ||
-    typeof input.service.version !== 'string' ||
-    !new RegExp(SEMVER_PATTERN).test(input.service.version) ||
-    !['development', 'test', 'production'].includes(input.service.environment) ||
+    Array.isArray(options) ||
+    !options?.service ||
+    typeof options.service.name !== 'string' ||
+    !/^[a-z][a-z0-9-]{0,62}(?![\s\S])/.test(options.service.name) ||
+    typeof options.service.version !== 'string' ||
+    !new RegExp(SEMVER_PATTERN).test(options.service.version) ||
+    !['development', 'test', 'production'].includes(options.service.environment) ||
     !['off', 'minimal', 'standard', 'detailed'].includes(mode) ||
     !Number.isFinite(ratio) ||
     ratio < 0 ||
@@ -671,10 +687,10 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     maxInstruments > 1024 ||
     !positive(maxSeries) ||
     maxSeries > 4096 ||
-    (input.allowInsecureLoopback !== undefined && typeof input.allowInsecureLoopback !== 'boolean')
+    (options.allowInsecureLoopback !== undefined &&
+      typeof options.allowInsecureLoopback !== 'boolean')
   )
     throw invalid('Invalid telemetry policy');
-  const options = freezeData(copyData(input));
   const scalar = (value: unknown, key: string): value is TelemetryAttributeValue =>
     typeof value === 'boolean' ||
     (typeof value === 'number' && Number.isFinite(value)) ||
@@ -880,7 +896,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     values: TelemetryAttributes = {},
     privateRouting = false,
   ): Record<string, TelemetryAttributeValue> => {
-    if (!values || typeof values !== 'object' || Array.isArray(values))
+    if (!values || typeof values !== 'object' || types.isProxy(values) || Array.isArray(values))
       throw invalid('Telemetry labels must be a record');
     const result = copyData(values),
       keys = Object.keys(result);
@@ -997,7 +1013,10 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     if (!tracer) return work();
     if (typeof name !== 'string' || !namePattern.test(name))
       throw invalid('Invalid telemetry operation name');
-    const fields = attrs(parameters.attributes, name === 'tenant.routing.operation');
+    const fields = attrs(
+      ownField<TelemetryAttributes>(parameters, 'attributes'),
+      name === 'tenant.routing.operation',
+    );
     if (active.size >= maxActive) {
       counters.droppedSpans++;
       return work();
@@ -1040,7 +1059,7 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
       if (mode === 'off') return work();
       if (typeof name !== 'string' || !namePattern.test(name))
         throw invalid('Invalid telemetry operation name');
-      const fields = attrs(parameters.attributes);
+      const fields = attrs(ownField<TelemetryAttributes>(parameters, 'attributes'));
       if (!operations.has(name) && operations.size < maxSeries) operations.add(name);
       const began = performance.now();
       try {
@@ -1093,9 +1112,13 @@ export function createTelemetry(input: TelemetryOptions): ManagedTelemetry {
     },
     withRemoteContext(headers, work) {
       open();
-      if (!headers || typeof headers !== 'object' || Array.isArray(headers))
-        throw invalid('Trace headers must be a record');
-      const carrier = { traceparent: headers.traceparent, tracestate: headers.tracestate };
+      const traceparent = ownField<unknown>(headers, 'traceparent'),
+        tracestate = ownField<unknown>(headers, 'tracestate');
+      if (
+        [traceparent, tracestate].some((value) => value !== undefined && typeof value !== 'string')
+      )
+        throw invalid('Trace context fields must be strings');
+      const carrier = { traceparent, tracestate };
       if (typeof work !== 'function') throw invalid('Trace context work must be a function');
       // Baggage and caller identity headers are deliberately absent from the carrier.
       return storage.run(propagator.extract(ROOT_CONTEXT, carrier, defaultTextMapGetter), work);
