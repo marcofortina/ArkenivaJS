@@ -100,6 +100,9 @@ namespace prefixes, native writer roundtrips and actual SDK privacy.
 The [JSON workflow verification](json.md) checks native schemas, actual declarative
 mapping semantics, deterministic serialization and missing/null distinctions.
 
+The [SOAP HTTPS verification](soap.md) checks actual native WSDL interoperability,
+server-observed calls, explicit TLS trust and real SDK privacy.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 

@@ -2501,6 +2501,9 @@ importers:
       '@arkenivajs/sftp':
         specifier: workspace:*
         version: link:../../packages/sftp
+      '@arkenivajs/soap':
+        specifier: workspace:*
+        version: link:../../packages/soap
       '@arkenivajs/socket':
         specifier: workspace:*
         version: link:../../packages/socket
@@ -2540,6 +2543,9 @@ importers:
       argon2:
         specifier: 0.45.1
         version: 0.45.1
+      axios:
+        specifier: 1.20.0
+        version: 1.20.0(debug@4.4.3)
       bwip-js:
         specifier: 4.11.4
         version: 4.11.4
@@ -2627,6 +2633,9 @@ importers:
       smtp-server:
         specifier: 3.21.1
         version: 3.21.1
+      soap:
+        specifier: 1.14.0
+        version: 1.14.0(patch_hash=0140406b1f7dec78ea76acc1bb2e93c9ddd0fa5e3f2905bcdd597e137a57dcf5)
       ssh2-sftp-client:
         specifier: 12.1.1
         version: 12.1.1
