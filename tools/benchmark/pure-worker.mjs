@@ -24,7 +24,7 @@ export function runPureWorker(adapter) {
 async function run({ mode, fixture, measure, endpoint }, adapter) {
   assert.ok(['BASELINE', 'FRAMEWORK', 'STANDARD', 'DETAILED'].includes(mode));
   assert.equal(typeof measure, 'boolean');
-  let app, telemetry, service;
+  let app, telemetry, service, disposeFramework;
   const sink = new Writable({
     write(_chunk, _encoding, done) {
       done();
@@ -44,15 +44,27 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
     else {
       const { createApplication } = await import('@arkenivajs/core'),
         { loggingPlugin } = await import('@arkenivajs/logging'),
-        { plugin, key, loggingOptions } = await adapter.framework(fixture);
+        {
+          plugin,
+          key,
+          loggingOptions,
+          plugins: dependencies = [],
+          http,
+          configure,
+          dispose,
+          telemetryOptions,
+        } = await adapter.framework(fixture, mode);
+      disposeFramework = dispose;
       const plugins = [
         loggingPlugin({ destination: sink, ...loggingOptions }),
+        ...dependencies,
         ...(plugin ? [plugin] : []),
       ];
       if (mode === 'STANDARD' || mode === 'DETAILED') {
         const { telemetryPlugin } = await import('@arkenivajs/telemetry');
         plugins.push(
           telemetryPlugin({
+            ...telemetryOptions,
             endpoint,
             allowInsecureLoopback: true,
             exportIntervalMs: 60000,
@@ -62,11 +74,13 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
       }
       app = await createApplication({
         service: { name: adapter.name + '-comparison', version: '1.0.0', environment: 'test' },
+        ...(http ? { http } : {}),
         ...(mode === 'STANDARD' || mode === 'DETAILED'
           ? { telemetry: { mode: mode.toLowerCase(), samplingRatio: 1 } }
           : {}),
         plugins,
       });
+      await configure?.(app);
       await app.start();
       service = app.resolve(key);
       if (mode === 'STANDARD' || mode === 'DETAILED') telemetry = app.telemetry;
@@ -174,6 +188,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
     };
   } finally {
     await app?.stop();
+    await disposeFramework?.();
     if (mode === 'BASELINE') await adapter.close?.(service);
     sink.destroy();
   }

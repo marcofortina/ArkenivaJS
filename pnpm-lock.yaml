@@ -2447,6 +2447,9 @@ importers:
       '@arkenivajs/security-crypto':
         specifier: workspace:*
         version: link:../../packages/security-crypto
+      '@arkenivajs/security-http':
+        specifier: workspace:*
+        version: link:../../packages/security-http
       '@arkenivajs/security-password':
         specifier: workspace:*
         version: link:../../packages/security-password
@@ -2462,6 +2465,9 @@ importers:
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
+      '@fastify/helmet':
+        specifier: 13.2.0
+        version: 13.2.0
       '@js-temporal/polyfill':
         specifier: 0.5.1
         version: 0.5.1
