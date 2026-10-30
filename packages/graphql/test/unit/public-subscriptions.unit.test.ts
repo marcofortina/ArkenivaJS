@@ -7,12 +7,14 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
 import { COMPONENTS, KitError } from '@arkenivajs/core';
-import type { AuthService, VerifiedTenantContext } from '@arkenivajs/core';
+import type { AuthService, Identity, MfaAssurance, VerifiedTenantContext } from '@arkenivajs/core';
 import { realtimePlugin } from '@arkenivajs/realtime';
 import type { GraphqlPluginSettings, GraphqlSubscriptionPubSub } from '../../dist/index.js';
 import { fixture, tlsFiles, send } from '../fixture.js';
 
-function settings(options: { allowGet?: boolean; deadlineMs?: number } = {}) {
+function settings(
+  options: { allowGet?: boolean; deadlineMs?: number; assurance?: MfaAssurance } = {},
+) {
   let authority: AuthService | undefined,
     effects = 0,
     acquired = 0,
@@ -112,7 +114,11 @@ function settings(options: { allowGet?: boolean; deadlineMs?: number } = {}) {
       },
     },
     security: {
-      auth: { required: true, scopes: ['graphql:read'] },
+      auth: {
+        required: true,
+        scopes: ['graphql:read'],
+        ...(options.assurance ? { assurance: options.assurance } : {}),
+      },
       authorizeField: ({ field }) => field.fieldName !== 'private',
       ...(options.allowGet ? { allowGetQueries: true } : {}),
       ...(options.deadlineMs ? { limits: { maxOperationMs: options.deadlineMs } } : {}),
@@ -144,6 +150,8 @@ async function runtime(
     http2?: boolean;
     realtimeOrder?: 'before' | 'after';
     deadlineMs?: number;
+    assurance?: MfaAssurance;
+    assuranceResolver?: (identity: Identity) => MfaAssurance;
   } = {},
 ) {
   const tls = await tlsFiles(),
@@ -175,6 +183,7 @@ async function runtime(
       : undefined;
     const f = await fixture(config.value, {
       tls: tls.tls,
+      ...(options.assuranceResolver ? { assuranceResolver: options.assuranceResolver } : {}),
       ...(options.http2 ? { http2: true } : {}),
       ...(realtime
         ? {
@@ -249,6 +258,92 @@ const start = (socket: WebSocket, id: string) =>
       id,
       payload: { query: 'subscription { notice(tenantHint:"spoofed") }' },
     }),
+  );
+
+for (const failure of ['downgrade', 'provider-error'] as const)
+  test(
+    `Public WSS enforces trusted MFA assurance at admission and after ${failure} without affecting another tenant`,
+    { timeout: 10000 },
+    async () => {
+      let strength: MfaAssurance = 'single-factor',
+        unavailable = false;
+      const r = await runtime({
+        assurance: 'mfa',
+        deadlineMs: 500,
+        assuranceResolver(identity) {
+          // Assurance belongs to trusted issuer policy, never a client-provided MFA claim.
+          if (identity.claims.tenant_id === 'tenant-b') return 'phishing-resistant';
+          if (unavailable) throw new Error('Private assurance authority failure detail');
+          return strength;
+        },
+      });
+      const collect = (socket: WebSocket) => {
+        const values: unknown[] = [];
+        socket.on('message', (input) => {
+          const frame = JSON.parse(String(input));
+          if (frame.type === 'ping') socket.send('{"type":"pong"}');
+          else if (frame.type === 'next') values.push(frame);
+        });
+        return values;
+      };
+      try {
+        await assert.rejects(r.connect());
+        await until(() => r.f.service.stats().activeOperations === 0);
+        assert.equal(r.config.acquired(), 0);
+        strength = 'mfa';
+        const first = await r.connect(),
+          second = await r.connect('tenant-b');
+        const a = collect(first),
+          b = collect(second);
+        start(first, 'a');
+        start(second, 'b');
+        await until(() => r.config.acquired() === 2);
+        await r.publish('tenant-a', 'authorized');
+        await until(() => a.length === 1);
+        assert.deepEqual(a, [
+          { type: 'next', id: 'a', payload: { data: { notice: 'authorized' } } },
+        ]);
+        assert.deepEqual(b, []);
+        const principal = r.auth.tenantFrom(await r.auth.verifyBearer(await r.f.token()));
+        const closed = once(first, 'close');
+        if (failure === 'downgrade') strength = 'single-factor';
+        else unavailable = true;
+        // An already authenticated publisher cannot bypass the subscriber's fresh assurance check.
+        await r.config.pubsub.publish('notices', 'must-not-be-delivered', principal);
+        await closed;
+        await until(
+          () => r.config.retired() === 1 && r.f.service.stats().activeSubscriptions === 1,
+        );
+        const identity = await r.auth.verifyBearer(await r.f.token('tenant-b'));
+        const tenant = r.auth.tenantFrom(identity);
+        await r.config.pubsub.publish('notices', 'other-tenant', tenant);
+        await until(() => b.length === 1);
+        assert.deepEqual(b, [
+          { type: 'next', id: 'b', payload: { data: { notice: 'other-tenant' } } },
+        ]);
+        assert.equal(a.length, 1);
+        assert.equal(r.f.service.health().subscriptionsReady, true);
+        assert.equal(r.config.acquired(), 2);
+        unavailable = false;
+        strength = 'mfa';
+        const recovered = await r.connect();
+        const recoveredFrames = collect(recovered);
+        start(recovered, 'recovered');
+        await until(() => r.config.acquired() === 3);
+        await r.publish('tenant-a', 'recovered');
+        await until(() => recoveredFrames.length === 1);
+        assert.deepEqual(recoveredFrames, [
+          { type: 'next', id: 'recovered', payload: { data: { notice: 'recovered' } } },
+        ]);
+        assert.equal(a.length, 1);
+        assert.equal(b.length, 1);
+        assert.doesNotMatch(r.f.logs(), /Bearer |Private assurance authority failure detail/);
+      } finally {
+        await r.close();
+      }
+      assert.equal(r.config.retired(), r.config.acquired());
+      assert.equal(r.f.service.stats().activeSubscriptions, 0);
+    },
   );
 
 test(

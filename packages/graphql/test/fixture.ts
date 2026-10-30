@@ -12,7 +12,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { COMPONENTS, createApplication } from '@arkenivajs/core';
-import type { ApplicationOptions, Plugin, ServerTlsFiles } from '@arkenivajs/core';
+import type {
+  ApplicationOptions,
+  Identity,
+  MfaAssurance,
+  Plugin,
+  ServerTlsFiles,
+} from '@arkenivajs/core';
 import { apiPlugin } from '@arkenivajs/api';
 import type { ManagedApiServer } from '@arkenivajs/api';
 import { securityPlugin } from '@arkenivajs/security';
@@ -72,6 +78,7 @@ export async function fixture(
     telemetry?: ApplicationOptions['telemetry'];
     metering?: ApplicationOptions['metering'];
     authorizeTenant?: (tenantId: string) => boolean;
+    assuranceResolver?: (identity: Identity) => MfaAssurance;
     graphqlDependencies?: readonly string[];
     issuer?: string;
     authority?: { readonly host: string; readonly tls: ServerTlsFiles };
@@ -168,6 +175,9 @@ export async function fixture(
         ...(authenticated
           ? [
               securityPlugin({
+                ...(options.assuranceResolver
+                  ? { assuranceResolver: options.assuranceResolver }
+                  : {}),
                 ...(options.environment === 'production' ? {} : { allowInsecureLoopback: true }),
                 ...(options.authorizeTenant
                   ? { authorizeTenant: (_identity, tenantId) => options.authorizeTenant!(tenantId) }

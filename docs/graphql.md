@@ -95,6 +95,13 @@ Transport health does not certify broker connectivity; inspect its owning
 plugin separately. Delivery is best effort without separately configured backend
 durability, and an uncertain publication must not be replayed automatically.
 
+For MFA-protected operations, configure `security.auth.assurance` and a trusted
+`assuranceResolver` on the existing security plugin. A signed token alone does
+not establish the required assurance, and client-provided MFA declarations cannot
+replace that policy. WSS checks assurance at admission, before event delivery and
+during periodic revalidation. A downgrade or authority failure closes the affected
+subscription and retires its source; another authorized tenant remains usable.
+
 The [executable subscription example](../examples/graphql/README.md) demonstrates
 the authenticated wire exchange, mutation-triggered events, tenant isolation and
 iterator retirement through independently installed public package artifacts.
