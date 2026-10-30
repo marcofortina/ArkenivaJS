@@ -2486,6 +2486,9 @@ importers:
       '@arkenivajs/security-ldap':
         specifier: workspace:*
         version: link:../../packages/security-ldap
+      '@arkenivajs/security-magiclink':
+        specifier: workspace:*
+        version: link:../../packages/security-magiclink
       '@arkenivajs/security-mtls':
         specifier: workspace:*
         version: link:../../packages/security-mtls
