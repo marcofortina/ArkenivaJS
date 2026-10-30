@@ -2435,6 +2435,9 @@ importers:
       '@arkenivajs/security-crypto':
         specifier: workspace:*
         version: link:../../packages/security-crypto
+      '@arkenivajs/security-password':
+        specifier: workspace:*
+        version: link:../../packages/security-password
       '@arkenivajs/security-totp':
         specifier: workspace:*
         version: link:../../packages/security-totp
@@ -2462,6 +2465,9 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+      argon2:
+        specifier: 0.45.1
+        version: 0.45.1
       bwip-js:
         specifier: 4.11.4
         version: 4.11.4
