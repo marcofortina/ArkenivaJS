@@ -106,7 +106,10 @@ returns 403. A full operation rejects immediately with 503, without a queue.
 An instance also bounds outstanding request/discovery scopes to 1024, including
 pending authentication work, to prevent unbounded retained contexts.
 Concurrency counts the same logical operation across tenants in one instance;
-it is not a distributed quota. Timed-out or disconnected work retains its permit
+other logical operations and independent instances retain their own permits.
+Integration checks compare both applications sharing a process and independent
+Node processes; this local admission policy is not a distributed quota.
+Timed-out or disconnected work retains its permit
 until the actual handler promise settles. Handlers must observe `context.signal`.
 
 Input is finite strict UTF-8 JSON with duplicate and unsafe-property rejection.
