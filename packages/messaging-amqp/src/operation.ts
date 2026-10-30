@@ -3,6 +3,8 @@
 
 import { performance } from 'node:perf_hooks';
 import { KitError } from '@arkenivajs/core';
+import { types } from 'node:util';
+import { captureAbortSignal } from '@arkenivajs/core/support';
 import type { ErrorCode, OperationOptions } from '@arkenivajs/core';
 import { fields, integer, failure } from './validation.js';
 
@@ -10,24 +12,11 @@ export const defaultTimeout = 10000,
   maximumTimeout = 30000;
 export function operation(input: OperationOptions | undefined) {
   try {
+    if (types.isProxy(input)) throw failure();
     const value = fields(input === undefined ? {} : input, ['signal', 'timeoutMs']);
-    if (value.signal !== undefined) {
-      Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!.call(value.signal);
-      if (!(value.signal instanceof AbortSignal)) throw failure();
-      let current: object | null = value.signal;
-      while (current !== AbortSignal.prototype) {
-        if (
-          !current ||
-          ['aborted', 'reason', 'addEventListener', 'removeEventListener'].some((name) =>
-            Object.hasOwn(current!, name),
-          )
-        )
-          throw failure();
-        current = Object.getPrototypeOf(current) as object | null;
-      }
-    }
+    const signal = value.signal === undefined ? undefined : captureAbortSignal(value.signal);
     return {
-      signal: value.signal as AbortSignal | undefined,
+      signal,
       timeoutMs: integer(value.timeoutMs ?? defaultTimeout, maximumTimeout),
     };
   } catch {

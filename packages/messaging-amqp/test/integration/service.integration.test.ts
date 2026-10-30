@@ -77,6 +77,24 @@ function deferred<T>() {
     },
   };
 }
+test('Actual RabbitMQ health checks retain captured cancellation cleanup after caller hook replacement', async () => {
+  const f = await fixture(),
+    controller = new AbortController();
+  let effects = 0;
+  try {
+    const pending = f.service.health('events', { signal: controller.signal });
+    Object.defineProperty(controller.signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+    assert.equal((await pending).available, true);
+    assert.equal(effects, 0);
+    assert.equal((await f.service.health('events')).available, true);
+  } finally {
+    await f.app.stop();
+  }
+});
 test('The public AMQPS plugin confirms actual publications and delivers lossless headers with single-use manual acknowledgments', async () => {
   const f = await fixture(),
     delivery = deferred<AmqpDelivery>();
