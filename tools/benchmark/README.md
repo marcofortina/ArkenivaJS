@@ -13,6 +13,9 @@ four isolated profiles before any optional exploratory timing is requested.
 The [validation comparison](validation.md) checks a fixed email/URL/IP/UUID/schema
 corpus against the pinned native libraries through the same isolated profiles.
 
+The [SMTP verification](mail.md) checks actual STARTTLS authentication and received
+MIME attachments through an owned temporary server in four isolated profiles.
+
 The [CSV verification](csv.md) exchanges native/public CSV and TSV streams,
 including one-shot fragmented UTF-8 sources and exact text fields.
 
