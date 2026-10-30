@@ -5,6 +5,10 @@ SQL operation budgets. It shares the 15-second default, observes late native
 settlements without replay, and removes listeners/timers on close. Native adapters
 remain responsible for discarding a connection when the deadline cancels its I/O.
 The helper creates resources only when constructed, never at module import.
+Timeout and cancellation controls require plain data properties. Request and
+lifetime signals are captured natively before attaching listeners or timers;
+accessors, proxies, shadowed hooks and prototype traversal beyond 64 levels fail
+with `EK_CONFIG_INVALID`. Later caller hook replacement cannot alter cleanup.
 
 Portable SQL contracts and a dialect-aware named binding compiler. This package
 does not import a native database client or create a connection pool.
