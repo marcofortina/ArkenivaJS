@@ -106,6 +106,38 @@ async function control(context: TestContext) {
   return client;
 }
 
+test('Real Redis preserves captured cancellation cleanup and rejects accessor controls before writes', async (context) => {
+  const f = await fixture(context),
+    controller = new AbortController(),
+    key = f.key('captured-cancellation');
+  let effects = 0;
+  const pending = f.provider.set(key, 'owned', { signal: controller.signal });
+  Object.defineProperty(controller.signal, 'removeEventListener', {
+    value() {
+      effects++;
+    },
+  });
+  assert.equal(await pending, true);
+  assert.equal(await f.provider.get(key), 'owned');
+  assert.equal(effects, 0);
+  const denied = f.key('denied-control');
+  await assert.rejects(
+    f.provider.set(
+      denied,
+      'never',
+      Object.defineProperty({}, 'signal', {
+        get() {
+          effects++;
+          return new AbortController().signal;
+        },
+      }),
+    ),
+    code('EK_CONFIG_INVALID'),
+  );
+  assert.equal(await f.provider.get(denied), null);
+  assert.equal(effects, 0);
+});
+
 test(
   'Live Redis PubSub uses independent authenticated connections across applications and releases them at shutdown',
   { timeout: 30_000 },

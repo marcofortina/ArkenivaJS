@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Capture startup and command cancellation through native signals before admission; reject accessor/proxy operation controls without executing caller hooks.
 - Add an optional named Pub/Sub capability with dedicated scoped native
   subscribers, bounded callback queues, explicit failure handling and owned cleanup.
 

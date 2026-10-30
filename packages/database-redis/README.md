@@ -84,6 +84,10 @@ consumer processing.
 ## Deadlines, reconnect and shutdown
 
 Each call accepts a positive safe integer `timeoutMs` and an `AbortSignal`.
+Operation controls use plain data properties and captured native cancellation;
+accessors, proxy options/signals, shadowed signal hooks and prototype traversal
+beyond 64 levels fail before native command admission. Later caller hook changes
+cannot alter startup or command cleanup.
 The monotonic total deadline defaults to **15,000 ms**; socket connect timeout is
 5,000 ms. Portable pending attempts and the native command queue are bounded to 128. Overload and offline calls fail before submission. Native maintenance
 redirects and the offline queue are disabled.
