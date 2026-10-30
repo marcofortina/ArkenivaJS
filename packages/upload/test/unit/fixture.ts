@@ -57,11 +57,6 @@ async function attemptFixture(
   const address = issuer.address();
   if (!address || typeof address !== 'object') throw new Error('Fixture issuer is unavailable');
   const authority = `http://127.0.0.1:${address.port}`;
-  const reserve = createServer();
-  await new Promise<void>((resolve) => reserve.listen(0, '127.0.0.1', resolve));
-  const reserved = reserve.address();
-  await new Promise<void>((resolve) => reserve.close(() => resolve()));
-  if (!reserved || typeof reserved !== 'object') throw new Error('Fixture port is unavailable');
   let logs = '',
     calls = 0;
   const sink = new Writable({
@@ -74,7 +69,7 @@ async function attemptFixture(
     service: { name: 'upload-fixture', version: '1.0.0', environment: 'test' },
     http: {
       host: '127.0.0.1',
-      port: reserved.port,
+      port: 0,
       requestTimeoutMs: timeoutMs,
       ...(transport ? { protocol: 'https' as const, ...transport } : {}),
     },
