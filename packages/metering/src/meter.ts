@@ -4,6 +4,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   KitError,
@@ -134,18 +135,38 @@ const defaultDimensions = Object.freeze({
   'messaging.payload.bytes': 'bytes',
 } satisfies Record<string, UsageQuantity['unit']>);
 
+/** Resolve verifier metadata without invoking getters or proxy traps. */
+function verifierProperty(input: unknown, name: string): unknown {
+  if (!input || typeof input !== 'object' || types.isProxy(input))
+    throw invalid('Meter service and trusted tenant verifier are required');
+  let current: object | null = input;
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid('Invalid metering verifier metadata');
+    const field = Object.getOwnPropertyDescriptor(current, name);
+    if (field) {
+      if (!('value' in field)) throw invalid('Invalid metering verifier metadata');
+      return field.value;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  if (current) throw invalid('Invalid metering verifier metadata');
+  return undefined;
+}
+
+/** Retain the original application-owned verifier and receiver for the meter lifetime. */
+function captureTenantVerifier(input: unknown) {
+  const auth = verifierProperty(input, 'auth'),
+    callback = verifierProperty(auth, 'isVerifiedTenant');
+  if (typeof callback !== 'function' || types.isProxy(callback))
+    throw invalid('Meter service and trusted tenant verifier are required');
+  return (value: unknown): unknown => Reflect.apply(callback, auth, [value]);
+}
+
 /** EK-METER-001: independent immutable events, verified tenant provenance and bounded asynchronous export. */
 export function createMeter(input: MeterOptions): ManagedUsageMeter {
-  if (
-    !input ||
-    typeof input !== 'object' ||
-    !input.service ||
-    !input.auth ||
-    typeof input.auth.isVerifiedTenant !== 'function'
-  )
-    throw invalid('Meter service and trusted tenant verifier are required');
+  const verifyTenant = captureTenantVerifier(input);
+  if (!input.service) throw invalid('Meter service and trusted tenant verifier are required');
   const options = { ...input, service: freezeData(copyData(input.service)) };
-  const verifyTenant = options.auth.isVerifiedTenant.bind(options.auth);
   const service = options.service;
   const capacity = options.queueCapacity ?? DEFAULT_METER_QUEUE_CAPACITY;
   const byteCapacity = options.queueByteCapacity ?? 16_777_216;
@@ -348,7 +369,8 @@ export function createMeter(input: MeterOptions): ManagedUsageMeter {
       let trusted = false;
       try {
         const decision: unknown = verifyTenant(input.tenant);
-        if (decision instanceof Promise) void decision.catch(() => undefined);
+        if (types.isPromise(decision))
+          void Reflect.apply(Promise.prototype.then, decision, [undefined, () => undefined]);
         trusted = decision === true;
       } catch {
         /* Verifier failure cannot create a trusted event. */
