@@ -31,6 +31,57 @@ function source(
 const denied = (error: unknown) =>
   error instanceof KitError && error.code === 'EK_GQL_SUBSCRIPTION';
 
+for (const phase of ['next', 'return'] as const)
+  test(`Executable or inherited ${phase} completion fields cannot authorize a subscription event or retirement`, async () => {
+    for (const mode of ['accessor', 'proxy', 'inherited']) {
+      let reads = 0;
+      const value = { done: phase === 'return', value: 'untrusted-event' };
+      const receipt =
+        mode === 'accessor'
+          ? Object.defineProperty({ value: value.value }, 'done', {
+              enumerable: true,
+              get() {
+                reads++;
+                return value.done;
+              },
+            })
+          : mode === 'proxy'
+            ? new Proxy(value, {
+                get(target, key, receiver) {
+                  if (key === 'done') reads++;
+                  return Reflect.get(target, key, receiver);
+                },
+              })
+            : (Object.create(value) as unknown);
+      const stream = new SubscriptionStream(
+        () =>
+          source(
+            async () =>
+              (phase === 'next'
+                ? receipt
+                : { done: false, value: 'first' }) as IteratorResult<unknown>,
+            async () =>
+              (phase === 'return'
+                ? receipt
+                : { done: true, value: undefined }) as IteratorResult<unknown>,
+          ),
+        new AbortController().signal,
+      );
+      try {
+        if (phase === 'next') await assert.rejects(stream.next(), denied);
+        else {
+          await stream.open();
+          await stream.return();
+        }
+        assert.equal(stream.hasFailure(), true);
+        assert.equal(stream.retirementFailed(), phase === 'return');
+        assert.equal(reads, 0);
+      } finally {
+        await stream.return();
+      }
+    }
+  });
+
 test('Malformed provider completion flags cannot fabricate a valid subscription event or exhaustion', async () => {
   for (const done of [null, 0, 1, '', 'false', {}, []]) {
     let closes = 0;

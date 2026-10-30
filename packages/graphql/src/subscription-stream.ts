@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import { failure } from './policy.js';
+import { failure, record } from './policy.js';
 
 /** Native iterator.return() is not awaited by Mercurius; completion retains all physical work. */
 export class SubscriptionStream implements AsyncIterableIterator<unknown> {
@@ -94,14 +94,14 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
       if (this.stopped) return { value: undefined, done: true };
       const result = await this.watch(Promise.resolve().then(() => this.iterator!.next()));
       if (this.stopped) return { value: undefined, done: true };
-      if (!result || typeof result !== 'object') throw failure('EK_GQL_SUBSCRIPTION');
-      const done = result.done;
+      const completion = record(result, ['done', 'value']);
+      const done = completion.done;
       if (done !== undefined && typeof done !== 'boolean') throw failure('EK_GQL_SUBSCRIPTION');
       if (done) {
         this.stop();
         return { value: undefined, done: true };
       }
-      return { value: result.value, done: false };
+      return { value: completion.value, done: false };
     } catch {
       if (!this.stopped) this.failed = true;
       this.stop();
@@ -128,9 +128,8 @@ export class SubscriptionStream implements AsyncIterableIterator<unknown> {
     this.watch(
       Promise.resolve()
         .then(async () => {
-          const result = await this.iterator!.return!();
-          if (!result || typeof result !== 'object' || result.done !== true)
-            throw failure('EK_GQL_SUBSCRIPTION');
+          const result = record(await this.iterator!.return!(), ['done', 'value']);
+          if (result.done !== true) throw failure('EK_GQL_SUBSCRIPTION');
         })
         .then(
           () => undefined,
