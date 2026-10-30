@@ -2483,6 +2483,9 @@ importers:
       '@arkenivajs/sftp':
         specifier: workspace:*
         version: link:../../packages/sftp
+      '@arkenivajs/socket':
+        specifier: workspace:*
+        version: link:../../packages/socket
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
