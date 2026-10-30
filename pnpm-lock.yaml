@@ -2411,6 +2411,9 @@ importers:
       '@arkenivajs/data-identifiers':
         specifier: workspace:*
         version: link:../../packages/data-identifiers
+      '@arkenivajs/data-json':
+        specifier: workspace:*
+        version: link:../../packages/data-json
       '@arkenivajs/data-time':
         specifier: workspace:*
         version: link:../../packages/data-time
