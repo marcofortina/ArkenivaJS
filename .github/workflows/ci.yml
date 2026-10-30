@@ -234,8 +234,11 @@ jobs:
       - name: Create isolated keys, public host pins and remote directories
         run: python3 packages/sftp/test/fixtures/prepare.py --github-env "$GITHUB_ENV"
       - run: pnpm --filter '@arkenivajs/example-sftp...' build
+      - run: pnpm --filter '@arkenivajs/telemetry...' build
       - name: Verify host pinning, streaming, atomic rename and native ownership
         run: pnpm --filter @arkenivajs/sftp test:integration
+      - name: Verify four native SFTP/SSH profiles and exact remote cleanup
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:sftp
       - run: pnpm --filter @arkenivajs/example-sftp test:integration
       - name: Verify the public SSH consumer using packed artifacts
         run: pnpm test:packed:examples --integration sftp

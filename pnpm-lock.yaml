@@ -2480,6 +2480,9 @@ importers:
       '@arkenivajs/security-x509':
         specifier: workspace:*
         version: link:../../packages/security-x509
+      '@arkenivajs/sftp':
+        specifier: workspace:*
+        version: link:../../packages/sftp
       '@arkenivajs/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
@@ -2579,9 +2582,15 @@ importers:
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@22.20.5)
+      shell-quote:
+        specifier: 1.12.0
+        version: 1.12.0
       smtp-server:
         specifier: 3.21.1
         version: 3.21.1
+      ssh2-sftp-client:
+        specifier: 12.1.1
+        version: 12.1.1
       tinybench:
         specifier: 6.2.2
         version: 6.2.2
