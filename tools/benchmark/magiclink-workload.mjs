@@ -6,6 +6,10 @@ import { createHash } from 'node:crypto';
 
 const records = 'magiclink.records.v1',
   domain = 'arkenivajs.magiclink.verifier.v1';
+const sampling = new WeakMap();
+export const magiclinkIterations = 100;
+export const magiclinkWarmupIterations = 20;
+export const magiclinkMaximumRetainedResults = 128;
 export function magiclinkPorts(fixture) {
   const url = new URL(fixture.endpoint);
   assert.equal(url.protocol, 'http:');
@@ -155,6 +159,17 @@ export async function verifyMagiclink(service, fixture) {
   assert.equal(typeof result.subject.subject, 'string');
   assert.ok(Number.isFinite(Date.parse(result.verifiedAt)));
   await assert.rejects(service.consume(grant.token, context));
+  if (fixture.sampleIssues) {
+    assert.equal(sampling.has(service), false);
+    sampling.set(service, {
+      exchange,
+      profileId: grant.issueId,
+      results: [],
+      ids: new Set(),
+      active: false,
+      closed: false,
+    });
+  }
   return {
     actualConsumeVerified: true,
     concurrentWinnerCount: 1,
@@ -163,4 +178,75 @@ export async function verifyMagiclink(service, fixture) {
     getPrefetchRejected: true,
     wrongPurposeRejected: true,
   };
+}
+
+/** Shared public issuance is followed by the selected actual positive-corpus consumer. */
+export function magiclinkWorkload(service) {
+  const state = sampling.get(service);
+  assert.ok(state);
+  return {
+    async issueAndConsume() {
+      assert.equal(state.closed, false);
+      assert.equal(state.active, false);
+      assert.ok(state.results.length < magiclinkIterations + magiclinkWarmupIterations);
+      assert.ok(state.results.length < magiclinkMaximumRetainedResults);
+      state.active = true;
+      try {
+        const issued = await state.exchange('sampleIssue', [state.profileId]);
+        assert.equal(state.ids.has(issued.issueId), false);
+        state.ids.add(issued.issueId);
+        const result = await service.consume(issued.token, { method: 'POST', purpose: 'login' });
+        state.results.push({ result, expected: issued.subject });
+        return result;
+      } finally {
+        state.active = false;
+      }
+    },
+  };
+}
+
+export function completeMagiclink(service, { measure, records }) {
+  const state = sampling.get(service);
+  try {
+    if (!measure) {
+      assert.equal(state, undefined);
+      assert.deepEqual(records, []);
+      return { sampledLinks: 0, warmupLinks: 0, checkedConsumptions: 0 };
+    }
+    assert.ok(state);
+    assert.equal(state.active, false);
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'issueAndConsume');
+    assert.equal(record.sampleCount, magiclinkIterations);
+    assert.equal(record.warmupIterations, magiclinkWarmupIterations);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    assert.equal(state.results.length, record.sampleCount + record.warmupIterations);
+    assert.equal(state.ids.size, state.results.length);
+    for (const { result, expected } of state.results) {
+      assert.equal(result.intent, 'login');
+      assert.equal(result.subject.issuer, expected.issuer);
+      assert.equal(result.subject.subject, expected.subject);
+      assert.equal(result.subject.tenant?.tenantId ?? '', expected.tenantId);
+      assert.ok(Number.isFinite(Date.parse(result.verifiedAt)));
+    }
+    return {
+      sampledLinks: record.sampleCount,
+      warmupLinks: record.warmupIterations,
+      checkedConsumptions: state.results.length,
+      uniqueIssueIds: true,
+      verifiedOwnerAndIntent: true,
+      peakRetainedResults: state.results.length,
+      maximumRetainedResults: magiclinkMaximumRetainedResults,
+      activeCallbacks: 0,
+    };
+  } finally {
+    if (state) {
+      state.closed = true;
+      state.results.length = 0;
+      state.ids.clear();
+    }
+    sampling.delete(service);
+  }
 }
