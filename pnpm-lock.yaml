@@ -1706,6 +1706,9 @@ importers:
         specifier: 6.4.0
         version: 6.4.0
     devDependencies:
+      '@arkenivajs/example-postgres':
+        specifier: workspace:*
+        version: link:../../examples/postgres
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../logging

@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Declare the PostgreSQL example fixture as a development build dependency so native state tests compile from a clean checkout in workspace dependency order.
 - Enforce actual signed SPID issuer formats, Conditions boundaries, Advice exclusion
   and level-specific SessionIndex before canonical identity mapping.
 - Accept and retain an explicitly configured higher native SAML authentication level
