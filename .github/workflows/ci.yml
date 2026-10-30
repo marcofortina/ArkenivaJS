@@ -472,6 +472,8 @@ jobs:
       - name: Start restricted MySQL and its negative certificate endpoint
         run: docker compose -f packages/database-mysql/test/fixtures/compose.yaml up -d --wait --wait-timeout 180
       - run: pnpm coverage:mysql
+      - name: Verify four MySQL prepared-query profiles and actual TLS rejection
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:mysql-query
       - run: pnpm --filter @arkenivajs/example-mysql test:integration
       - run: pnpm test:packed:examples --integration mysql
       - if: always() && env.MYSQL_FIXTURE_DIRECTORY != ''
