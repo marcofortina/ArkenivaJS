@@ -136,9 +136,14 @@ test(
         assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
         if (row.quality) assert.ok(row.quality.metricSeries > 0);
       }
-      const unsupported = join(directory, 'unsupported');
+      const unsupported = join(directory, 'unsupported'),
+        env = { ...process.env };
+      delete env.ARKENIVA_SOAP_BENCHMARK_DISPOSABLE;
       await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
+        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], {
+          env,
+          timeout: 5000,
+        }),
       );
       await assert.rejects(access(unsupported));
     } finally {
