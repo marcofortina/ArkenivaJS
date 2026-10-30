@@ -91,6 +91,9 @@ returns, binary/header interoperability and dedicated topology retirement.
 The [MySQL query comparison](mysql-query.md) verifies actual prepared results,
 native bigint text precision, released ownership and bounded four-profile samples.
 
+The [MariaDB query comparison](mariadb-query.md) independently preserves native
+bigint results and verifies actual pool counters across the four profiles.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
