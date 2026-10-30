@@ -96,6 +96,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:upload
         env:
           ARKENIVA_UPLOAD_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify measured authenticated SSE and independent tenant-scoped streams
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:realtime
+        env:
+          ARKENIVA_REALTIME_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

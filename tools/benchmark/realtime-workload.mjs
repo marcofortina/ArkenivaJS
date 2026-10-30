@@ -12,6 +12,28 @@ import { SseCursorError } from '@arkenivajs/realtime';
 import { nativeAuth, authConnection } from './auth-workload.mjs';
 
 const data = ['Unicode: π 😀', 'first\nsecond\n', ''];
+let application;
+const sourceCounts = new WeakMap();
+export const realtimeIterations = 100;
+export const realtimeWarmupIterations = 20;
+export const realtimeMaximumRetainedReceipts = 128;
+export const rememberRealtimeOwner = (app) => {
+  application = app;
+};
+const counters = (fixture) => {
+  assert.equal(sourceCounts.has(fixture), false);
+  const value = { opened: 0, closed: 0, active: 0, events: 0 };
+  sourceCounts.set(fixture, value);
+  return value;
+};
+export const realtimeSourceStats = (fixture) => ({ ...sourceCounts.get(fixture) });
+function verifiedPublicTenant(tenant, fixture) {
+  assert.ok(application);
+  assert.equal(application.auth.isVerifiedTenant(tenant), true);
+  assert.equal(tenant.tenantId, fixture.tenant);
+  assert.equal(tenant.identity.issuer, fixture.issuer);
+  assert.equal(tenant.identity.subject, 'synthetic-user');
+}
 export const realtimePolicy = {
   requireAuth: true,
   maxConnectionsPerTenant: 2,
@@ -32,6 +54,7 @@ function cursorIndex(tenant, cursor) {
 
 export function realtimeSettings(fixture) {
   authConnection(fixture);
+  const counts = counters(fixture);
   return {
     routes: [
       { kind: 'websocket', path: '/socket', policyKey: 'owned', handlerKey: 'echo' },
@@ -40,6 +63,7 @@ export function realtimeSettings(fixture) {
     policies: { owned: realtimePolicy },
     websocketHandlers: {
       async echo(session) {
+        verifiedPublicTenant(session.authenticatedTenant, fixture);
         for await (const message of session.receive()) await session.send(message);
       },
     },
@@ -48,16 +72,27 @@ export function realtimeSettings(fixture) {
         usage: 'test-only',
         kind: 'durable',
         async validateCursor(context) {
+          verifiedPublicTenant(context.tenant, fixture);
           cursorIndex(context.tenant.tenantId, context.lastEventId);
         },
         async *subscribe(context) {
-          for (
-            let i = cursorIndex(context.tenant.tenantId, context.lastEventId);
-            i < data.length;
-            i++
-          ) {
-            if (context.signal.aborted) return;
-            yield { id: context.tenant.tenantId + '_' + (i + 1), type: 'update', data: data[i] };
+          verifiedPublicTenant(context.tenant, fixture);
+          counts.opened++;
+          counts.active++;
+          try {
+            for (
+              let i = cursorIndex(context.tenant.tenantId, context.lastEventId);
+              i < data.length;
+              i++
+            ) {
+              if (context.signal.aborted) return;
+              verifiedPublicTenant(context.tenant, fixture);
+              counts.events++;
+              yield { id: context.tenant.tenantId + '_' + (i + 1), type: 'update', data: data[i] };
+            }
+          } finally {
+            counts.active--;
+            counts.closed++;
           }
         },
       },
@@ -69,6 +104,7 @@ export function realtimeSettings(fixture) {
 /** Real JOSE admission precedes the native Fastify WebSocket and SSE route handlers. */
 export async function nativeRealtime(fixture) {
   const auth = nativeAuth(fixture),
+    counts = counters(fixture),
     server = Fastify({ logger: false });
   try {
     await server.register(websocket, { options: { maxPayload: realtimePolicy.maxMessageBytes } });
@@ -98,14 +134,23 @@ export async function nativeRealtime(fixture) {
           .code(request.headers['last-event-id'] === request.ownedTenant + '_expired' ? 410 : 409)
           .send({ error: 'Cursor rejected' });
       }
-      for (let i = index; i < data.length; i++)
-        await reply.sse.send({
-          id: request.ownedTenant + '_' + (i + 1),
-          event: 'update',
-          data: data[i],
-        });
-      reply.sse.close();
-      return reply;
+      counts.opened++;
+      counts.active++;
+      try {
+        for (let i = index; i < data.length; i++) {
+          await reply.sse.send({
+            id: request.ownedTenant + '_' + (i + 1),
+            event: 'update',
+            data: data[i],
+          });
+          counts.events++;
+        }
+        reply.sse.close();
+        return reply;
+      } finally {
+        counts.active--;
+        counts.closed++;
+      }
     });
     await server.listen({ host: '127.0.0.1', port: 0 });
     return {
@@ -124,6 +169,103 @@ function realtimeOrigin(service) {
   assert.equal(url.hostname, '127.0.0.1');
   assert.ok(url.port);
   return url.origin;
+}
+
+export function realtimeObserver(fixture) {
+  const url = new URL(fixture.observerUrl);
+  assert.equal(url.protocol, 'http:');
+  assert.equal(url.hostname, '127.0.0.1');
+  assert.ok(url.port && !url.username && !url.password && !url.search && !url.hash);
+  assert.equal(url.pathname, '/observe');
+  return async (method, args) => {
+    const response = await globalThis.fetch(url, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + fixture.observerKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ method, args }),
+      signal: AbortSignal.timeout(4000),
+      redirect: 'error',
+    });
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.ok(Buffer.byteLength(text) <= 4096);
+    return JSON.parse(text).result;
+  };
+}
+
+export async function prepareRealtimeSampling(service, fixture) {
+  const exchange = realtimeObserver(fixture),
+    grant = await exchange('register', [realtimeOrigin(service)]);
+  assert.equal(typeof grant.grantId, 'string');
+  return createRealtimeSampling(() => exchange('read', [grant.grantId]), grant.expectedUtf8Bytes);
+}
+
+/** Compact receipts follow independently observed finite HTTP responses, not retained event bodies. */
+export function createRealtimeSampling(exchange, expectedUtf8Bytes) {
+  assert.equal(typeof exchange, 'function');
+  assert.ok(
+    Number.isSafeInteger(expectedUtf8Bytes) && expectedUtf8Bytes > 0 && expectedUtf8Bytes <= 4096,
+  );
+  const receipts = [];
+  let active = false,
+    closed = false;
+  return {
+    workload: {
+      async finiteSseResponse() {
+        assert.equal(closed, false);
+        assert.equal(active, false);
+        assert.ok(receipts.length < realtimeIterations + realtimeWarmupIterations);
+        assert.ok(receipts.length < realtimeMaximumRetainedReceipts);
+        active = true;
+        try {
+          const receipt = await exchange();
+          receipts.push(receipt);
+          return receipt;
+        } finally {
+          active = false;
+        }
+      },
+    },
+    complete({ measure, records }) {
+      try {
+        assert.equal(active, false);
+        assert.equal(measure, true);
+        assert.equal(records.length, 1);
+        const record = records[0];
+        assert.equal(record.operation, 'finiteSseResponse');
+        assert.equal(record.sampleCount, realtimeIterations);
+        assert.equal(record.warmupIterations, realtimeWarmupIterations);
+        assert.equal(record.rawLatency.unit, 'milliseconds');
+        assert.equal(record.rawLatency.values.length, record.sampleCount);
+        assert.equal(receipts.length, record.sampleCount + record.warmupIterations);
+        for (const receipt of receipts)
+          assert.deepEqual(receipt, {
+            actualHttpStatus: 200,
+            actualEvents: 3,
+            actualUtf8Bytes: expectedUtf8Bytes,
+            tenantScopedFramesVerified: true,
+            physicalSocketClosed: true,
+          });
+        return {
+          sampledStreams: record.sampleCount,
+          warmupStreams: record.warmupIterations,
+          checkedStreams: receipts.length,
+          actualEvents: receipts.length * 3,
+          actualUtf8Bytes: receipts.length * expectedUtf8Bytes,
+          independentlyVerifiedFrames: true,
+          peakRetainedReceipts: receipts.length,
+          maximumRetainedReceipts: realtimeMaximumRetainedReceipts,
+          retainedEventBodies: 0,
+          activeCallbacks: 0,
+        };
+      } finally {
+        closed = true;
+        receipts.length = 0;
+      }
+    },
+  };
 }
 
 export function readSse(service, headers) {
