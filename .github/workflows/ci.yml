@@ -92,6 +92,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:xlsx
         env:
           ARKENIVA_XLSX_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify measured multipart streams and independent sink receipts
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:upload
+        env:
+          ARKENIVA_UPLOAD_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

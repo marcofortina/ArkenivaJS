@@ -101,6 +101,8 @@ public framework hardening on actual success and error responses in four profile
 
 The [multipart verification](upload.md) checks actual chunked streaming, ordered
 parts, consumed-file digests and SDK privacy in four isolated profiles.
+Its bounded stream smoke reconciles every file/field digest and body byte with
+actual HTTP, source and sink retirement, plus observed write/drain boundaries.
 
 The [Redis cache comparison](cache.md) verifies actual stored JSON, TTL, expiry,
 corrupt-state rejection and acknowledged roundtrips against the real TLS backend.
