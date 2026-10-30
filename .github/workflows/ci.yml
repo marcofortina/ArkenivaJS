@@ -60,6 +60,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:soap
         env:
           ARKENIVA_SOAP_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify measured gRPC unary calls and independent protobuf receipts
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:grpc
+        env:
+          ARKENIVA_GRPC_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

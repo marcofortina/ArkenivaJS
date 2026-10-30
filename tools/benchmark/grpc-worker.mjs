@@ -3,11 +3,24 @@
 
 import { grpcPlugin, GRPC_CAPABILITY } from '@arkenivajs/grpc';
 import { mtlsPlugin } from '@arkenivajs/security-mtls';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { runPureWorker } from './pure-worker.mjs';
-import { nativeGrpc, grpcSettings, grpcMtlsSettings, verifyGrpc } from './grpc-workload.mjs';
+import {
+  nativeGrpc,
+  grpcSettings,
+  grpcMtlsSettings,
+  verifyGrpc,
+  grpcWorkload,
+  grpcObservations,
+} from './grpc-workload.mjs';
 
-runPureWorker({
+export const grpcAdapter = {
   name: 'grpc',
+  asynchronous: true,
+  iterations: 100,
+  warmupIterations: 20,
+  retainRawSamples: true,
   native: nativeGrpc,
   framework: (fixture) => ({
     plugins: [mtlsPlugin(grpcMtlsSettings(fixture))],
@@ -15,5 +28,10 @@ runPureWorker({
     key: GRPC_CAPABILITY,
   }),
   verify: verifyGrpc,
+  workload: grpcWorkload,
+  complete: grpcObservations,
   close: (service) => service?.close(),
-});
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
+  runPureWorker(grpcAdapter);

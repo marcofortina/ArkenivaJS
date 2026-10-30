@@ -45,6 +45,7 @@
     "soap": "node soap.mjs",
     "test:integration:soap": "node --test test/soap-smoke.integration.test.mjs",
     "grpc": "node grpc.mjs",
+    "test:integration:grpc": "node --test test/grpc-smoke.integration.test.mjs",
     "graphql": "node graphql.mjs",
     "magiclink": "node magiclink.mjs",
     "auth": "node auth.mjs",
