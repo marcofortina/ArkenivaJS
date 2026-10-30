@@ -13,6 +13,9 @@ four isolated profiles before any optional exploratory timing is requested.
 The [validation comparison](validation.md) checks a fixed email/URL/IP/UUID/schema
 corpus against the pinned native libraries through the same isolated profiles.
 
+The [diagnostics comparison](diagnostics.md) checks actual process CPU bounds,
+memory, timestamps and interval event-loop semantics in four isolated profiles.
+
 The [DNS comparison](dns.md) exercises an actual owned loopback authority, every
 supported record family and completed asynchronous calls in four profiles.
 

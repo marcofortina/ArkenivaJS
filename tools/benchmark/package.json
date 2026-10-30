@@ -17,7 +17,8 @@
     "apikey": "node apikey.mjs",
     "identifiers": "node identifiers.mjs",
     "validation": "node validation.mjs",
-    "dns": "node dns.mjs"
+    "dns": "node dns.mjs",
+    "diagnostics": "node diagnostics.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
