@@ -97,3 +97,53 @@ test('Native oneof discriminators are checked and omitted from wire fields', () 
   assert.equal(Object.hasOwn(value, 'choice'), false);
   assert.throws(() => ownMessage(type, { first: 'selected', choice: 'second' }, 4096));
 });
+
+test('Native protobuf enum, double, typed map and required-field domains retain exact validated values', () => {
+  const schema = protobuf
+    .parse(
+      `syntax="proto3"; enum State { UNKNOWN=0; ACTIVE=1; } message Domains { State state=1; double weight=2; map<bool,string> flags=3; map<int64,string> largeKeys=4; repeated string names=5; }`,
+    )
+    .root.resolveAll()
+    .lookupType('Domains');
+  const input = {
+    state: 'ACTIVE',
+    weight: 1e100,
+    flags: { true: 'allowed', false: 'denied' },
+    largeKeys: { '9223372036854775807': 'maximum' },
+    names: ['exact'],
+  };
+  const owned = ownMessage(schema, input, 4096);
+  assert.equal(owned.state, 'ACTIVE');
+  assert.equal(owned.weight, 1e100);
+  assert.deepEqual({ ...(owned.flags as object) }, input.flags);
+  assert.deepEqual({ ...(owned.largeKeys as object) }, input.largeKeys);
+  assert.equal(
+    (
+      schema.decode(schema.encode(schema.fromObject(owned)).finish()) as unknown as {
+        state: number;
+      }
+    ).state,
+    1,
+  );
+  for (const state of [-2147483648, 2147483647, 2])
+    assert.equal(ownMessage(schema, { state }, 4096).state, state);
+  for (const bad of [
+    { state: 'MISSING' },
+    { state: 0.5 },
+    { state: 2147483648 },
+    { state: -2147483649 },
+    { state: true },
+    { weight: Infinity },
+    { weight: '1' },
+    { flags: { '0': 'invalid' } },
+    { largeKeys: { '9223372036854775808': 'invalid' } },
+    { names: new Array(1) },
+  ])
+    assert.throws(() => ownMessage(schema, bad, 4096), { code: 'EK_GRPC_STATUS' });
+  const required = protobuf
+    .parse('syntax="proto2"; message Required { required string code=1; }')
+    .root.resolveAll()
+    .lookupType('Required');
+  assert.equal(ownMessage(required, { code: 'present' }, 4096).code, 'present');
+  assert.throws(() => ownMessage(required, {}, 4096), { code: 'EK_GRPC_STATUS' });
+});

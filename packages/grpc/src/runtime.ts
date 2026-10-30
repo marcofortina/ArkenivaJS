@@ -257,7 +257,8 @@ export class Runtime implements GrpcService {
             if (!context.signal.aborted) call.end();
           };
           const active = task().catch(() =>
-            call.destroy(
+            call.emit(
+              'error',
               Object.assign(new Error('The gRPC stream failed'), { code: status.INTERNAL }),
             ),
           );

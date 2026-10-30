@@ -4,7 +4,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { Server, makeGenericClientConstructor, Client } from '@grpc/grpc-js';
+import {
+  Server,
+  makeGenericClientConstructor,
+  Client,
+  Metadata,
+  CallCredentials,
+} from '@grpc/grpc-js';
 import type { ServiceDefinition, ServerUnaryCall, sendUnaryData } from '@grpc/grpc-js';
 import { loadSync } from '@grpc/proto-loader';
 import { createApplication } from '@arkenivajs/core';
@@ -63,6 +69,7 @@ test(
         ) {
           assert.equal(call.getAuthContext().transportSecurityType, 'ssl');
           assert.ok(call.getAuthContext().sslPeerCertificate?.raw.length);
+          assert.equal(call.metadata.get('x-owned-fixture')[0], 'verified');
           received++;
           callback(null, call.request);
         },
@@ -82,10 +89,31 @@ test(
         },
       };
       const Native = makeGenericClientConstructor(service, 'fixture.Echo');
-      client = new Native(
-        'localhost:' + port,
-        await clientCredentials(guarded, pki.profiles.client!, 'localhost', { timeoutMs: 3000 }),
+      const transport = await clientCredentials(guarded, pki.profiles.client!, 'localhost', {
+        timeoutMs: 3000,
+      });
+      assert.equal(transport._isSecure(), true);
+      assert.equal(transport._equals(transport), true);
+      assert.equal(
+        transport._equals(
+          await clientCredentials(mtls, pki.profiles.client!, 'localhost', { timeoutMs: 3000 }),
+        ),
+        false,
       );
+      assert.equal(secured._equals(secured), true);
+      assert.equal(
+        secured._equals(await serverCredentials(mtls, pki.profiles.server!, { timeoutMs: 3000 })),
+        false,
+      );
+      const composed = transport.compose(
+        CallCredentials.createFromMetadataGenerator((_options, callback) => {
+          const headers = new Metadata();
+          headers.set('x-owned-fixture', 'verified');
+          callback(null, headers);
+        }),
+      );
+      assert.equal(composed._isSecure(), true);
+      client = new Native('localhost:' + port, composed);
       assert.ok(client instanceof Client);
       const active = client;
       const response = new Promise<{ value: string }>((resolve, reject) => {

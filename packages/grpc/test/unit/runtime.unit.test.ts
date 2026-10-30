@@ -339,3 +339,160 @@ test(
     }
   },
 );
+
+test(
+  'gRPC method selection, native deadlines and stream authentication failures cannot reach a handler',
+  { timeout: 30000 },
+  async () => {
+    const source = await fixture();
+    try {
+      const client = source.service.client('Echo'),
+        metadata = { authorization: await source.bearer() },
+        before = source.calls();
+      for (const method of ['Missing', 'Watch', 'Exchange', '__proto__'])
+        await assert.rejects(client.unary(method, {}, { metadata }), {
+          code: 'EK_UNSUPPORTED_CAPABILITY',
+        });
+      for (const method of ['Missing', 'Bounce', 'Exchange'])
+        await assert.rejects(
+          client.serverStream(method, {}, { metadata })[Symbol.asyncIterator]().next(),
+          { code: 'EK_UNSUPPORTED_CAPABILITY' },
+        );
+      const signal = AbortSignal.abort();
+      await assert.rejects(client.unary('Bounce', {}, { metadata, signal }), {
+        code: 'EK_ABORTED',
+      });
+      await assert.rejects(
+        client.serverStream('Watch', {}, { metadata, signal })[Symbol.asyncIterator]().next(),
+        { code: 'EK_ABORTED' },
+      );
+      assert.equal(source.service.client('Echo'), client);
+      assert.throws(() => source.service.client('Missing'), { code: 'EK_CONFIG_INVALID' });
+      const native = client.native() as Client,
+        codec = source.definition.Bounce!;
+      assert.throws(
+        () =>
+          native.makeUnaryRequest(
+            '/foreign.Service/Unknown',
+            codec.requestSerialize,
+            codec.responseDeserialize,
+            {},
+            new Metadata(),
+            { deadline: new Date(Date.now() + 1000) },
+            () => undefined,
+          ),
+        { code: 'EK_CONFIG_INVALID' },
+      );
+      assert.throws(
+        () =>
+          native.makeUnaryRequest(
+            codec.path,
+            codec.requestSerialize,
+            codec.responseDeserialize,
+            {},
+            new Metadata(),
+            { deadline: new Date(NaN) },
+            () => undefined,
+          ),
+        { code: 'EK_CONFIG_INVALID' },
+      );
+      const rejectedStream = client.serverStream(
+        'Watch',
+        {},
+        { metadata: { authorization: 'Bearer invalid' } },
+      );
+      await assert.rejects(rejectedStream[Symbol.asyncIterator]().next(), { code: 'EK_GRPC_AUTH' });
+      assert.equal(source.calls(), before);
+      const result = await client.unary<{ value: string }>(
+        'Bounce',
+        { value: 'healthy-after-denial' },
+        { metadata },
+      );
+      assert.equal(result.value, 'healthy-after-denial');
+    } finally {
+      await source.close();
+    }
+  },
+);
+
+test(
+  'Explicit cancellation reaches an actual unary handler and native stream abandonment leaves the channel reusable',
+  { timeout: 30000 },
+  async () => {
+    const source = await fixture();
+    try {
+      const client = source.service.client('Echo'),
+        metadata = { authorization: await source.bearer() },
+        controller = new AbortController();
+      const pending = client.unary(
+        'Bounce',
+        { value: 'hold' },
+        { metadata, signal: controller.signal },
+      );
+      await within(() => source.held(), { timeoutMs: 1000 });
+      controller.abort();
+      await assert.rejects(pending, { code: 'EK_ABORTED' });
+      await within(() => source.cancellation(), { timeoutMs: 1000 });
+      const iterator = client.serverStream('Watch', {}, { metadata })[Symbol.asyncIterator]();
+      assert.equal((await iterator.next()).done, false);
+      await iterator.return?.();
+      assert.equal(
+        (await client.unary<{ value: string }>('Bounce', { value: 'recovered' }, { metadata }))
+          .value,
+        'recovered',
+      );
+      await Promise.all([source.client.stop(), source.server.stop()]);
+      assert.throws(() => source.service.client('Echo'), { code: 'EK_RESOURCE_CLOSED' });
+      assert.throws(() => source.serverService.nativeServer(), { code: 'EK_RESOURCE_CLOSED' });
+      assert.throws(() => client.native(), { code: 'EK_RESOURCE_CLOSED' });
+      await assert.rejects(client.unary('Bounce', {}, { metadata }), {
+        code: 'EK_RESOURCE_CLOSED',
+      });
+      await assert.rejects(
+        client.serverStream('Watch', {}, { metadata })[Symbol.asyncIterator]().next(),
+        { code: 'EK_RESOURCE_CLOSED' },
+      );
+    } finally {
+      await source.close();
+    }
+  },
+);
+
+test(
+  'Actual gRPC handler failures and malformed stream output remain sanitized and release admission',
+  { timeout: 30000 },
+  async () => {
+    const source = await fixture();
+    try {
+      const client = source.service.client('Echo'),
+        metadata = { authorization: await source.bearer() };
+      for (const value of ['handler-throw', 'wrong-result'])
+        await assert.rejects(client.unary('Bounce', { value }, { metadata }), {
+          code: 'EK_GRPC_STATUS',
+        });
+      for (const value of ['wrong-stream', 'oversized-stream', 'stream-throw']) {
+        const values: unknown[] = [];
+        await assert.rejects(
+          async () => {
+            for await (const row of client.serverStream('Watch', { value }, { metadata }))
+              values.push(row);
+          },
+          { code: 'EK_GRPC_STATUS' },
+        );
+        assert.equal(values.length, value === 'stream-throw' ? 1 : 0);
+      }
+      assert.equal(
+        (
+          await client.unary<{ value: string }>(
+            'Bounce',
+            { value: 'healthy-after-handler-failures' },
+            { metadata },
+          )
+        ).value,
+        'healthy-after-handler-failures',
+      );
+    } finally {
+      await source.close();
+    }
+  },
+);
