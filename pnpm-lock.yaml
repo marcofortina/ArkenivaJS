@@ -2474,6 +2474,9 @@ importers:
       '@arkenivajs/upload':
         specifier: workspace:*
         version: link:../../packages/upload
+      '@arkenivajs/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/webhooks
       '@fastify/helmet':
         specifier: 13.2.0
         version: 13.2.0

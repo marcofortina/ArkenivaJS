@@ -55,6 +55,9 @@ parts, consumed-file digests and SDK privacy in four isolated profiles.
 The [Redis cache comparison](cache.md) verifies actual stored JSON, TTL, expiry,
 corrupt-state rejection and acknowledged roundtrips against the real TLS backend.
 
+The [webhook verification](webhooks.md) checks native signature interoperability,
+unchanged body bytes and one-use nonce claims against actual PostgreSQL state.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.
