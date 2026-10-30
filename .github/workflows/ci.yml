@@ -116,6 +116,11 @@ jobs:
         run: pnpm --filter "@arkenivajs/${{ matrix.package }}" typecheck && pnpm --filter "@arkenivajs/${{ matrix.package }}" lint
       - name: Verify native security adapters, adversarial input and bounded lifecycle
         run: pnpm --filter "@arkenivajs/${{ matrix.package }}" test
+      - name: Verify bidirectional 1 GiB proxy streaming with slow and aborted peers
+        if: matrix.package == 'proxy'
+        env:
+          ARKENIVA_PROXY_PRESSURE_DISPOSABLE: '1'
+        run: node --test packages/proxy/dist-test/integration/pressure.integration.test.js
 
   xml-integration:
     runs-on: ubuntu-24.04
