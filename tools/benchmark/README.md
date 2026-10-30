@@ -10,6 +10,9 @@ deferring execution does not count a measurement as passed.
 The [identifier comparison](identifiers.md) verifies native/public UUID parity in
 four isolated profiles before any optional exploratory timing is requested.
 
+The [validation comparison](validation.md) checks a fixed email/URL/IP/UUID/schema
+corpus against the pinned native libraries through the same isolated profiles.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.

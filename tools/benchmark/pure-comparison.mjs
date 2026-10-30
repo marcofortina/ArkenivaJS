@@ -114,6 +114,7 @@ export async function runPureComparison(definition, args = process.argv.slice(2)
       resourceCoverage:
         'Whole child process during measurement, including warmup and measurement-tool import; memory uses interval sampling and endpoints. GC callbacks and event-loop histograms may have no samples for a short run.',
       limitations:
+        definition.limitations ??
         'Local microcomparison with timer overhead; no entropy guarantee, distributed ordering guarantee, confidence interval, release budget, five repetitions or soak claim.',
       collector: { receivedBodies, totalBytes, [definition.privacyField]: 0 },
       records,
