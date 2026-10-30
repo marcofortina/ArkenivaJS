@@ -195,6 +195,8 @@ with independent provider counts and unchanged SQL ownership/version readback.
 
 The [MongoDB verification](mongodb.md) checks native BSON fidelity, actual CRUD,
 bounded unchanged aggregation, real transactions and independent collection cleanup.
+Its bounded find smoke checks exact BSON against independent seed readback and
+actual driver command events, then removes only its owned collections.
 
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
