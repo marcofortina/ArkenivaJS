@@ -22,7 +22,8 @@
     "time": "node time.mjs",
     "codes": "node codes.mjs",
     "compression": "node compression.mjs",
-    "config": "node config.mjs"
+    "config": "node config.mjs",
+    "logging": "node logging.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",

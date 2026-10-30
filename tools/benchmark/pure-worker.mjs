@@ -44,8 +44,11 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
     else {
       const { createApplication } = await import('@arkenivajs/core'),
         { loggingPlugin } = await import('@arkenivajs/logging'),
-        { plugin, key } = await adapter.framework(fixture);
-      const plugins = [loggingPlugin({ destination: sink }), plugin];
+        { plugin, key, loggingOptions } = await adapter.framework(fixture);
+      const plugins = [
+        loggingPlugin({ destination: sink, ...loggingOptions }),
+        ...(plugin ? [plugin] : []),
+      ];
       if (mode === 'STANDARD' || mode === 'DETAILED') {
         const { telemetryPlugin } = await import('@arkenivajs/telemetry');
         plugins.push(
@@ -152,6 +155,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
           gcDurationMs,
         }
       : null;
+    const completion = await adapter.complete?.(service, { fixture, measure, records });
     await telemetry?.flush();
     const quality = telemetry?.stats() ?? null;
     if (quality)
@@ -163,6 +167,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
       measured: measure,
       releaseGate: false,
       verification,
+      ...(completion === undefined ? {} : { completion }),
       records,
       resource,
       quality,
