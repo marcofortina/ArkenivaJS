@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 import { KitError, COMPONENTS } from '@arkenivajs/core';
 import type {
   CacheProvider,
@@ -308,18 +309,43 @@ export function createRedisCache(
   });
 }
 
+/** Capture tenant verification without invoking mutable callable metadata. */
+function tenantVerifier(auth: unknown): (value: unknown) => boolean {
+  const invalid = () =>
+    new KitError({
+      code: 'EK_TENANT_UNVERIFIED',
+      message: 'Tenant cache requires a trusted tenant verifier',
+    });
+  if (!auth || typeof auth !== 'object' || types.isProxy(auth)) throw invalid();
+  let current: object | null = auth,
+    callback: unknown;
+  for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw invalid();
+    const field = Object.getOwnPropertyDescriptor(current, 'isVerifiedTenant');
+    if (field) {
+      if (!('value' in field)) throw invalid();
+      callback = field.value;
+      break;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  if (typeof callback !== 'function' || types.isProxy(callback)) throw invalid();
+  return (value) => {
+    const decision: unknown = Reflect.apply(callback, auth, [value]);
+    // Invalid asynchronous verification cannot authorize access or leak an unhandled rejection.
+    if (types.isPromise(decision))
+      void Reflect.apply(Promise.prototype.then, decision, [undefined, () => undefined]);
+    return decision === true;
+  };
+}
+
 /** Bind cache authority once to an actual verified tenant; method arguments cannot select another tenant. */
 export function tenantCache(
   cache: CacheProvider,
   auth: CacheTenantVerifier,
   tenant: VerifiedTenantContext,
 ): CacheProvider {
-  if (typeof auth?.isVerifiedTenant !== 'function')
-    throw new KitError({
-      code: 'EK_TENANT_UNVERIFIED',
-      message: 'Tenant cache requires a trusted tenant verifier',
-    });
-  const verify = auth.isVerifiedTenant.bind(auth);
+  const verify = tenantVerifier(auth);
   if (
     !verify(tenant) ||
     typeof tenant.tenantId !== 'string' ||
