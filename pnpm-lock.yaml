@@ -2477,6 +2477,9 @@ importers:
       '@arkenivajs/metering':
         specifier: workspace:*
         version: link:../../packages/metering
+      '@arkenivajs/proxy':
+        specifier: workspace:*
+        version: link:../../packages/proxy
       '@arkenivajs/security':
         specifier: workspace:*
         version: link:../../packages/security
@@ -2537,6 +2540,9 @@ importers:
       '@fastify/helmet':
         specifier: 13.2.0
         version: 13.2.0
+      '@fastify/http-proxy':
+        specifier: 11.6.5
+        version: 11.6.5
       '@fastify/multipart':
         specifier: 10.1.6
         version: 10.1.6
