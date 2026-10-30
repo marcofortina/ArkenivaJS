@@ -124,6 +124,7 @@ export async function fixture(
     authenticated?: boolean;
     plugins?: readonly Plugin[];
     assuranceResolver?: NonNullable<ApplicationOptions['security']>['assuranceResolver'];
+    authorizeTenant?: NonNullable<Parameters<typeof securityPlugin>[0]>['authorizeTenant'];
     databases?: ApplicationOptions['databases'];
     onCreated?: (app: Application) => void;
     tls?: ServerTlsFiles;
@@ -197,7 +198,14 @@ export async function fixture(
         : {}),
       plugins: [
         loggingPlugin({ destination: sink }),
-        ...(authenticated ? [securityPlugin({ allowInsecureLoopback: true })] : []),
+        ...(authenticated
+          ? [
+              securityPlugin({
+                allowInsecureLoopback: true,
+                ...(options.authorizeTenant ? { authorizeTenant: options.authorizeTenant } : {}),
+              }),
+            ]
+          : []),
         apiPlugin({
           dependencies: [
             ...(authenticated ? ['security'] : []),
