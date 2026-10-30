@@ -415,6 +415,8 @@ jobs:
       - run: pnpm coverage:postgres
       - name: Verify four SQL query profiles against actual PostgreSQL and verified TLS
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:sql-query
+      - name: Verify retained legacy PostgreSQL latency samples against the owned TLS fixture
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:legacy-postgres
       - name: Verify isolated native password profiles and persisted KDF admission
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:password
       - name: Verify native webhook signatures and durable one-use nonce claims
