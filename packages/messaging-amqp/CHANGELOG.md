@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Capture the secret resolver with its original receiver without reading callable metadata; reject proxy resolvers and hidden usage classification beyond bounded prototype traversal.
 - Capture operation cancellation into owned native signals; reject proxy controls and excessive prototype depth before task admission and preserve physical settlement on abort.
 - Add the opt-in AMQPS plugin with verified TLS, secret references and bounded native recovery.
 - Complete the required typed trusted topology and publisher-routing catalog.

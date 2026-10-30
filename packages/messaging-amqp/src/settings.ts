@@ -3,6 +3,7 @@
 
 import { isAbsolute, normalize } from 'node:path';
 import { isIP } from 'node:net';
+import { types } from 'node:util';
 import type { Options } from 'amqplib';
 import type { AmqpPluginSettings, SecretRefResolver } from './contracts.js';
 import { outgoing } from './headers.js';
@@ -37,20 +38,26 @@ function unique<T>(values: readonly T[], name: (value: T) => string): readonly T
 }
 export function capture(input: AmqpPluginSettings) {
   try {
+    if (types.isProxy(input)) throw failure();
     ensureNativeCodec();
     const value = fields(input, ['connections', 'resolveSecret']);
-    if (typeof value.resolveSecret !== 'function') throw failure();
+    if (typeof value.resolveSecret !== 'function' || types.isProxy(value.resolveSecret))
+      throw failure();
+    const resolver = value.resolveSecret;
     let prototype: object | null = value.resolveSecret,
       usage: unknown;
     for (let i = 0; prototype && i < 64; i++) {
+      if (types.isProxy(prototype)) throw failure();
       const descriptor = Object.getOwnPropertyDescriptor(prototype, 'usage');
       if (descriptor) {
         if (!('value' in descriptor)) throw failure();
         usage = descriptor.value;
+        prototype = null;
         break;
       }
       prototype = Object.getPrototypeOf(prototype) as object | null;
     }
+    if (prototype) throw failure();
     if (usage !== undefined && usage !== 'production' && usage !== 'test-only') throw failure();
     const connections = unique(
       array(value.connections, 8).map((raw) => {
@@ -138,7 +145,9 @@ export function capture(input: AmqpPluginSettings) {
     if (!connections.length) throw failure();
     return Object.freeze({
       connections,
-      resolveSecret: Function.prototype.bind.call(value.resolveSecret, input) as SecretRefResolver,
+      // Keep the configured receiver without consulting callable name, length or bind metadata.
+      resolveSecret: (...args: Parameters<SecretRefResolver>): ReturnType<SecretRefResolver> =>
+        Reflect.apply(resolver, input, args) as ReturnType<SecretRefResolver>,
       resolverUsage: usage as 'production' | 'test-only' | undefined,
     });
   } catch {

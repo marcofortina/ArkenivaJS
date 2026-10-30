@@ -7,6 +7,11 @@
 2.2.0. Startup resolves external connection secrets, verifies AMQPS peers and
 checks the trusted topology before making the service available. Importing the
 package or constructing the plugin does not resolve secrets or open connections.
+The configured resolver retains its original implementation and receiver without
+evaluating callable `bind`, `name` or `length` metadata. Proxy configuration,
+resolvers and resolver prototypes, accessors and usage classification hidden
+beyond 64 prototype levels fail before secret loading. Later resolver replacement
+cannot alter the captured authority.
 The [executable application](../../examples/amqp/README.md) includes native
 diagnostics and independent public package installation. Performance campaigns
 and final release acceptance remain separate from these functional tests.

@@ -104,6 +104,75 @@ test('AMQP validates inherited resolver markers without invoking accessors or cu
   assert.throws(() => capture({ ...settings(), resolveSecret: accessor }), code);
   assert.equal(calls, 0);
 });
+test('AMQP retains the configured secret resolver and receiver without evaluating callable metadata', async () => {
+  let effects = 0,
+    calls = 0;
+  const original = {
+    ...settings(),
+    async resolveSecret(this: unknown, reference: string) {
+      assert.equal(this, original);
+      assert.equal(reference, 'owned');
+      calls++;
+      return 'owned-result';
+    },
+  };
+  for (const field of ['bind', 'name', 'length'])
+    Object.defineProperty(original.resolveSecret, field, {
+      get() {
+        effects++;
+        return field === 'length' ? 1 : 'unused';
+      },
+    });
+  const value = capture(original);
+  assert.equal(effects, 0);
+  assert.equal(calls, 0);
+  original.resolveSecret = async () => {
+    throw new Error('Later resolver replacement must not run');
+  };
+  assert.equal(await value.resolveSecret('owned'), 'owned-result');
+  assert.equal(effects, 0);
+  assert.equal(calls, 1);
+});
+test('AMQP resolver proxies and hidden usage classification fail before executing traps or loading secrets', () => {
+  let effects = 0;
+  const trap = () => {
+    effects++;
+    throw new Error('Resolver proxy traps must not execute');
+  };
+  const resolver = new Proxy(async () => 'unused', {
+    get: trap,
+    getOwnPropertyDescriptor: trap,
+    getPrototypeOf: trap,
+    apply: trap,
+  });
+  assert.throws(() => capture({ ...settings(), resolveSecret: resolver }), code);
+  assert.equal(effects, 0);
+  const original = settings();
+  const inherited = async () => 'unused';
+  Object.setPrototypeOf(
+    inherited,
+    new Proxy({}, { getOwnPropertyDescriptor: trap, getPrototypeOf: trap }),
+  );
+  assert.throws(() => capture({ ...original, resolveSecret: inherited }), code);
+  assert.equal(effects, 0);
+  assert.throws(
+    () =>
+      capture(
+        new Proxy(original, {
+          getPrototypeOf: trap,
+          getOwnPropertyDescriptor: trap,
+          ownKeys: trap,
+        }),
+      ),
+    code,
+  );
+  assert.equal(effects, 0);
+  const hidden = async () => 'unused';
+  let prototype: object = { usage: 'test-only' };
+  for (let depth = 0; depth < 65; depth++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(hidden, prototype);
+  assert.throws(() => capture({ ...original, resolveSecret: hidden }), code);
+});
 test('AMQP secret URIs require verified AMQPS fields and preserve percent-encoded vhost identity exactly once', () => {
   const value = uri(),
     parsed = endpoint(value.href);
