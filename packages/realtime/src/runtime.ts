@@ -24,6 +24,7 @@ export class Connection {
   receivedBytes = 0;
   private closed = false;
   private released = false;
+  private cleanupFailed = false;
   private resolveCompletion!: () => void;
   private timer: ReturnType<typeof setInterval> | undefined;
   private authorization: Promise<void> | undefined;
@@ -43,7 +44,7 @@ export class Connection {
     private readonly auth: AuthService,
     private readonly snapshot: RequestIdentity,
     owner: AbortSignal,
-    private readonly release: () => void,
+    private readonly release: (cleanupFailed: boolean) => void,
     private readonly observation: Observation,
     private readonly protocol: 'websocket' | 'sse',
   ) {
@@ -105,6 +106,14 @@ export class Connection {
     };
     void task.then(settled, settled);
     return task;
+  }
+  /** Retain finalizer ownership and its sanitized failure beyond peer disconnection. */
+  retainCleanup(task: Promise<unknown>): void {
+    void this.watch(
+      task.catch(() => {
+        this.cleanupFailed = true;
+      }),
+    );
   }
   wait<T>(task: Promise<T>): Promise<T> {
     this.check();
@@ -192,7 +201,7 @@ export class Connection {
     if (this.released || !this.closed || !this.wireDone || this.pending.size) return;
     this.released = true;
     this.reply.raw.off('close', this.disconnected);
-    this.release();
+    this.release(this.cleanupFailed);
     this.observation.queue(this.protocol, -this.queued);
     this.observation.disconnected(this.protocol, this.reason);
     this.resolveCompletion();

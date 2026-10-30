@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Report failed SSE iterator cleanup during service shutdown even after its peer disconnects.
 - Capture source, cursor, authority and iterator callbacks without executable
   function metadata, preserving their original receiver and method identity.
 - Add authenticated startup WebSocket/SSE routes with runtime identity provenance,

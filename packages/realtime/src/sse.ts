@@ -68,7 +68,7 @@ export async function streamSse(connection: Connection, source: SseSource): Prom
       connection.activity(selected.bytes, 'send');
     }
   } finally {
-    if (finish) void connection.watch(Promise.resolve().then(finish)).catch(() => undefined);
+    if (finish) connection.retainCleanup(Promise.resolve().then(finish));
     connection.close(false);
   }
 }
