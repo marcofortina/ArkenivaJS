@@ -69,7 +69,8 @@
     "password": "node password.mjs",
     "test:integration:password": "node --test test/password-workload.integration.test.mjs",
     "etcd": "node etcd.mjs",
-    "test:integration:etcd": "node --test test/etcd-workload.integration.test.mjs"
+    "test:integration:etcd": "node --test test/etcd-workload.integration.test.mjs",
+    "proxy": "node proxy.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -171,7 +172,9 @@
     "yauzl": "3.4.0",
     "@arkenivajs/database-etcd": "workspace:*",
     "etcd3": "1.1.2",
-    "cockatiel": "3.2.1"
+    "cockatiel": "3.2.1",
+    "@arkenivajs/proxy": "workspace:*",
+    "@fastify/http-proxy": "11.6.5"
   },
   "license": "AGPL-3.0-or-later"
 }

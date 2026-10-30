@@ -1,5 +1,8 @@
 # Local foundation measurements
 
+The [fixed HTTPS proxy verification](proxy.md) checks actual streamed binary
+forwarding, unchanged query semantics and upstream credential isolation.
+
 The [etcd verification](etcd.md) checks actual binary state, exact revisions,
 concurrent CAS, ordered watch events and independently observed lease renewal.
 
