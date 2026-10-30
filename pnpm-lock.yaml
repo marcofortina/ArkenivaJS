@@ -2390,6 +2390,9 @@ importers:
       '@arkenivajs/data-identifiers':
         specifier: workspace:*
         version: link:../../packages/data-identifiers
+      '@arkenivajs/data-validation':
+        specifier: workspace:*
+        version: link:../../packages/data-validation
       '@arkenivajs/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -2438,6 +2441,9 @@ importers:
       fastify:
         specifier: 5.12.7
         version: 5.12.7
+      ipaddr.js:
+        specifier: 2.5.0
+        version: 2.5.0
       jose:
         specifier: 6.2.13
         version: 6.2.13
@@ -2462,6 +2468,9 @@ importers:
       uuid:
         specifier: 14.0.3
         version: 14.0.3
+      validator:
+        specifier: 13.15.35
+        version: 13.15.35
 
 packages:
 
