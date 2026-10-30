@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Validate subscription iterator completion flags and report incomplete source retirement without claiming successful cleanup.
 - Capture explicit shared/production PubSub deployment classification without getters or proxy execution; permit authenticated HTTPS production subscriptions only with a declared shared production provider, and explicit development process providers.
 - Verify production subscription startup rejection, real HTTPS identity discovery, cross-process mTLS NATS fan-out and recovery in a disposable-network CI fixture.
 

@@ -31,6 +31,106 @@ function source(
 const denied = (error: unknown) =>
   error instanceof KitError && error.code === 'EK_GQL_SUBSCRIPTION';
 
+test('Malformed provider completion flags cannot fabricate a valid subscription event or exhaustion', async () => {
+  for (const done of [null, 0, 1, '', 'false', {}, []]) {
+    let closes = 0;
+    const stream = new SubscriptionStream(
+      () =>
+        source(
+          async () => ({ done, value: 'untrusted-event' }) as IteratorResult<unknown>,
+          async () => {
+            closes++;
+            return { done: true, value: undefined };
+          },
+        ),
+      new AbortController().signal,
+    );
+    try {
+      await assert.rejects(stream.next(), denied);
+      await stream.return();
+      assert.equal(stream.hasFailure(), true);
+      assert.equal(stream.retirementFailed(), false);
+      assert.equal(closes, 1);
+    } finally {
+      await stream.return();
+    }
+  }
+});
+
+test('A real async generator yielding during return cannot be reported as successfully retired', async () => {
+  let released = false;
+  const provider = (async function* () {
+    try {
+      yield 'first-event';
+    } finally {
+      try {
+        yield 'cleanup-not-finished';
+      } finally {
+        released = true;
+      }
+    }
+  })();
+  const stream = new SubscriptionStream(() => provider, new AbortController().signal);
+  try {
+    assert.deepEqual(await stream.next(), { done: false, value: 'first-event' });
+    await stream.return();
+    assert.equal(released, false);
+    assert.equal(stream.hasFailure(), true);
+    assert.equal(stream.retirementFailed(), true);
+  } finally {
+    await provider.return(undefined);
+  }
+  assert.equal(released, true);
+});
+
+test('Malformed source cleanup receipts fail retirement once without retrying provider work', async () => {
+  for (const result of [
+    undefined,
+    null,
+    1,
+    {},
+    { done: false, value: 'pending' },
+    { done: 'true' },
+  ]) {
+    let closes = 0;
+    const stream = new SubscriptionStream(
+      () =>
+        source(
+          async () => ({ done: false, value: 'event' }),
+          async () => {
+            closes++;
+            return result as IteratorResult<unknown>;
+          },
+        ),
+      new AbortController().signal,
+    );
+    await stream.open();
+    await stream.return();
+    await stream.return();
+    assert.equal(stream.hasFailure(), true);
+    assert.equal(stream.retirementFailed(), true);
+    assert.equal(closes, 1);
+  }
+});
+
+test('A standard yield result without an optional done field remains compatible', async () => {
+  const stream = new SubscriptionStream(
+    () =>
+      source(
+        async () => ({ value: 'valid-event' }),
+        async () => ({ done: true, value: undefined }),
+      ),
+    new AbortController().signal,
+  );
+  try {
+    assert.deepEqual(await stream.next(), { value: 'valid-event', done: false });
+  } finally {
+    await stream.return();
+  }
+  assert.equal(stream.hasFailure(), false);
+  assert.equal(stream.retirementFailed(), false);
+});
+
 test('Late source acquisition is closed exactly once before cancelled ownership settles', async () => {
   const acquired = deferred<AsyncIterable<unknown>>();
   let closes = 0,
