@@ -2498,6 +2498,9 @@ importers:
       '@arkenivajs/security-password':
         specifier: workspace:*
         version: link:../../packages/security-password
+      '@arkenivajs/security-sessions':
+        specifier: workspace:*
+        version: link:../../packages/security-sessions
       '@arkenivajs/security-totp':
         specifier: workspace:*
         version: link:../../packages/security-totp
