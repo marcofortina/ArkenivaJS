@@ -111,6 +111,10 @@ heartbeat with two outstanding pings. There is no automatic initial-connect retr
 Operations accept positive safe-integer `timeoutMs` and `AbortSignal`, default
 5,000ms. Once submitted, interrupted publications report
 `details.outcome='unknown'`; reconcile business effects before any retry.
+Cancellation uses captured native signals. Proxy controls/signals, shadowed
+lifecycle hooks and signal prototype traversal beyond 64 levels fail before
+admission. Later caller hook replacement cannot change operation or bus-close
+cleanup.
 Reservations remain held until the actual native work settles, even after a
 caller timeout. Delayed diagnostics cannot submit expired work. Admission is
 bounded to 64 pending operations, 32 subscriptions, 128 queued messages and

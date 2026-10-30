@@ -42,6 +42,39 @@ async function eventually(check: () => boolean) {
   }
 }
 
+test('Messaging closure retains owned native cancellation cleanup after caller hook replacement', async (context) => {
+  const f = await fixture(context),
+    controller = new AbortController();
+  let effects = 0;
+  const closing = f.bus.close({ signal: controller.signal });
+  Object.defineProperty(controller.signal, 'removeEventListener', {
+    value() {
+      effects++;
+    },
+  });
+  await closing;
+  assert.equal(effects, 0);
+});
+test('Messaging rejects proxy controls and bounded signal prototype overflow without evaluating traps', () => {
+  let effects = 0;
+  const trap = () => {
+    effects++;
+    throw new Error('Operation control traps must not execute');
+  };
+  const options = new Proxy({}, { getPrototypeOf: trap, ownKeys: trap, get: trap });
+  assert.throws(() => messageOptions(options), { code: 'EK_CONFIG_INVALID' });
+  const signal = new AbortController().signal;
+  assert.throws(
+    () => messageOptions({ signal: new Proxy(signal, { getPrototypeOf: trap, get: trap }) }),
+    { code: 'EK_CONFIG_INVALID' },
+  );
+  assert.equal(effects, 0);
+  let prototype: object = AbortSignal.prototype;
+  for (let depth = 0; depth < 65; depth++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(signal, prototype);
+  assert.throws(() => messageOptions({ signal }), { code: 'EK_CONFIG_INVALID' });
+});
+
 test('Messaging public work is admitted once, captures JSON and never claims core NATS acknowledgment', async (context) => {
   const f = await fixture(context),
     messages: MessageEnvelope<{ value: number }>[] = [];

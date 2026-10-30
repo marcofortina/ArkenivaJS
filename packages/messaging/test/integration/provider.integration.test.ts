@@ -29,6 +29,30 @@ function fixture() {
   return 'orders.' + randomUUID().replaceAll('-', '');
 }
 
+test('Actual NATS closure retains captured cancellation cleanup after caller hook replacement', async () => {
+  fixture();
+  const bus = await createNatsBus({
+      connectionStringEnv: 'ARKENIVA_NATS_URL',
+      onError: async () => undefined,
+    }),
+    controller = new AbortController();
+  let effects = 0;
+  try {
+    assert.equal(await bus.health(), true);
+    const closing = bus.close({ signal: controller.signal });
+    Object.defineProperty(controller.signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+    await closing;
+    assert.equal(effects, 0);
+    assert.equal(bus.stats().connected, false);
+  } finally {
+    await bus.close();
+  }
+});
+
 test(
   'Actual NATS uses verified TLS and scoped credentials, captures checked JSON and returns no invented broker acknowledgment',
   { timeout: 20000 },
