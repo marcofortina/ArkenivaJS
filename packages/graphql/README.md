@@ -53,7 +53,9 @@ The input byte count comes from the received JSON buffer, rather than a claimed 
 The HTTP event ends with the response. If physical work remains after timeout, its quality reports unobserved downstream work; the GraphQL child stays owned until that work settles and reports an unknown outcome. A timeout does not prove mutation rollback. Meter capacity/export diagnostics remain in the existing bounded meter; accounting failures never repeat business work or bypass field authorization. A meter rejection of tenant provenance fails authentication closed.
 
 Subscription sources must return boolean completion flags when present. Their iterator
-`return()` must confirm `{done: true}`; an incomplete or malformed cleanup result
+Iterator completion fields must be plain data; accessors, proxies and inherited
+flags cannot authorize events or confirm cleanup. Ordinary yield results may
+omit `done`. `return()` must confirm `{done: true}`; an incomplete or malformed cleanup result
 quarantines the subscription transport instead of reporting successful retirement.
 
 Subscription activation requires direct HTTPS and an installed authentication service. Production also requires the application-owned `GraphqlSubscriptionPubSub` to declare `distribution: 'shared'` and `securityLevel: 'production'`. An absent security classification defaults to `test-only`; production rejects unclassified, process-only and test-only providers. Explicit development accepts a declared `process` or `shared` distribution. Existing unclassified test-environment providers retain compatibility.

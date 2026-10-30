@@ -304,11 +304,12 @@ test(
   },
 );
 
-for (const retirement of ['reject', 'incomplete'])
+for (const retirement of ['reject', 'incomplete', 'accessor', 'proxy', 'inherited'])
   test(
     `Provider ${retirement} retirement quarantines the transport even after its connection count reaches zero`,
     { timeout: 10000 },
     async () => {
+      let completionReads = 0;
       const r = await runtime({
         source(_parent, _args, context) {
           let delivered = false,
@@ -332,6 +333,26 @@ for (const retirement of ['reject', 'incomplete'])
             },
             async return() {
               if (retirement === 'reject') throw new Error('Private provider cleanup failure');
+              if (retirement === 'accessor')
+                return {
+                  get done() {
+                    completionReads++;
+                    return true as const;
+                  },
+                  value: undefined,
+                };
+              if (retirement === 'proxy')
+                return new Proxy(
+                  { done: true as const, value: undefined },
+                  {
+                    get(target, key, receiver) {
+                      if (key === 'done') completionReads++;
+                      return Reflect.get(target, key, receiver);
+                    },
+                  },
+                );
+              if (retirement === 'inherited')
+                return Object.create({ done: true, value: undefined }) as IteratorResult<unknown>;
               return { done: false, value: 'Provider cleanup remains incomplete' };
             },
           };
@@ -351,6 +372,7 @@ for (const retirement of ['reject', 'incomplete'])
         assert.equal(r.transport.stats().ready, false);
         await assert.rejects(r.connect(), /403/);
         assert.equal(r.active.size, 0);
+        assert.equal(completionReads, 0);
       } finally {
         await r.close();
       }
