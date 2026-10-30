@@ -10,6 +10,7 @@ import {
 } from './validation-workload.mjs';
 runPureWorker({
   name: 'validation',
+  retainRawSamples: true,
   native: nativeValidation,
   async framework() {
     const { dataValidationPlugin, VALIDATION_CAPABILITY } =

@@ -16,6 +16,7 @@ import {
 const key = Symbol('cache-comparison');
 runPureWorker({
   name: 'cache',
+  retainRawSamples: true,
   asynchronous: true,
   iterations: 100,
   warmupIterations: 20,

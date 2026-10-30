@@ -8,6 +8,7 @@ const originalZone = process.env.TZ;
 process.once('beforeExit', () => assert.equal(process.env.TZ, originalZone));
 runPureWorker({
   name: 'time',
+  retainRawSamples: true,
   iterations: 1000,
   warmupIterations: 100,
   native: nativeTime,

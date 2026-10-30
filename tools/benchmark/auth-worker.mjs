@@ -14,6 +14,7 @@ import {
 
 runPureWorker({
   name: 'auth',
+  retainRawSamples: true,
   asynchronous: true,
   iterations: 1000,
   warmupIterations: 100,

@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createConfig } from '@arkenivajs/config';
+import { assertRawLatencySamples } from './raw-latency.mjs';
 import { nativeConfig, configOptions, configFixture, verifyConfig } from '../config-workload.mjs';
 
 test('Native flat configuration and public configuration preserve precedence and failed-reload atomicity', async () => {
@@ -49,6 +50,7 @@ test(
           if (mode === '--verify') assert.equal(row.resource, null);
           for (const operation of row.records) {
             assert.ok(operation.sampleCount >= 1000);
+            assertRawLatencySamples(operation);
             for (const value of Object.values(operation.latencyNanoseconds))
               assert.ok(Number.isFinite(value) && value >= 0);
           }
