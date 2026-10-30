@@ -13,6 +13,9 @@ four isolated profiles before any optional exploratory timing is requested.
 The [validation comparison](validation.md) checks a fixed email/URL/IP/UUID/schema
 corpus against the pinned native libraries through the same isolated profiles.
 
+The [barcode verification](codes.md) checks actual native/public image
+interoperability in four profiles; resource sampling awaits child accounting.
+
 The [time comparison](time.md) checks native Temporal/Intl parity, nanoseconds
 and elapsed DST transitions without changing the process timezone.
 
