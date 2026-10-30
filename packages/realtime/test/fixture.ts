@@ -169,14 +169,14 @@ export async function fixture(
       service: app.resolve<RealtimeService>(REALTIME_CAPABILITY),
       logs: () => logs,
       close,
-      async token(tenant = 'tenant-a', expires = '2m') {
+      async token(tenant = 'tenant-a', expires = '2m', subject = 'realtime-test-account') {
         return (
           'Bearer ' +
           (await new SignJWT({ tenant_id: tenant })
             .setProtectedHeader({ alg: 'ES256', kid: 'realtime-fixture', typ: 'JWT' })
             .setIssuer(authority)
             .setAudience('api://realtime')
-            .setSubject('realtime-test-account')
+            .setSubject(subject)
             .setExpirationTime(expires)
             .sign(pair.privateKey))
         );
