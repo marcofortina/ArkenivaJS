@@ -88,6 +88,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:proxy
         env:
           ARKENIVA_PROXY_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify measured XLSX rows and isolated native reader resources
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:xlsx
+        env:
+          ARKENIVA_XLSX_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim
