@@ -16,7 +16,7 @@ node scripts/check-packed-examples.mjs --example graphql
 ```
 
 The last command installs real framework archives in a private temporary
-consumer, recompiles the example and executes all three tests through public exports.
+consumer, recompiles the example and executes all example tests through public exports.
 No database, container engine, external identity provider or environment values
 are required. Temporary keys, files and listeners close in `finally`; bearer
 assertions and private keys are never printed.
@@ -78,6 +78,26 @@ explicit shared/production classification and real tenant enforcement. Labels
 cannot turn this local fixture into a shared broker. See the
 [package reference](../../packages/graphql/README.md) for production policy and
 native mTLS NATS interoperability checks.
+
+## Safe diagnostics and troubleshooting
+
+After startup, call `logGraphqlDiagnostics(example.app)` from
+[`src/main.ts`](src/main.ts). It logs only readiness, schema-loaded state and
+operation/rejection counters through the application's existing logger. It does
+not expose schema SDL, documents, variables or bearer assertions.
+
+The executable troubleshooting test checks malformed documents, multiple
+operations without a selection, a 21-alias mutation and oversized documents or
+variables. Expected codes are `EK_GQL_VALIDATION`, `EK_GQL_COMPLEXITY` and
+`EK_GQL_INPUT_LIMIT`. Each rejected request is followed by an authenticated
+counter query proving zero mutation effects. A valid named selection then executes
+exactly one mutation. The same test reads the actual structured diagnostic records
+and rejects private payloads or credentials in responses and logs.
+
+The standalone package-consumer command above runs this test on installed
+framework artifacts too. For loader/query-count diagnosis, use the separate
+[PostgreSQL tenant guide](../graphql-postgres-tenants/README.md). A failed or timed-out
+mutation is not automatically safe to retry; inspect its real storage outcome.
 
 ## Shared counter delivery with Core NATS
 
