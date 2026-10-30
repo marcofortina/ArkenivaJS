@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Verify optional generic login signing, signed IdP response enforcement, NameID
+  qualifiers, session defaults and correlated logout with the native SDK.
 - Retain native worker ownership until actual thread exit when cancellation fails,
   including physical drain after the public caller has been aborted.
 - Retain bounded native-verified assertion profile facts for federation policy,
