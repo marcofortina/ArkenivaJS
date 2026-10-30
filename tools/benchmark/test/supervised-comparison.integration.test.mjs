@@ -34,11 +34,12 @@ test(
       process.env.DATABASE_URL = 'owned-forbidden-parent-environment';
       process.env.NODE_OPTIONS = '--no-warnings';
       process.env.ARKENIVA_SUPERVISION_FORBIDDEN_FIXTURE = 'owned-forbidden-parent-environment';
-      const report = await runPureComparison(definition({ superviseProcessTree: true }), [
-        '--smoke',
-        join(directory, 'smoke'),
-      ]);
+      const report = await runPureComparison(
+        definition({ superviseProcessTree: true, profileTimeoutMs: 90000 }),
+        ['--smoke', join(directory, 'smoke')],
+      );
       assert.equal(report.records.length, 4);
+      assert.equal(report.profileTimeoutMs, 90000);
       assert.equal(report.collector.inputOccurrences, 0);
       assert.match(report.processTreeResourceCoverage, /whole-supervised-lifecycle/);
       for (const row of report.records) {
@@ -79,13 +80,14 @@ test(
     try {
       for (const [mode, extra] of [
         ['--smoke', {}],
-        ['--verify', { superviseProcessTree: true }],
+        ['--verify', { superviseProcessTree: true, profileTimeoutMs: 90000 }],
       ]) {
         const report = await runPureComparison(definition(extra), [
           mode,
           join(directory, mode.slice(2)),
         ]);
         assert.equal(Object.hasOwn(report, 'processTreeResourceCoverage'), false);
+        assert.equal(Object.hasOwn(report, 'profileTimeoutMs'), false);
         for (const row of report.records) {
           assert.equal(row.verification.directParent, true);
           assert.equal(Object.hasOwn(row, 'processTreeResource'), false);
@@ -109,9 +111,29 @@ test('Invalid supervision flags and unsupported trust anchors fail before compar
         return true;
       },
     });
+    const timeoutAccessor = definition({ superviseProcessTree: true });
+    Object.defineProperty(timeoutAccessor, 'profileTimeoutMs', {
+      get() {
+        calls++;
+        return 90000;
+      },
+    });
     const invalid = [
       definition({ superviseProcessTree: 'true' }),
       accessor,
+      timeoutAccessor,
+      definition({ profileTimeoutMs: 90000 }),
+      ...[
+        null,
+        '90000',
+        29999,
+        120001,
+        90000.5,
+        Number.NaN,
+        Infinity,
+        90000n,
+        new Number(90000),
+      ].map((profileTimeoutMs) => definition({ superviseProcessTree: true, profileTimeoutMs })),
       definition({ superviseProcessTree: true, trustAnchorFile: join(directory, 'unused-ca.pem') }),
     ];
     for (const [index, candidate] of invalid.entries()) {
@@ -124,6 +146,31 @@ test('Invalid supervision flags and unsupported trust anchors fail before compar
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test(
+  'Default and explicitly undefined budgets preserve the original supervised report shape',
+  { timeout: 30000 },
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-supervised-default-budget-'));
+    try {
+      for (const [index, extra] of [{}, { profileTimeoutMs: undefined }].entries()) {
+        const report = await runPureComparison(
+          definition({ superviseProcessTree: true, ...extra }),
+          ['--smoke', join(directory, 'smoke-' + index)],
+        );
+        assert.equal(Object.hasOwn(report, 'profileTimeoutMs'), false);
+        assert.equal(report.records.length, 4);
+        for (const row of report.records) {
+          assert.equal(row.processTreeResource.allChildrenWaited, true);
+          assert.equal(row.processTreeResource.remainingOwnedProcesses, 0);
+          assert.equal(row.completion.observedNativeWork, 13);
+        }
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test(
   'Actual inaccessible descendant RSS cannot produce an accepted supervised comparison',

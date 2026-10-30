@@ -30,6 +30,24 @@ export async function runPureComparison(definition, args = process.argv.slice(2)
     superviseProcessTree === undefined || typeof superviseProcessTree === 'boolean',
     'Process-tree supervision must be a captured boolean',
   );
+  const declaredTimeout = Object.getOwnPropertyDescriptor(definition, 'profileTimeoutMs');
+  assert.ok(
+    !declaredTimeout || 'value' in declaredTimeout,
+    'The supervised profile budget must be a captured integer',
+  );
+  const configuredTimeout = declaredTimeout?.value;
+  assert.ok(
+    configuredTimeout === undefined ||
+      (Number.isSafeInteger(configuredTimeout) &&
+        configuredTimeout >= 30000 &&
+        configuredTimeout <= 120000),
+    'The supervised profile budget must be an integer from 30000 to 120000 milliseconds',
+  );
+  assert.ok(
+    configuredTimeout === undefined || superviseProcessTree === true,
+    'A custom profile budget requires explicit process-tree supervision',
+  );
+  const profileTimeoutMs = configuredTimeout === undefined ? 30000 : configuredTimeout;
   const supervisedMeasurement = superviseProcessTree === true && args[0] === '--smoke';
   assert.ok(
     !supervisedMeasurement || definition.trustAnchorFile === undefined,
@@ -89,7 +107,7 @@ export async function runPureComparison(definition, args = process.argv.slice(2)
         const { message, resource } = await supervise(
           definition.worker,
           { mode, fixture, measure: true, endpoint },
-          { timeoutMs: 30000 },
+          { timeoutMs: profileTimeoutMs },
         );
         assert.equal(message?.ok, true, 'The supervised comparison workload failed');
         assert.equal(resource.scope, 'whole-supervised-lifecycle');
@@ -193,6 +211,7 @@ export async function runPureComparison(definition, args = process.argv.slice(2)
         'Whole child process during measurement, including warmup and measurement-tool import; memory uses interval sampling and endpoints. GC callbacks and event-loop histograms may have no samples for a short run.',
       ...(supervisedMeasurement
         ? {
+            ...(configuredTimeout === undefined ? {} : { profileTimeoutMs }),
             processTreeResourceCoverage:
               'Separate whole-supervised-lifecycle user/system CPU in seconds includes Node bridge/worker/native descendants, startup, verification, warmup, measurement, export and cleanup. RSS bytes distinguish sampled non-atomic process sums from largest single-process RSS; shared pages may repeat and brief peaks may be missed. Python observer, parent/collector and external servers are excluded. Inaccessible or truncated discovery/RSS observations are refused; vanished short-lived observations remain explicit. Existing measured-window worker resources retain their original meaning.',
           }
