@@ -4,40 +4,48 @@
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { startSamlFixture } from './saml-fixture.mjs';
 import { runPureComparison } from './pure-comparison.mjs';
+import { samlPrivacyValues } from './saml-workload.mjs';
 
 const args = process.argv.slice(2);
 assert.ok(
-  args.length === 2 && args[0] === '--verify',
-  'Use --verify with a fresh absolute external report directory; complete SAML worker/resource and durable-store comparison remains separate',
+  args.length === 2 && ['--verify', '--smoke'].includes(args[0]),
+  'Use --verify or --smoke with a fresh absolute external report directory',
+);
+assert.ok(
+  args[0] !== '--smoke' || process.env.ARKENIVA_SAML_BENCHMARK_DISPOSABLE === '1',
+  'SAML smoke requires an explicitly disposable measurement environment',
 );
 const authority = await startSamlFixture();
 try {
+  const fixture = {
+    ...authority.fixture,
+    sampleRedirect: args[0] === '--smoke',
+    sampleReturnPath: '/owned-saml-correlation-' + randomBytes(16).toString('hex'),
+  };
   await runPureComparison(
     {
       scenarioId: 'saml-native-signed-redirect-request-and-post-response-verification',
-      fixture: authority.fixture,
-      privacyValues: [
-        ...Object.values(authority.fixture),
-        'synthetic-account',
-        'untrusted-tenant-hint',
-        'private-session-index',
-        '127.0.0.1',
-        'localhost',
-      ],
+      fixture,
+      privacyValues: samlPrivacyValues(fixture),
       privacyField: 'inputOccurrences',
       worker: new URL('./saml-worker.mjs', import.meta.url),
+      superviseProcessTree: true,
       inputs: {
         nativeBackend: '@node-saml/node-saml@5.1.0',
-        requestsPerProfile: 3,
+        requestsPerProfile: args[0] === '--smoke' ? 123 : 3,
+        actualIdpRequestsPerProfile: 3,
         binding: 'HTTP-Redirect requests and HTTP-POST responses',
-        samplingSupported: false,
+        samplingSupported: true,
+        sampledRedirectCreationsPerProfile: args[0] === '--smoke' ? 100 : 0,
+        warmupRedirectCreationsPerProfile: args[0] === '--smoke' ? 20 : 0,
       },
       observationCoverage:
-        'Actual signed SP requests reach a separately owned verified HTTPS IdP bridge, which checks every SP signature and request/ACS/issuer correlation before signing a response. Four profiles verify signed metadata, actual signed identity, replay, tampering and audience rejection without trusting tenant attributes. Parent independently counts twelve signature-verified requests/responses. Actual SDK exports omit assertions, identities and keys.',
+        'Actual signed SP requests reach a separately owned verified HTTPS IdP bridge, which checks every SP signature and request/ACS/issuer correlation before signing a response. Four profiles retain signed metadata, actual signed identity, replay, tampering and audience rejection without trusting tenant attributes. Parent independently counts twelve signature-verified requests/responses. Optional smoke creates signed Redirect transfers and independently verifies exact RSA-SHA256 query bytes, bounded XML, pinned destination/ACS/issuer and unique correlation for every callback. Actual SDK exports omit assertions, identities, private return-path correlation and keys.',
       limitations:
-        'Fixed synthetic generic federation profile, ephemeral unit-only replay/correlation stores and bearer-authenticated IdP fixture bridge; not a browser cookie/ACS transaction, actual durable multi-pod replay or federation accreditation. Native valid-profile reference omits complete XML admission, state persistence, isolated worker cancellation, logout and framework identity provenance. No complete native worker/PKI/server resource sampling or full campaign acceptance.',
+        'Fixed generic federation profile and ephemeral unit-only replay/correlation stores; no durable multi-pod replay claim. Measured creation includes independent signature/XML checks but sends no measured IdP request and is not an ACS verification or browser transaction. Native reference omits complete XML admission, durable persistence, worker cancellation isolation, logout and framework identity provenance; no equivalent-policy overhead claim. Whole-lifecycle supervision includes Node worker-thread CPU/RSS through their owning process; parent collector, PKI generation and HTTPS IdP resources are excluded. Sampled summed RSS is not exact peak/PSS and can repeat shared pages or miss short peaks. Diagnostic STANDARD/DETAILED samplingRatio1, no production sampling budget, accreditation, dedicated-runner gate, five repetitions, one-hour soak or release acceptance.',
     },
     args,
   );

@@ -24,6 +24,8 @@ against independent native consumption of binary, empty and tombstone records.
 
 The [SAML verification](saml.md) checks actual signed requests/responses, verified
 metadata, correlated identities and replay/tampering/audience rejection.
+Its bounded Redirect-creation smoke independently verifies every signature and
+correlation, with real SDK privacy controls and explicit test-only state limits.
 
 The [mTLS verification](mtls.md) checks actual mutual TLS key possession and
 asynchronous chain/CRL authorization before HTTP/2 application traffic.
