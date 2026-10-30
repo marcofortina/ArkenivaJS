@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { KitError } from '@arkenivajs/core';
+import { types } from 'node:util';
 import type { ErrorCode } from '@arkenivajs/core';
 export const failure = (code: ErrorCode = 'EK_SFTP_TRANSFER', unknown = false) =>
   new KitError({
@@ -75,9 +76,10 @@ export function array(input: unknown, maximum: number): readonly unknown[] {
   );
 }
 export function property(input: unknown, name: PropertyKey): unknown {
-  if (!input || typeof input !== 'object') throw failure();
+  if (!input || typeof input !== 'object' || types.isProxy(input)) throw failure();
   let current: object | null = input;
   for (let depth = 0; current && depth < 64; depth++) {
+    if (types.isProxy(current)) throw failure();
     const value = Object.getOwnPropertyDescriptor(current, name);
     if (value) {
       if (!('value' in value)) throw failure();
@@ -85,10 +87,16 @@ export function property(input: unknown, name: PropertyKey): unknown {
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
+  if (current) throw failure();
   return undefined;
 }
-export function method<T>(input: unknown, name: PropertyKey): T {
+export function method<T extends (...args: never[]) => unknown>(
+  input: unknown,
+  name: PropertyKey,
+): T {
   const value = property(input, name);
-  if (typeof value !== 'function') throw failure();
-  return Function.prototype.bind.call(value, input) as T;
+  if (typeof value !== 'function' || types.isProxy(value)) throw failure();
+  const invoke = (...args: Parameters<T>): ReturnType<T> =>
+    Reflect.apply(value, input, args) as ReturnType<T>;
+  return invoke as T;
 }

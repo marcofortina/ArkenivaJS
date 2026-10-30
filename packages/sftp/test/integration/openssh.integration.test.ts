@@ -62,6 +62,42 @@ const source = async function* (input: Uint8Array) {
 };
 const code = (value: string) => (error: unknown) =>
   error instanceof KitError && error.code === value;
+test('OpenSSH authentication retains the captured secret method and receiver without callable metadata access', async () => {
+  let effects = 0,
+    calls = 0;
+  const provider = {
+    async get(this: unknown, reference: string) {
+      assert.equal(this, provider);
+      assert.equal(reference, 'fixture-key');
+      calls++;
+      return { bytes: secret, keyVersion: 'one' };
+    },
+  };
+  for (const field of ['name', 'length', 'bind'])
+    Object.defineProperty(provider.get, field, {
+      get() {
+        effects++;
+        throw new Error('Callable metadata must not execute');
+      },
+    });
+  const f = managedService(
+    capture({ ...settings(), secretProvider: provider }),
+    new AbortController().signal,
+    () => true,
+  );
+  provider.get = async () => {
+    throw new Error('Later provider replacement must not execute');
+  };
+  try {
+    await f.init();
+    assert.equal((await f.ssh.exec('fixture', 'report', { value: 'owned-provider' })).exitCode, 0);
+    assert.ok(calls > 0);
+    assert.equal(effects, 0);
+    assert.ok(secret.some((value) => value !== 0));
+  } finally {
+    await f.close();
+  }
+});
 test('OpenSSH command completion retains independent cancellation cleanup after caller hook replacement', async () => {
   const f = await fixture(),
     controller = new AbortController();
