@@ -52,6 +52,9 @@ public framework hardening on actual success and error responses in four profile
 The [multipart verification](upload.md) checks actual chunked streaming, ordered
 parts, consumed-file digests and SDK privacy in four isolated profiles.
 
+The [Redis cache comparison](cache.md) verifies actual stored JSON, TTL, expiry,
+corrupt-state rejection and acknowledged roundtrips against the real TLS backend.
+
 The [API key verification smoke](apikey.md) compares the public credential
 adapter with the same native HMAC, durable quota and trusted-authority work in
 four isolated profiles, checking actual PostgreSQL increments and export privacy.

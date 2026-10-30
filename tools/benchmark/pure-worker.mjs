@@ -50,6 +50,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
           loggingOptions,
           plugins: dependencies = [],
           http,
+          databases,
           configure,
           dispose,
           telemetryOptions,
@@ -75,6 +76,7 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
       app = await createApplication({
         service: { name: adapter.name + '-comparison', version: '1.0.0', environment: 'test' },
         ...(http ? { http } : {}),
+        ...(databases ? { databases } : {}),
         ...(mode === 'STANDARD' || mode === 'DETAILED'
           ? { telemetry: { mode: mode.toLowerCase(), samplingRatio: 1 } }
           : {}),
