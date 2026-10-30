@@ -5,6 +5,11 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import * as argon2 from 'argon2';
 
+const sampling = new WeakMap();
+export const passwordIterations = 100;
+export const passwordWarmupIterations = 20;
+export const passwordMaximumRetainedResults = 128;
+
 export const passwordPolicy = Object.freeze({
   minLength: 12,
   memoryCostKiB: 8192,
@@ -107,4 +112,79 @@ export async function verifyPassword(service, fixture) {
     independentSaltVerified: true,
     legacyRehashVerified: true,
   };
+}
+
+/** Only actual positive verification is timed; PHC creation remains outside the callback. */
+export function preparePasswordSampling(service, fixture) {
+  assert.equal(sampling.has(service), false);
+  assert.equal(typeof fixture.plain, 'string');
+  assert.equal(typeof fixture.currentPhc, 'string');
+  sampling.set(service, {
+    plain: fixture.plain,
+    hash: Object.freeze({ scheme: 'argon2id', phc: fixture.currentPhc }),
+    results: [],
+    active: false,
+    closed: false,
+  });
+}
+
+export function passwordWorkload(service) {
+  const state = sampling.get(service);
+  assert.ok(state);
+  return {
+    async verifyCurrentPassword() {
+      assert.equal(state.closed, false);
+      assert.equal(state.active, false);
+      assert.ok(state.results.length < passwordIterations + passwordWarmupIterations);
+      assert.ok(state.results.length < passwordMaximumRetainedResults);
+      state.active = true;
+      try {
+        const result = await service.verify(state.plain, state.hash);
+        state.results.push(result);
+        return result;
+      } finally {
+        state.active = false;
+      }
+    },
+  };
+}
+
+export function completePassword(service, { measure, records }) {
+  const state = sampling.get(service);
+  try {
+    if (!measure) {
+      assert.equal(state, undefined);
+      assert.deepEqual(records, []);
+      return { sampledVerifications: 0, warmupVerifications: 0, checkedVerifications: 0 };
+    }
+    assert.ok(state);
+    assert.equal(state.active, false);
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'verifyCurrentPassword');
+    assert.equal(record.sampleCount, passwordIterations);
+    assert.equal(record.warmupIterations, passwordWarmupIterations);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    assert.equal(state.results.length, record.sampleCount + record.warmupIterations);
+    for (const result of state.results)
+      assert.deepEqual(result, { valid: true, rehashRecommended: false });
+    return {
+      sampledVerifications: record.sampleCount,
+      warmupVerifications: record.warmupIterations,
+      checkedVerifications: state.results.length,
+      allPositiveAndCurrent: true,
+      peakRetainedResults: state.results.length,
+      maximumRetainedResults: passwordMaximumRetainedResults,
+      activeCallbacks: 0,
+    };
+  } finally {
+    if (state) {
+      state.closed = true;
+      state.results.length = 0;
+      state.plain = undefined;
+      state.hash = undefined;
+    }
+    sampling.delete(service);
+  }
 }

@@ -56,6 +56,8 @@ corpus against the pinned native libraries through the same isolated profiles.
 
 The [password verification](password.md) checks native/public Argon2id results
 and actual PostgreSQL KDF admission counters in four isolated profiles.
+Its positive-verification smoke checks native KDF results and independent durable
+admission counts without changing or resetting the technical quota.
 
 The [SMTP verification](mail.md) checks actual STARTTLS authentication and received
 MIME attachments through an owned temporary server in four isolated profiles.
