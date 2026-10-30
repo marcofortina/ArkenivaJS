@@ -77,7 +77,10 @@ export class RequestUsage {
         void this.scope.completion.then(() => {
           observe(() => this.child!.end(this.outcome));
         });
-      } catch {
+      } catch (error) {
+        // A current provenance rejection is an authorization failure, not an observation gap.
+        if (error instanceof KitError && error.code === 'EK_TENANT_UNVERIFIED')
+          throw routingFailure('EK_AUTH_REQUIRED');
         observe(() => this.meter?.markMissing(this.parent!, 'span_not_instrumented'));
       }
     }

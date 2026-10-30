@@ -628,7 +628,8 @@ export function tenantRoutingPlugin(input: TenantRoutingPluginSettings): Plugin 
                         usage.reject(error);
                         if (
                           error instanceof KitError &&
-                          (error.code === 'EK_TROUTE_TIMEOUT' ||
+                          (error.code === 'EK_AUTH_REQUIRED' ||
+                            error.code === 'EK_TROUTE_TIMEOUT' ||
                             (selected.implementation.kind === 'http' &&
                               error.code === 'EK_TROUTE_CONTRACT'))
                         )

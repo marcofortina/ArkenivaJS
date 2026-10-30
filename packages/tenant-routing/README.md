@@ -193,6 +193,9 @@ request reaching a logical operation records an `http.request` parent and, after
 authorization/admission, a child named by the logical operation ID. The existing
 meter independently verifies tenant provenance. Capacity/export failures do not
 repeat a handler or bypass operation policy; a rejected tenant fails closed.
+Provenance rejection during either parent or logical-child session creation
+returns HTTP 401 before handler effects; accounting capacity exhaustion remains
+an explicit observation gap and cannot change authorization.
 
 The parent counts `http.requests` and observed entity bytes. The logical child
 counts `tenant.routing.operations`; database or other installed adapters inherit

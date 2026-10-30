@@ -16,7 +16,8 @@ import {
   type MeterSession,
   type MeteringEvent,
 } from '@arkenivajs/core';
-import { meteringPlugin, parseMeteringEvent } from '@arkenivajs/metering';
+import { createMeter, meteringPlugin, parseMeteringEvent } from '@arkenivajs/metering';
+import type { ManagedUsageMeter, TenantVerifier } from '@arkenivajs/metering';
 import { fixture, send, settings, registry } from '../http-fixture.js';
 import { registryContentChecksum } from '../../dist/registry.js';
 import type { TenantRoutingEventV1 } from '../../dist/index.js';
@@ -393,3 +394,88 @@ test('Accounting capacity cannot bypass operation policy and independently rejec
     }
   }
 });
+
+for (const failure of ['provenance', 'provider-error', 'capacity'] as const)
+  test(`A real child accounting ${failure} rejection preserves tenant authorization before handler effects`, async () => {
+    let revoked = false,
+      effects = 0,
+      meter: ManagedUsageMeter | undefined;
+    const recorded: MeteringEvent[] = [];
+    const provider: Plugin = {
+      id: 'metering',
+      version: '1.0.0',
+      capabilities: new Set(['meter']),
+      dependencies: ['security'],
+      init(context) {
+        const authority = context.require<TenantVerifier>(COMPONENTS.auth);
+        meter = createMeter({
+          service: context.options.service,
+          auth: {
+            isVerifiedTenant(value): value is import('@arkenivajs/core').VerifiedTenantContext {
+              if (!authority.isVerifiedTenant(value)) return false;
+              if (revoked && value.tenantId === 'north') {
+                if (failure === 'provider-error') throw new Error('Private child verifier failure');
+                if (failure === 'provenance') return false;
+              }
+              return true;
+            },
+          },
+          enabled: true,
+          maxActiveSessions: failure === 'capacity' ? 1 : 10,
+          exporter: {
+            kind: 'jsonl',
+            async export(batch) {
+              recorded.push(...batch);
+            },
+            async close() {},
+          },
+        });
+        context.provide(COMPONENTS.meter, meter);
+      },
+      async close() {
+        await meter?.close();
+      },
+    };
+    const base = settings();
+    const f = await fixture(
+      {
+        ...base,
+        authorize({ tenant }) {
+          if (tenant.tenantId === 'north') revoked = true;
+          return true;
+        },
+        handlers: {
+          ...base.handlers,
+          north(context) {
+            effects++;
+            return base.handlers.north!(context);
+          },
+        },
+      },
+      { metering: { enabled: true }, plugins: [provider] },
+    );
+    try {
+      const result = await send(f.origin, '/api/orders/id', {
+        headers: { authorization: await f.token('north') },
+      });
+      assert.equal(result.status, failure === 'capacity' ? 200 : 401, result.body);
+      assert.equal(effects, failure === 'capacity' ? 1 : 0);
+      const other = await send(f.origin, '/api/orders/id', {
+        headers: { authorization: await f.token('south') },
+      });
+      assert.equal(other.status, 200, other.body);
+      assert.equal(other.json().tenant, 'south');
+      await f.app.meter.flush();
+      assert.equal(f.app.meter.snapshot().activeSessions, 0);
+      const north = recorded.filter((event) => event.tenantId === 'north');
+      assert.equal(north.length, 1);
+      assert.equal(north[0]!.operation, 'http.request');
+      assert.equal(north[0]!.status, failure === 'capacity' ? 'ok' : 'error');
+      assert.doesNotMatch(
+        result.body + other.body + f.logs(),
+        /Private child verifier failure|EK_TENANT_UNVERIFIED|Bearer /,
+      );
+    } finally {
+      await f.close();
+    }
+  });
