@@ -2432,6 +2432,9 @@ importers:
       '@arkenivajs/database-mariadb':
         specifier: workspace:*
         version: link:../../packages/database-mariadb
+      '@arkenivajs/database-mongodb':
+        specifier: workspace:*
+        version: link:../../packages/database-mongodb
       '@arkenivajs/database-mysql':
         specifier: workspace:*
         version: link:../../packages/database-mysql
@@ -2600,6 +2603,9 @@ importers:
       mariadb:
         specifier: 3.5.4
         version: 3.5.4
+      mongodb:
+        specifier: 7.7.0
+        version: 7.7.0
       mysql2:
         specifier: 3.24.6
         version: 3.24.6(@types/node@22.20.5)

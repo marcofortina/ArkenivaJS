@@ -115,6 +115,9 @@ verification, provenance policy and completed crypto counters across four profil
 The [session comparison](sessions.md) checks real PostgreSQL activity refresh,
 external HMAC/authority, owner revocation and preservation of original MFA time.
 
+The [MongoDB verification](mongodb.md) checks native BSON fidelity, actual CRUD,
+bounded unchanged aggregation, real transactions and independent collection cleanup.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
