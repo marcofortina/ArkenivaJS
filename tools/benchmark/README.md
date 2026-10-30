@@ -94,6 +94,9 @@ native bigint text precision, released ownership and bounded four-profile sample
 The [MariaDB query comparison](mariadb-query.md) independently preserves native
 bigint results and verifies actual pool counters across the four profiles.
 
+The [XML interoperability verification](xml.md) checks ordered mixed content,
+namespace prefixes, native writer roundtrips and actual SDK privacy.
+
 The [core lookup comparison](core.md) verifies actual public capability identity
 and lifecycle boundaries in four profiles without adding per-lookup instruments.
 
