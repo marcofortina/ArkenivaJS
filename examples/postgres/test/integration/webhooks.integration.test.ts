@@ -120,3 +120,46 @@ test(
     }
   },
 );
+
+test(
+  'A malformed PostgreSQL nonce receipt never acknowledges verification and cannot replay after restart',
+  { timeout: 30000 },
+  async () => {
+    const f = await webhooksFixture();
+    try {
+      const source = f.backend.store,
+        claim = source.claimOnce,
+        malformed = await f.instance({
+          ...source,
+          async claimOnce(...args) {
+            const committed = await Reflect.apply(claim, source, args);
+            return { committed } as unknown as boolean;
+          },
+        }),
+        a = await f.session(),
+        ctx = context(),
+        signature = await a.run(() => f.first.webhooks.sign(body, 'fixture/webhooks', ctx));
+      await assert.rejects(
+        a.run(() => malformed.webhooks.verify(body, signature, ctx)),
+        (error: unknown) => {
+          assert.equal((error as { code: string }).code, 'EK_WEBHOOK_REPLAY');
+          assert.equal((error as { details: { outcome: string } }).details.outcome, 'unknown');
+          return true;
+        },
+      );
+      const stored = await f.backend.app.sql.queryOne<{ count: string }>('main', {
+        text: `SELECT count(*)::text AS count FROM ${f.backend.schema}.security_claims WHERE namespace='webhooks.nonces.v1'`,
+      });
+      assert.equal(stored?.count, '1');
+      await malformed.app.stop();
+      const restarted = await f.instance();
+      for (const replica of [f.second, restarted])
+        await assert.rejects(
+          a.run(() => replica.webhooks.verify(body, signature, ctx)),
+          { code: 'EK_WEBHOOK_REPLAY' },
+        );
+    } finally {
+      await f.close();
+    }
+  },
+);
