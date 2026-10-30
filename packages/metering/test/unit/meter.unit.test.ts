@@ -98,6 +98,81 @@ test('Invalid close deadlines leave live meter sessions and the exporter untouch
   assert.equal(f.closes(), 1);
 });
 
+test('Meter startup rejects executable outer configuration fields without evaluating their getters', async () => {
+  const f = fixture();
+  let reads = 0;
+  const opened: ReturnType<typeof createMeter>[] = [];
+  try {
+    for (const key of [
+      'service',
+      'enabled',
+      'queueCapacity',
+      'currentTraceId',
+      Symbol('metadata'),
+    ]) {
+      const input = Object.defineProperty({ ...f.options }, key, {
+        enumerable: true,
+        get() {
+          reads++;
+          if (key === 'service') return service;
+          if (key === 'queueCapacity') return 1000;
+          if (key === 'currentTraceId') return () => undefined;
+          return true;
+        },
+      });
+      assert.throws(() => opened.push(createMeter(input)), code('EK_CONFIG_INVALID'));
+      assert.equal(reads, 0);
+    }
+    assert.equal(f.closes(), 0);
+    assert.deepEqual(f.events, []);
+  } finally {
+    await Promise.allSettled(opened.map((meter) => meter.close()));
+  }
+});
+
+test('Meter startup preserves inherited data and authority identity while rejecting inherited service accessors', async () => {
+  const f = fixture(),
+    inheritedService = { ...service };
+  const input = Object.assign(Object.create({ service: inheritedService, auth: f.auth }), {
+    exporter: f.exporter,
+    flushIntervalMs: 60000,
+  }) as MeterOptions;
+  const meter = createMeter(input);
+  try {
+    inheritedService.name = 'changed-after-start';
+    meter.start({ tenant: f.mint('tenant-A'), operation: 'inherited.configuration' }).end('ok');
+    await meter.flush();
+    assert.equal(f.events[0]!.service, 'meter-test');
+  } finally {
+    await meter.close();
+  }
+  let reads = 0;
+  const prototype = Object.defineProperty({ auth: f.auth }, 'service', {
+    get() {
+      reads++;
+      return service;
+    },
+  });
+  const opened: ReturnType<typeof createMeter>[] = [];
+  try {
+    assert.throws(
+      () =>
+        opened.push(
+          createMeter(
+            Object.assign(Object.create(prototype), {
+              exporter: f.exporter,
+              flushIntervalMs: 60000,
+            }),
+          ),
+        ),
+      code('EK_CONFIG_INVALID'),
+    );
+    assert.equal(reads, 0);
+  } finally {
+    await Promise.allSettled(opened.map((value) => value.close()));
+  }
+});
+
 test('Meter deadlines reject executable options and forged signals before reading hooks or retiring sessions', async () => {
   for (const method of ['flush', 'close'] as const) {
     const f = fixture(),

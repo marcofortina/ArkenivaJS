@@ -204,8 +204,20 @@ function deadlineOptions(
 /** EK-METER-001: independent immutable events, verified tenant provenance and bounded asynchronous export. */
 export function createMeter(input: MeterOptions): ManagedUsageMeter {
   const verifyTenant = captureTenantVerifier(input);
-  if (!input.service) throw invalid('Meter service and trusted tenant verifier are required');
-  const options = { ...input, service: freezeData(copyData(input.service)) };
+  // Capture outer values without invoking configuration accessors or cloning owned providers.
+  const fields: [PropertyKey, unknown][] = [];
+  for (const key of Reflect.ownKeys(input)) {
+    const field = Object.getOwnPropertyDescriptor(input, key)!;
+    if (!field.enumerable) continue;
+    if (!('value' in field)) throw invalid('Meter configuration requires data properties');
+    fields.push([key, field.value]);
+  }
+  const serviceInput = verifierProperty(input, 'service') as MeterOptions['service'];
+  if (!serviceInput) throw invalid('Meter service and trusted tenant verifier are required');
+  const options = {
+    ...(Object.fromEntries(fields) as Partial<MeterOptions>),
+    service: freezeData(copyData(serviceInput)),
+  };
   const service = options.service;
   const capacity = options.queueCapacity ?? DEFAULT_METER_QUEUE_CAPACITY;
   const byteCapacity = options.queueByteCapacity ?? 16_777_216;
