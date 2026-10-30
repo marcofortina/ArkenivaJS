@@ -5,6 +5,8 @@
 
 ## 0.1.0
 
+- Capture the original secret-provider callback and receiver without executing custom binding metadata or proxy prototype traps.
+
 - Register the explicit SOAP capability with immutable offline catalogs,
   approved operations, provider credentials and owned client lifecycle.
 - Preserve native scalar fidelity and verify compatibility at worker startup.

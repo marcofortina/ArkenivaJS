@@ -67,6 +67,7 @@ function property(input: unknown, key: string): unknown {
     throw failure('EK_CONFIG_INVALID');
   let current: object | null = input;
   for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw failure('EK_CONFIG_INVALID');
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
     if (descriptor) {
       if (!('value' in descriptor)) throw failure('EK_CONFIG_INVALID');
@@ -84,6 +85,7 @@ function captureSettings(input: SoapPluginSettings) {
     usage = property(root.secretProvider, 'usage');
   if (
     typeof get !== 'function' ||
+    types.isProxy(get) ||
     (usage !== undefined && !['production', 'test-only'].includes(usage as string))
   )
     throw failure('EK_CONFIG_INVALID');
@@ -134,7 +136,10 @@ function captureSettings(input: SoapPluginSettings) {
     throw failure('EK_CONFIG_INVALID');
   return Object.freeze({
     services: Object.freeze(services),
-    get: get.bind(root.secretProvider) as SecretProvider['get'],
+    get: (reference: string, options?: OperationOptions) =>
+      Reflect.apply(get, root.secretProvider, [reference, options]) as ReturnType<
+        SecretProvider['get']
+      >,
     testOnly: usage === 'test-only',
     maxConcurrent: integer(policy.maxConcurrent, 4),
     timeoutMs: integer(policy.timeoutMs, 60000),

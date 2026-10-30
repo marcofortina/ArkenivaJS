@@ -139,3 +139,81 @@ test('A timed-out provider retains its physical concurrency reservation until it
     code('EK_RESOURCE_CLOSED'),
   );
 });
+
+test('SOAP cannot replace a failing secret provider through custom binding metadata', async () => {
+  let calls = 0,
+    binds = 0;
+  const provider = {
+    async get(): Promise<never> {
+      assert.equal(this, provider);
+      calls++;
+      throw new Error('private-provider-failure');
+    },
+  };
+  Object.defineProperty(provider.get, 'bind', {
+    value: () => {
+      binds++;
+      return async () => ({
+        bytes: Buffer.from(
+          JSON.stringify({
+            version: 1,
+            httpAuth: { scheme: 'basic', username: 'fixture-user', password: 'sample' },
+          }),
+        ),
+        keyVersion: 'v1',
+      });
+    },
+  });
+  const configured = capture({ ...settings, secretProvider: provider });
+  await assert.rejects(credentials(configured, profile, {}), code('EK_BACKEND_UNAVAILABLE'));
+  assert.equal(calls, 1);
+  assert.equal(binds, 0);
+});
+
+test('SOAP captures inherited provider methods without consulting mutable callable or prototype metadata', async () => {
+  let metadataReads = 0,
+    originalCalls = 0,
+    replacementCalls = 0;
+  class Provider {
+    async get(reference: string): Promise<never> {
+      originalCalls++;
+      assert.ok(this instanceof Provider);
+      assert.equal(reference, 'auth');
+      throw new Error('private-provider-failure');
+    }
+  }
+  const provider = new Provider();
+  for (const name of ['bind', 'call', 'apply'])
+    Object.defineProperty(provider.get, name, {
+      get() {
+        metadataReads++;
+        throw new Error('Callable metadata must not execute');
+      },
+    });
+  const configured = capture({ ...settings, secretProvider: provider });
+  provider.get = async (): Promise<never> => {
+    replacementCalls++;
+    throw new Error('A replaced provider must not execute');
+  };
+  await assert.rejects(credentials(configured, profile, {}), code('EK_BACKEND_UNAVAILABLE'));
+  assert.equal(originalCalls, 1);
+  assert.equal(replacementCalls, 0);
+  const trap = () => {
+    metadataReads++;
+    throw new Error('Provider metadata must not execute');
+  };
+  const invalid = [
+    new Proxy(provider, { getOwnPropertyDescriptor: trap, get: trap }),
+    Object.create(new Proxy(provider, { getOwnPropertyDescriptor: trap })),
+    {
+      get: new Proxy(async () => ({ bytes: Buffer.from('{}'), keyVersion: 'v1' }), { apply: trap }),
+    },
+    Object.defineProperty({}, 'get', { get: trap }),
+  ];
+  for (const value of invalid)
+    assert.throws(
+      () => capture({ ...settings, secretProvider: value as never }),
+      code('EK_CONFIG_INVALID'),
+    );
+  assert.equal(metadataReads, 0);
+});
