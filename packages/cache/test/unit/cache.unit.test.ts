@@ -387,7 +387,10 @@ test('Tenant cache retains inherited authority methods and rejects executable me
   }
   const authority = new Authority(),
     scoped = tenantCache(cache, authority, tenant);
-  authority.isVerifiedTenant = (_value: unknown): _value is VerifiedTenantContext => true;
+  authority.isVerifiedTenant = (_value: unknown): _value is VerifiedTenantContext => {
+    void _value;
+    return true;
+  };
   authority.allowed = false;
   try {
     await assert.rejects(scoped.get('private'), { code: 'EK_TENANT_UNVERIFIED' });
