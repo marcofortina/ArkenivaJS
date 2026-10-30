@@ -11,7 +11,15 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createApplication } from '@arkenivajs/core';
 import { dataJsonPlugin, JSON_CAPABILITY } from '@arkenivajs/data-json';
-import { nativeJson, verifyJson, jsonSettings } from '../json-workload.mjs';
+import {
+  nativeJson,
+  verifyJson,
+  jsonSettings,
+  jsonWorkload,
+  completeJsonWorkload,
+  jsonIterations,
+  jsonWarmupIterations,
+} from '../json-workload.mjs';
 
 test(
   'Native and public JSON workflows preserve explicit projection semantics and reject unknown catalogs',
@@ -79,7 +87,7 @@ test(
       }
       const unsupported = join(directory, 'unsupported');
       await assert.rejects(
-        promisify(execFile)(process.execPath, [script, '--smoke', unsupported], { timeout: 5000 }),
+        promisify(execFile)(process.execPath, [script, '--full', unsupported], { timeout: 5000 }),
       );
       await assert.rejects(access(unsupported));
     } finally {
@@ -87,3 +95,48 @@ test(
     }
   },
 );
+
+test('JSON workload reconciles each result and rejects dropped, altered or excessive completions', () => {
+  const fixture = { marker: 'owned-json-test' },
+    records = ['parse', 'stringify', 'validate', 'transform'].map((operation) => ({
+      operation,
+      sampleCount: jsonIterations,
+      warmupIterations: jsonWarmupIterations,
+    }));
+  for (const fault of [undefined, 'altered', 'dropped', 'excessive', 'input']) {
+    const service = nativeJson();
+    if (fault === 'altered') service.transform = () => ({ code: '001' });
+    if (fault === 'input') {
+      const validate = service.validate;
+      service.validate = (input, id) => {
+        const result = validate(input, id);
+        input.profile.label = 'changed';
+        return result;
+      };
+    }
+    const workload = jsonWorkload(service, fixture);
+    assert.throws(() => jsonWorkload(service, fixture));
+    for (const [operation, work] of Object.entries(workload)) {
+      const count = jsonIterations + jsonWarmupIterations - (fault === 'dropped' ? 1 : 0);
+      for (let index = 0; index < count; index++) work();
+      if (fault === 'excessive') assert.throws(work);
+      assert.ok(records.some((record) => record.operation === operation));
+    }
+    if (['altered', 'dropped', 'input'].includes(fault))
+      assert.throws(() => completeJsonWorkload(service, { fixture, measure: true, records }));
+    else
+      assert.deepEqual(completeJsonWorkload(service, { fixture, measure: true, records }), {
+        sampledOperations: 400,
+        warmupOperations: 80,
+        checkedResults: 480,
+        inputUnchanged: true,
+        exactProjectionVerified: true,
+        boundedRetainedResults: true,
+      });
+    assert.deepEqual(completeJsonWorkload(service, { fixture, measure: false, records: [] }), {
+      sampledOperations: 0,
+      warmupOperations: 0,
+      checkedResults: 0,
+    });
+  }
+});

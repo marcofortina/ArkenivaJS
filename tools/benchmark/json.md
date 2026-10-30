@@ -29,7 +29,22 @@ versioned mapping interpreter. It omits framework hostile-object capture,
 interpreter/resource limits, worker isolation, deadlines and lifecycle policy;
 this comparison cannot establish arbitrary-mapping equivalence.
 
-Only `--verify` is supported. Sampling is rejected before workload allocation
-until complete worker resource accounting is available. Reports retain
-`releaseGate: false`; dedicated-runner budgets, five paired repetitions and
-one-hour soak acceptance remain separate work.
+`--verify` keeps the functional verification without measurements. `--smoke`
+performs 20 warmup and 100 measured calls for each of parse, stringify, validate
+and transform, in each of the four profiles. All profiles use the same finite
+corpus. Exactly 480 results per profile are retained under that fixed bound and
+checked after timing against independently constructed expected values. Completion
+rejects altered or missing results, excess callbacks and input mutation. Actual
+Tinybench millisecond samples are retained, excluding warmup samples. Fixed-size
+result capture is included in each operation's latency in both implementations.
+
+Measured profiles use the [Linux supervisor](./supervised-resources.md). Original
+worker measurement-window CPU/RSS/heap, event-loop and GC observations remain
+separate from whole-lifecycle Node resources. Lifecycle CPU includes Node worker
+threads, bridge/worker startup, verification, warmup, measurements, result checking,
+export and physical cleanup. The Python observer, parent and collector are excluded.
+Sampled summed process RSS can repeat shared pages and miss brief peaks; it is not
+unique physical memory. Inaccessible or truncated observations fail the comparison.
+Both modes retain `releaseGate: false`; calibrated dedicated-runner budgets, five
+paired repetitions and one-hour soak acceptance remain separate work. `--full`
+remains unsupported.

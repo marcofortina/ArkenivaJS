@@ -6,8 +6,8 @@
 `runSupervisedWorker(workerFile, input, options)` is an internal benchmark helper.
 The comparison controller can opt into it for measured `--smoke` profiles through
 the captured `superviseProcessTree:true` flag, as described in
-[the comparison integration](./supervised-comparison.md). Existing adapters do not
-enable it by default, and every `--verify` keeps its original direct fork. This is
+[the comparison integration](./supervised-comparison.md). Individual adapters must
+explicitly enable it, and every `--verify` keeps its original direct fork. This is
 benchmark tooling, with no change to framework runtime APIs.
 The caller supplies a trusted absolute worker file or file URL. The worker receives
 one input through native Node advanced IPC, sends one result message, and must exit
