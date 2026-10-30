@@ -62,7 +62,7 @@ Filenames are normalized to NFC and rejected for path separators, drive syntax, 
 
 ## Bounds and lifecycle
 
-All limits are positive safe integers. Request/file ceilings are 64 MiB; field values are at most 64 KiB, each file/field count at most 256 and total parts at most 512. A route needs an explicit nonempty MIME allowlist, up to 64 media types. At most 64 startup routes are accepted. Schema validation is bounded to depth 32, 4096 nodes and 64 KiB. Header/name bounds are finite and parser streams use 16 KiB high-water marks; Node may deliver a larger individual network chunk.
+All limits are positive safe integers. Request/file byte ceilings are explicitly configured up to `Number.MAX_SAFE_INTEGER`; a large ceiling does not allocate a matching buffer. Choose finite byte budgets and deadlines appropriate to the application. Field values are at most 64 KiB, each file/field count at most 256 and total parts at most 512. A route needs an explicit nonempty MIME allowlist, up to 64 media types. At most 64 startup routes are accepted. Schema validation is bounded to depth 32, 4096 nodes and 64 KiB. Header/name bounds are finite and parser streams use 16 KiB high-water marks; Node may deliver a larger individual network chunk.
 
 The wire guard counts actual multipart body chunks, including boundaries and metadata, before the native parser. It does not trust Content-Length or count HTTP headers, chunk-transfer framing or TLS overhead. An oversize native chunk is counted as observed input but cannot be acknowledged or exposed as a successful file chunk. No unbounded drain follows rejection.
 
@@ -77,3 +77,22 @@ Limits return `EK_UPLOAD_LIMIT`/413, unsupported declared MIME returns `EK_UPLOA
 Optional Pino and OTel signals report aggregate bytes, files, parts, request counts, outcome and elapsed time, using only bounded method/outcome labels. `upload.requests` counts each completed admitted request once; `upload.parts` counts native parts encountered, including a rejected part. `upload.aborted.requests` is the failed-request subset with cancellation, deadline or incomplete/truncated-stream errors. It is not an additional request or a count of exclusively client-initiated disconnects. Success/failure counters keep the existing `ok`/`error` labels. Rejection before physical admission is retained in service statistics but has no measured stream completion. Configure the metering plugin's `usageDefinitions` with `{'upload.request.bytes':'bytes','upload.files':'items','upload.parts':'items'}`. An installed enabled metering provider records the same observed byte/file/part quantities under the verified tenant and request ID, with one `http.requests` operation. No token, filename, field value or file content enters these signals. Missing custom usage definitions produce an observation gap and still close the metering session; they cannot change request success. Technical measurements do not compute monetary costs. Large-file heap and comparative performance acceptance remain separate from functional protocol tests.
 
 See [the executable consumer](../../examples/upload/README.md). The suite exercises actual HTTP/HTTPS/HTTP2, signed OIDC, hostile metadata, body/file/field/count limits, partial consumption, disconnects, private capacity retention and graceful shutdown on Node 22/24/26. Performance campaigns and current-head remote release acceptance must pass before a production-ready release claim.
+
+## Disposable large-stream verification
+
+After building, run this additional integration test only inside an owned VM or CI runner:
+
+```sh
+ARKENIVA_UPLOAD_PRESSURE_DISPOSABLE=1 node --test packages/upload/dist-test/integration/pressure.integration.test.js
+```
+
+The client produces a 1 GiB file from one reused 64 KiB chunk, honors native
+socket backpressure and verifies the server's independently computed SHA-256
+receipt. The authenticated server runs in a separate Node process with a 128 MiB
+old-space ceiling. Two incomplete clients remain active while a third peer aborts
+mid-transfer; their physical reservations must retire before shutdown. No upload
+file is written. Sampled server heap, array-buffer and RSS growth must remain
+below 96, 128 and 192 MiB respectively; queued client data stays below 128 KiB.
+These conservative functional ceilings establish bounded observations for this
+fixture. They do not establish production capacity, an asymptotic memory bound,
+native-versus-framework overhead, five repeated campaigns or soak acceptance.

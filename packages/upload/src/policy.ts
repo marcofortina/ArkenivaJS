@@ -78,8 +78,9 @@ function policy(input: unknown): UploadPolicy {
   });
   if (new Set(media).size !== media.length) throw failure();
   return Object.freeze({
-    maxRequestBytes: integer(value.maxRequestBytes, 67108864),
-    maxFileBytes: integer(value.maxFileBytes, 67108864),
+    // Explicit byte ceilings bound streaming work without limiting files to an in-memory size.
+    maxRequestBytes: integer(value.maxRequestBytes, Number.MAX_SAFE_INTEGER),
+    maxFileBytes: integer(value.maxFileBytes, Number.MAX_SAFE_INTEGER),
     maxFiles: integer(value.maxFiles, 256),
     maxFields: integer(value.maxFields, 256),
     maxFieldBytes: integer(value.maxFieldBytes, 65536),
