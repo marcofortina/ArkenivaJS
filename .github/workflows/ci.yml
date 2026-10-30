@@ -223,6 +223,8 @@ jobs:
         run: pnpm --filter @arkenivajs/security-ldap test:integration
       - name: Verify four actual LDAPS comparison profiles and SDK privacy
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:ldap
+        env:
+          ARKENIVA_LDAP_BENCHMARK_DISPOSABLE: '1'
       - run: pnpm --filter @arkenivajs/example-ldap test:integration
       - name: Verify the public LDAP consumer using packed artifacts
         run: pnpm test:packed:examples --integration ldap
