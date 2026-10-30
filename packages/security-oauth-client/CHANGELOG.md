@@ -7,6 +7,9 @@ Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 ## 0.1.0
 
+- Verify corrupted durable OAuth state and native PostgreSQL recovery, hostile
+  discovery documents, cryptographic provider failures, current client policy,
+  persistence acknowledgments and bounded operation failure handling.
 - Capture configured provider methods without evaluating callable metadata, and
   reject proxy callbacks and unbounded traversal before authorization or state work.
 - Add native outgoing OAuth2/OIDC grants with PKCE, exact registration policy and runtime application authorization.

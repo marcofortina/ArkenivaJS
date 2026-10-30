@@ -3,7 +3,63 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { oauthFixture } from './oauth-client-fixture.js';
+
+test(
+  'OAuth real PostgreSQL corrupted authorization state cannot exchange or consume a restored signed PKCE grant',
+  { timeout: 30000 },
+  async () => {
+    const f = await oauthFixture();
+    try {
+      const account = await f.session(),
+        start = await account.run(() =>
+          f.first.oauth.beginAuthorization({
+            audience: f.metadata.audience,
+            scopes: ['openid', 'orders.read'],
+            returnPath: '/orders',
+          }),
+        ),
+        callback = await f.authorize(start.authorizationUrl),
+        id = start.stateRef.split('.')[1]!;
+      const stored = await f.backend.app.sql.queryOne<{ body: string; version: string }>('main', {
+        text: `SELECT body,version::text AS version FROM ${f.backend.schema}.security_records WHERE namespace=:namespace AND id=:id`,
+        bindings: { namespace: 'oauth.authorization.v1', id },
+      });
+      assert.ok(stored);
+      const original = JSON.parse(stored.body) as Record<string, unknown>,
+        write = (body: string) =>
+          f.backend.app.sql.query('main', {
+            text: `UPDATE ${f.backend.schema}.security_records SET body=:body WHERE namespace=:namespace AND id=:id`,
+            bindings: { body, namespace: 'oauth.authorization.v1', id },
+          });
+      for (const patch of [
+        { kind: 'refresh' },
+        { ownerKey: 'foreign' },
+        { familyId: randomUUID() },
+        { sealed: { ...(original.sealed as object), algorithm: 'none' } },
+      ]) {
+        await write(JSON.stringify({ ...original, ...patch }));
+        await assert.rejects(account.run(() => f.second.oauth.exchangeCode(callback)));
+      }
+      await write(stored.body);
+      const retained = await f.backend.app.sql.queryOne<{ version: string }>('main', {
+        text: `SELECT version::text AS version FROM ${f.backend.schema}.security_records WHERE namespace=:namespace AND id=:id`,
+        bindings: { namespace: 'oauth.authorization.v1', id },
+      });
+      assert.equal(retained?.version, stored.version);
+      const grant = await account.run(() => f.second.oauth.exchangeCode(callback));
+      assert.ok(grant.refreshRef);
+      await assert.rejects(account.run(() => f.first.oauth.exchangeCode(callback)));
+      const refreshed = await account.run(() => f.first.oauth.refresh(grant.refreshRef!));
+      assert.ok(refreshed.refreshRef);
+      await account.run(() => f.second.oauth.revoke(refreshed.refreshRef!));
+      await assert.rejects(account.run(() => f.first.oauth.refresh(refreshed.refreshRef!)));
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test(
   'OAuth verified HTTPS PKCE state is consumed once across separate PostgreSQL pools and refresh survives application restart',
