@@ -35,6 +35,56 @@ async function fixture(work: (root: string) => Promise<void>) {
 }
 const denied = (error: unknown) => error instanceof KitError;
 
+async function runtimeModules(): Promise<string[]> {
+  const directory = new URL('../../../', import.meta.url),
+    names: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === 'cli') continue;
+    const metadata = JSON.parse(
+      await readFile(new URL(entry.name + '/package.json', directory), 'utf8'),
+    );
+    assert.equal(typeof metadata.name, 'string');
+    assert.ok(metadata.name.startsWith('@arkenivajs/'));
+    names.push(metadata.name);
+  }
+  return names.sort();
+}
+test('The CLI catalog exactly covers every implemented runtime package without exposing the CLI itself', async () => {
+  assert.deepEqual([...MODULES].sort(), await runtimeModules());
+  assert.equal(new Set(MODULES).size, MODULES.length);
+  assert.equal(Object.isFrozen(MODULES), true);
+});
+test('Every implemented runtime module can be added explicitly with byte-exact idempotence and unchanged source', async () =>
+  fixture(async (cwd) => {
+    const project = await newProject('all-modules', { cwd }),
+      directory = project.directory,
+      source = await readFile(join(directory, 'src/main.ts'), 'utf8'),
+      lock = 'owned-lockfile\n';
+    await writeFile(join(directory, 'pnpm-lock.yaml'), lock);
+    const names = await runtimeModules();
+    for (const [index, name] of names.entries()) {
+      await addModule(index % 2 ? name : name.slice('@arkenivajs/'.length), { cwd: directory });
+      const before = await readFile(join(directory, 'package.json'), 'utf8'),
+        repeated = await addModule(name, { cwd: directory });
+      assert.equal(repeated.changed, false);
+      assert.deepEqual(repeated.files, []);
+      assert.equal(await readFile(join(directory, 'package.json'), 'utf8'), before);
+    }
+    const metadata = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    assert.deepEqual(Object.keys(metadata.dependencies).sort(), names);
+    assert.ok(
+      Object.values(metadata.dependencies).every((version) => version === FRAMEWORK_VERSION),
+    );
+    assert.equal(await readFile(join(directory, 'src/main.ts'), 'utf8'), source);
+    assert.equal(await readFile(join(directory, 'pnpm-lock.yaml'), 'utf8'), lock);
+    assert.equal(
+      (await readdir(directory)).some(
+        (name) => name.includes('arkenivajs-manifest') || name.endsWith('.lock'),
+      ),
+      false,
+    );
+  }));
+
 test('The release constant matches package metadata and explicit addition works in an existing ESM project', async () =>
   fixture(async (cwd) => {
     const metadata = JSON.parse(
