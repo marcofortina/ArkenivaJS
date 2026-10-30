@@ -72,6 +72,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:compression
         env:
           ARKENIVA_COMPRESSION_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify fixed PDF inspections and isolated native child resources
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:pdf
+        env:
+          ARKENIVA_PDF_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

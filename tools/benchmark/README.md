@@ -115,6 +115,8 @@ one-shot sources and awaited targets without claiming incomplete child measureme
 
 The [PDF verification](pdf.md) exchanges actual searchable documents, metadata,
 rotated text and ordered merged pages through the same four isolated profiles.
+Its bounded fixed-input inspection smoke checks every report and supervises
+actual native reader children through physical retirement.
 
 The [SFTP/SSH verification](sftp.md) checks pinned-host file exchange, actual hashes,
 remote cleanup and literal allowed commands against the owned OpenSSH server.
