@@ -336,3 +336,156 @@ test('Tenant cache binds verified authority, rejects qualified foreign keys and 
     await cache.close();
   }
 });
+
+test('Tenant cache ignores custom binding metadata and never treats malformed evidence as verification', async () => {
+  const f = redisPortDouble(),
+    cache = createRedisCache(f.redis),
+    tenant = Object.freeze({ tenantId: 'tenant-A' }) as VerifiedTenantContext;
+  let binds = 0,
+    verified = 0;
+  const authority = {
+    isVerifiedTenant(value: unknown): value is VerifiedTenantContext {
+      assert.equal(this, authority);
+      assert.equal(value, tenant);
+      verified++;
+      return false;
+    },
+  };
+  Object.defineProperty(authority.isVerifiedTenant, 'bind', {
+    value: () => {
+      binds++;
+      return () => true;
+    },
+  });
+  try {
+    assert.throws(() => tenantCache(cache, authority, tenant), { code: 'EK_TENANT_UNVERIFIED' });
+    assert.equal(verified, 1);
+    assert.equal(binds, 0);
+    for (const result of [1, 'verified', {}, Promise.resolve(false)]) {
+      assert.throws(
+        () => tenantCache(cache, { isVerifiedTenant: (() => result) as never }, tenant),
+        { code: 'EK_TENANT_UNVERIFIED' },
+      );
+    }
+    assert.equal(f.state.calls.length, 0);
+  } finally {
+    await cache.close();
+  }
+});
+
+test('Tenant cache retains inherited authority methods and rejects executable metadata before backend work', async () => {
+  const f = redisPortDouble(),
+    cache = createRedisCache(f.redis),
+    tenant = Object.freeze({ tenantId: 'tenant-A' }) as VerifiedTenantContext;
+  let effects = 0;
+  class Authority {
+    allowed = true;
+    isVerifiedTenant(value: unknown): value is VerifiedTenantContext {
+      assert.ok(this instanceof Authority);
+      return this.allowed && value === tenant;
+    }
+  }
+  const authority = new Authority(),
+    scoped = tenantCache(cache, authority, tenant);
+  authority.isVerifiedTenant = (_value: unknown): _value is VerifiedTenantContext => true;
+  authority.allowed = false;
+  try {
+    await assert.rejects(scoped.get('private'), { code: 'EK_TENANT_UNVERIFIED' });
+    const trap = () => {
+      effects++;
+      throw new Error('Authority metadata must not execute');
+    };
+    const bad = [
+      new Proxy(authority, { get: trap, getOwnPropertyDescriptor: trap, getPrototypeOf: trap }),
+      Object.defineProperty({}, 'isVerifiedTenant', { get: trap }),
+      { isVerifiedTenant: new Proxy(() => true, { apply: trap }) },
+      Object.create(new Proxy(authority, { getOwnPropertyDescriptor: trap })),
+      Array.from({ length: 33 }).reduce<object>(
+        (previous) => Object.create(previous) as object,
+        authority,
+      ),
+    ];
+    for (const value of bad)
+      assert.throws(() => tenantCache(cache, value as never, tenant), {
+        code: 'EK_TENANT_UNVERIFIED',
+      });
+    assert.equal(effects, 0);
+    assert.equal(f.state.calls.length, 0);
+  } finally {
+    await cache.close();
+  }
+});
+
+test('Tenant cache never consults callable metadata and a verifier failure cannot reach Redis', async () => {
+  const f = redisPortDouble(),
+    cache = createRedisCache(f.redis),
+    tenant = Object.freeze({ tenantId: 'tenant-A' }) as VerifiedTenantContext;
+  let failed = false,
+    metadataReads = 0;
+  const failure = new Error('private-verifier-diagnostic');
+  const authority = {
+    isVerifiedTenant(value: unknown): value is VerifiedTenantContext {
+      if (failed) throw failure;
+      return value === tenant;
+    },
+  };
+  for (const name of ['bind', 'call', 'apply'])
+    Object.defineProperty(authority.isVerifiedTenant, name, {
+      get() {
+        metadataReads++;
+        throw new Error('Callable metadata must not execute');
+      },
+    });
+  const scoped = tenantCache(cache, authority, tenant);
+  try {
+    failed = true;
+    for (const operation of [
+      () => scoped.get('private'),
+      () => scoped.set('private', {}),
+      () => scoped.delete('private'),
+    ])
+      await assert.rejects(operation(), (error: unknown) => error === failure);
+    assert.equal(metadataReads, 0);
+    assert.equal(f.state.calls.length, 0);
+  } finally {
+    await cache.close();
+  }
+});
+
+test('Tenant cache observes invalid asynchronous verifier rejection without trusting thenable metadata', async () => {
+  const f = redisPortDouble(),
+    cache = createRedisCache(f.redis),
+    tenant = Object.freeze({ tenantId: 'tenant-A' }) as VerifiedTenantContext;
+  let reads = 0;
+  const asynchronous = () => {
+    const result = Promise.reject(new Error('private-async-verifier-diagnostic'));
+    for (const name of ['then', 'catch'])
+      Object.defineProperty(result, name, {
+        get() {
+          reads++;
+          throw new Error('Promise metadata must not execute');
+        },
+      });
+    return result;
+  };
+  try {
+    assert.throws(() => tenantCache(cache, { isVerifiedTenant: asynchronous as never }, tenant), {
+      code: 'EK_TENANT_UNVERIFIED',
+    });
+    const thenable = Object.defineProperty({}, 'then', {
+      get() {
+        reads++;
+        throw new Error('Thenable metadata must not execute');
+      },
+    });
+    assert.throws(
+      () => tenantCache(cache, { isVerifiedTenant: (() => thenable) as never }, tenant),
+      { code: 'EK_TENANT_UNVERIFIED' },
+    );
+    await delay(0);
+    assert.equal(reads, 0);
+    assert.equal(f.state.calls.length, 0);
+  } finally {
+    await cache.close();
+  }
+});

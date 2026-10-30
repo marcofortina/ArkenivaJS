@@ -85,7 +85,10 @@ await customers.set('customer:' + context.params.id, { name: 'Ada' }, { ttlMs: 3
 const customer = await customers.get<{ name: string }>('customer:' + context.params.id);
 ```
 
-The verifier must be trusted application configuration. Never accept it or a
+The verifier must be trusted application configuration. Its original method and
+receiver are captured once, without executing custom binding metadata. Only
+boolean `true` confirms verification; truthy objects and asynchronous results
+cannot authorize access. Accessors and proxy verification methods are rejected. Never accept it or a
 tenant context from request JSON, headers or route parameters. The facade
 captures an unambiguous UTF-8/base64url tenant namespace and checks provenance
 again before each backend access. Qualified `tenant:` keys are rejected rather
