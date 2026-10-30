@@ -260,3 +260,70 @@ test(
     }
   },
 );
+
+test('Health plugin cannot replace an unavailable probe through custom function binding', async () => {
+  let calls = 0,
+    binds = 0;
+  const probe = {
+    name: 'unavailable',
+    check() {
+      calls++;
+      assert.equal(this, probe);
+      return false;
+    },
+  };
+  Object.defineProperty(probe.check, 'bind', {
+    value: () => {
+      binds++;
+      return () => true;
+    },
+  });
+  const app = await createApplication({ service, plugins: [healthPlugin({ checks: [probe] })] });
+  try {
+    await assert.rejects(app.start(), (error: unknown) => {
+      assert.ok(error instanceof KitError);
+      assert.equal(error.code, 'EK_PLUGIN_FAILED');
+      assert.ok(error.cause instanceof KitError);
+      assert.equal(error.cause.code, 'EK_HEALTH_NOT_READY');
+      return true;
+    });
+    assert.equal(calls, 1);
+    assert.equal(binds, 0);
+  } finally {
+    await app.stop();
+  }
+});
+
+test('Health plugin captures the configured receiver before later callback replacement', async () => {
+  const probe = {
+    name: 'captured',
+    available: true,
+    check() {
+      return this.available;
+    },
+  };
+  const configured = healthPlugin({ checks: [probe] });
+  probe.check = () => true;
+  const app = await createApplication({ service, plugins: [configured] });
+  try {
+    await app.start();
+    probe.available = false;
+    assert.deepEqual(await app.health.ready(), { status: 'not_ready', failing: ['captured'] });
+  } finally {
+    await app.stop();
+  }
+  let effects = 0;
+  const trap = () => {
+    effects++;
+    throw new Error('Application metadata must not execute');
+  };
+  for (const options of [
+    new Proxy({}, { ownKeys: trap, get: trap }),
+    Object.defineProperty({}, 'checks', { get: trap }),
+    { checks: [Object.defineProperty({ name: 'invalid' }, 'check', { get: trap })] },
+    { dependencies: Object.defineProperty(['dependency'], '0', { get: trap }) },
+  ]) {
+    assert.throws(() => healthPlugin(options as never), { code: 'EK_CONFIG_INVALID' });
+  }
+  assert.equal(effects, 0);
+});

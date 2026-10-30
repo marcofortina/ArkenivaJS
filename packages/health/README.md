@@ -69,6 +69,11 @@ dependency; public application facades still require READY. An optional
 checking its own resources. Returning exactly boolean true confirms readiness;
 false, rejection, malformed evidence, cancellation and timeout fail closed.
 
+Custom callbacks are captured once with their original receiver. Replacing a
+callback later or overriding its `bind` property cannot replace readiness
+evidence. Policy fields and probe metadata must be data properties; accessors
+and proxies are rejected without executing application-owned metadata hooks.
+
 Names use lowercase ASCII letters, digits, dots and hyphens, start with a
 letter and contain at most 96 characters. Automatic names are `plugin.<id>`.
 Names must be unique across custom and automatic checks; `application` is

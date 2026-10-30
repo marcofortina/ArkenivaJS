@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
+import { types } from 'node:util';
 import { KitError, COMPONENTS } from '@arkenivajs/core';
 import type {
   HealthRegistry,
@@ -17,7 +18,12 @@ import type {
   SupportPluginFactory,
   PluginHealthProbe,
 } from '@arkenivajs/core/support';
-import { createHealthRegistry, healthPolicy } from './registry.js';
+import {
+  createHealthRegistry,
+  healthPolicy,
+  healthProperty,
+  captureHealthChecks,
+} from './registry.js';
 import type { ManagedHealthRegistry } from './registry.js';
 export { createHealthRegistry } from './registry.js';
 export type { HealthOptions, HealthCheck, ManagedHealthRegistry } from './registry.js';
@@ -66,29 +72,41 @@ export function healthPlugin(input: HealthPluginOptions = {}): Plugin {
   if (
     !input ||
     typeof input !== 'object' ||
+    types.isProxy(input) ||
     Array.isArray(input) ||
-    Object.keys(input).some((key) => !['checks', 'timeoutMs', 'dependencies'].includes(key)) ||
-    (input.checks !== undefined && !Array.isArray(input.checks)) ||
-    (input.dependencies !== undefined &&
-      (!Array.isArray(input.dependencies) ||
-        input.dependencies.some((id) => typeof id !== 'string')))
+    Object.keys(input).some((key) => !['checks', 'timeoutMs', 'dependencies'].includes(key))
   )
     throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health plugin policy' });
-  const timeoutMs = input.timeoutMs,
-    checks = (input.checks ?? []).map((entry) => ({
-      name: entry?.name,
-      check: typeof entry?.check === 'function' ? entry.check.bind(entry) : entry?.check,
-    }));
+  const timeoutMs = healthProperty(input, 'timeoutMs') as number | undefined,
+    checks = captureHealthChecks<PluginHealthCheck['check']>(healthProperty(input, 'checks')),
+    configuredDependencies = healthProperty(input, 'dependencies');
+  if (
+    configuredDependencies !== undefined &&
+    (types.isProxy(configuredDependencies) || !Array.isArray(configuredDependencies))
+  )
+    throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health dependency list' });
+  const dependencies: string[] = [];
+  for (
+    let index = 0;
+    index <
+    (configuredDependencies === undefined ? 0 : (configuredDependencies as unknown[]).length);
+    index++
+  ) {
+    const field = Object.getOwnPropertyDescriptor(configuredDependencies, String(index));
+    if (!field || !('value' in field) || typeof field.value !== 'string')
+      throw new KitError({ code: 'EK_CONFIG_INVALID', message: 'Invalid health dependency list' });
+    dependencies.push(field.value);
+  }
   // Reuse the same pure metadata validation before any application-owned resource can initialize.
   healthPolicy({
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
     checks,
   });
-  const dependencies = Object.freeze([...(input.dependencies ?? [])]),
-    owners = new WeakMap<
-      ApplicationOptions,
-      { registry?: ManagedHealthRegistry; closed: boolean; state: () => string }
-    >();
+  Object.freeze(dependencies);
+  const owners = new WeakMap<
+    ApplicationOptions,
+    { registry?: ManagedHealthRegistry; closed: boolean; state: () => string }
+  >();
   const plugin: ComposablePlugin = {
     id: 'health',
     version: '0.1.0',
