@@ -150,3 +150,40 @@ test(
     }
   },
 );
+
+test(
+  'API key real PostgreSQL corrupted record bodies fail closed and restored valid records remain usable',
+  { timeout: 30000 },
+  async () => {
+    const f = await apiKeyFixture();
+    try {
+      const account = await f.session();
+      const issued = await account.run(() => f.first.keys.issue(account.subject, grant()));
+      const stored = await f.backend.app.sql.queryOne<{ body: string }>('main', {
+        text: `SELECT body FROM ${f.backend.schema}.security_records WHERE namespace=:namespace AND id=:id`,
+        bindings: { namespace: 'apikey.records.v1', id: issued.id },
+      });
+      assert.ok(stored);
+      const original = JSON.parse(stored.body) as Record<string, unknown>;
+      const write = (body: string) =>
+        f.backend.app.sql.execute('main', {
+          text: `UPDATE ${f.backend.schema}.security_records SET body=:body WHERE namespace=:namespace AND id=:id`,
+          bindings: { body, namespace: 'apikey.records.v1', id: issued.id },
+        });
+      for (const patch of [
+        { kind: 'unexpected-record' },
+        { ownerKey: 'g'.repeat(64) },
+        { createdAt: original.expiresAt },
+      ]) {
+        await write(JSON.stringify({ ...original, ...patch }));
+        await assert.rejects(f.second.keys.verify(issued.value, {}), { code: 'EK_APIKEY_STORE' });
+        await write(stored.body);
+        assert.equal((await f.second.keys.verify(issued.value, {})).keyId, issued.id);
+      }
+      await account.run(() => f.first.keys.revoke(issued.id, account.subject));
+      await assert.rejects(f.second.keys.verify(issued.value, {}));
+    } finally {
+      await f.close();
+    }
+  },
+);
