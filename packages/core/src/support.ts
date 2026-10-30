@@ -433,6 +433,7 @@ export async function within<T>(
     if (
       !options ||
       typeof options !== 'object' ||
+      types.isProxy(options) ||
       Array.isArray(options) ||
       ![Object.prototype, null].includes(Object.getPrototypeOf(options))
     )

@@ -35,6 +35,9 @@ including nested arrays and revoked proxies, before invoking their hooks.
 
 `within(work, {signal?, timeoutMs?})` bounds a promise with `EK_ABORTED` or `EK_TIMEOUT`; timeout defaults to 30,000 ms and must be a positive integer. It removes its listener and timer on every outcome. The work callback must cooperate with cancellation to terminate its own resources.
 
+Operation options use own data fields on plain records. Proxy options are rejected
+before reflection or callback execution; cancellation requires an actual native signal.
+
 Long deadlines use bounded native timer intervals against a monotonic clock, preserving the requested duration beyond Node's single-timer limit.
 
 Plugin metadata must use data properties. Lifecycle and health callbacks are captured
