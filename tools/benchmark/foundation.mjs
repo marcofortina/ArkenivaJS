@@ -148,6 +148,10 @@ try {
     assert.equal(result.state, 'completed');
     const values = result.latency.samples;
     assert.ok(values && values.length >= samples);
+    assert.equal(values.length, result.latency.samplesCount);
+    assert.ok(
+      values.length <= 10000 && values.every((value) => Number.isFinite(value) && value >= 0),
+    );
     const rank = (values.length - 1) * 0.95;
     const lower = Math.floor(rank);
     const p95 = values[lower] + (values[Math.ceil(rank)] - values[lower]) * (rank - lower);
@@ -155,6 +159,7 @@ try {
       scenarioId,
       mode,
       sampleCount: result.latency.samplesCount,
+      rawLatency: { unit: 'milliseconds', values: [...values] },
       runIterationCount: 1,
       warmupIterations: 100,
       latencyMs: {

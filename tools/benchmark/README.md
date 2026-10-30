@@ -7,6 +7,12 @@ Whole-worker CPU/memory observations include sample retention and copying overhe
 retained samples introduce no second timer or release-budget claim. Verification-only
 adapters remain unsampled, and standalone legacy microcontrollers have separate reports.
 
+The standalone `foundation.mjs`, `metering.mjs`, `sql.mjs` and `postgres.mjs`
+controllers also export actual Tinybench measured `rawLatency` arrays with the
+same millisecond/count convention and warmup excluded. Their component scope,
+iteration counts and timing boundaries remain unchanged; each local report keeps
+`releaseGate:false`.
+
 The [HTTPS tenant-routing verification](routing.md) checks authenticated local
 dispatch, private capability discovery and actual parented technical usage.
 

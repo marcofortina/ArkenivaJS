@@ -64,6 +64,11 @@ try {
     const result = bench.tasks[0].result;
     assert.equal(result.state, 'completed');
     assert.ok(result.latency.samplesCount >= 1000);
+    assert.equal(result.latency.samples.length, result.latency.samplesCount);
+    assert.ok(
+      result.latency.samples.length <= 10000 &&
+        result.latency.samples.every((value) => Number.isFinite(value) && value >= 0),
+    );
     const samples = [...result.latency.samples].sort((left, right) => left - right);
     const rank = (samples.length - 1) * 0.95;
     const p95 =
@@ -73,6 +78,7 @@ try {
       mode,
       measured: true,
       sampleCount: result.latency.samplesCount,
+      rawLatency: { unit: 'milliseconds', values: [...result.latency.samples] },
       latencyMs: {
         mean: result.latency.mean,
         p50: result.latency.p50,

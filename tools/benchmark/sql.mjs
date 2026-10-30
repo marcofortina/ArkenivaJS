@@ -52,6 +52,11 @@ for (const [dialect, text] of scenarios) {
   const result = bench.tasks[0].result;
   assert.equal(result.state, 'completed');
   assert.equal(result.latency.samplesCount, 10_000);
+  assert.equal(result.latency.samples.length, result.latency.samplesCount);
+  assert.ok(
+    result.latency.samples.length <= 10000 &&
+      result.latency.samples.every((value) => Number.isFinite(value) && value >= 0),
+  );
   assert.equal(invocations, 11_000);
   assert.equal(consumed, expected.text.length * invocations);
   const samples = [...result.latency.samples].sort((left, right) => left - right);
@@ -62,6 +67,7 @@ for (const [dialect, text] of scenarios) {
     statementBytes: Buffer.byteLength(text),
     bindOccurrences: expected.names.length,
     sampleCount: result.latency.samplesCount,
+    rawLatency: { unit: 'milliseconds', values: [...result.latency.samples] },
     totalCompilerInvocations: invocations,
     latencyMs: {
       mean: result.latency.mean,
