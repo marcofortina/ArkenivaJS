@@ -8,6 +8,7 @@ import { request as httpsRequest } from 'node:https';
 import { connect } from 'node:http2';
 import { Writable } from 'node:stream';
 import { createApplication } from '@arkenivajs/core';
+import { within } from '@arkenivajs/core/support';
 import type { VerifiedTenantContext } from '@arkenivajs/core';
 import { apiPlugin } from '@arkenivajs/api';
 import type { ManagedApiServer } from '@arkenivajs/api';
@@ -36,6 +37,18 @@ for (const mode of ['http', 'https', 'http2'] as const)
         },
       });
       let app: Awaited<ReturnType<typeof createApplication>> | undefined;
+      const users = f.provider('Users'),
+        originalList = users.list;
+      let held: { entered(): void; release: Promise<void>; aborted(): void } | undefined;
+      users.list = async (...args) => {
+        if (held) {
+          const selected = held;
+          args[2]?.signal?.addEventListener('abort', selected.aborted, { once: true });
+          selected.entered();
+          await selected.release;
+        }
+        return originalList(...args);
+      };
       const authority = {
         async require(
           _action: string,
@@ -70,14 +83,14 @@ for (const mode of ['http', 'https', 'http2'] as const)
             securityPlugin({ allowInsecureLoopback: true }),
             apiPlugin({ dependencies: ['security'] }),
             scimPlugin({
-              users: f.provider('Users'),
+              users,
               groups: f.provider('Groups'),
               authority,
               capabilities: { patch: true, bulk: false, filter: true, sort: true, etag: true },
               maxPageSize: 10,
               maxFilterDepth: 8,
               maxRequestBytes: 16384,
-              maxConcurrent: 4,
+              maxConcurrent: mode === 'http' ? 1 : 4,
             }),
           ],
         });
@@ -268,6 +281,40 @@ for (const mode of ['http', 'https', 'http2'] as const)
             }),
             { code: 'ERR_TLS_CERT_ALTNAME_INVALID' },
           );
+        if (mode === 'http') {
+          let entered!: () => void, release!: () => void, aborted!: () => void;
+          const started = new Promise<void>((resolve) => {
+              entered = resolve;
+            }),
+            stopped = new Promise<void>((resolve) => {
+              aborted = resolve;
+            }),
+            pending = new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          held = { entered, release: pending, aborted };
+          const source = await f.request('GET', '/Users'),
+            client = httpRequest(origin + '/scim/v2/Users', {
+              headers: { authorization: source.headers.authorization! },
+              agent: false,
+            });
+          client.on('error', () => {});
+          client.end();
+          try {
+            await within(() => started, { timeoutMs: 3000 });
+            assert.equal((await exchange('GET', '/scim/v2/Users')).status, 503);
+            client.destroy();
+            // Abort must arrive well before the transport's five-second operation deadline.
+            await within(() => stopped, { timeoutMs: 1000 });
+            assert.equal((await exchange('GET', '/scim/v2/Users')).status, 503);
+          } finally {
+            held = undefined;
+            release();
+            client.destroy();
+          }
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          assert.equal((await exchange('GET', '/scim/v2/Users')).status, 200);
+        }
         const service = app.resolve<ScimService>(SCIM_CAPABILITY);
         assert.throws(() => service.registerUsers(f.provider('Users')), {
           code: 'EK_LIFECYCLE_STATE',
