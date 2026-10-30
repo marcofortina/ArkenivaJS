@@ -68,6 +68,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:csv
         env:
           ARKENIVA_CSV_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify measured compression streams and bounded backpressure probes
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:compression
+        env:
+          ARKENIVA_COMPRESSION_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim

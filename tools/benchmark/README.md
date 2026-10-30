@@ -70,7 +70,9 @@ The [configuration comparison](config.md) checks source precedence, immutable
 snapshots and atomic validated reload using a fixed nonsecret corpus.
 
 The [compression verification](compression.md) consumes actual GZIP/ZIP streams
-and exchanges native/public archives; streaming measurement remains separate.
+and exchanges native/public archives. Its bounded GZIP/GUNZIP smoke observes
+actual byte boundaries, throughput and separate lazy-source backpressure probes;
+ZIP timing remains separate.
 
 The [barcode verification](codes.md) checks actual native/public image
 interoperability in four profiles. Its bounded smoke retains raw samples, verifies

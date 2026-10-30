@@ -95,9 +95,12 @@ test(
         assert.equal(row.verification.inputBytes, payload.byteLength);
         assert.equal(row.quality !== null, ['STANDARD', 'DETAILED'].includes(row.mode));
       }
-      const rejected = join(directory, 'sample');
+      const rejected = join(directory, 'sample'),
+        env = { ...process.env };
+      delete env.ARKENIVA_COMPRESSION_BENCHMARK_DISPOSABLE;
       await assert.rejects(
         promisify(execFile)(process.execPath, [script, '--smoke', rejected], {
+          env,
           timeout: 5000,
           maxBuffer: 1048576,
         }),
