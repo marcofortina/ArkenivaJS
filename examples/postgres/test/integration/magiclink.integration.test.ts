@@ -113,3 +113,58 @@ test(
     }
   },
 );
+
+test(
+  'Magic link real PostgreSQL corrupted state cannot grant an identity or consume the restored single-use credential',
+  { timeout: 30000 },
+  async () => {
+    const f = await magicLinkFixture(1000);
+    try {
+      const account = await f.session();
+      const issued = await account.run(() => f.first.magic.issue(account.subject, 'login'));
+      const stored = await f.base.backend.app.sql.queryOne<{ body: string; version: string }>(
+        'main',
+        {
+          text: `SELECT body,version::text AS version FROM ${f.base.backend.schema}.security_records WHERE namespace=:namespace AND id=:id`,
+          bindings: { namespace: 'magiclink.records.v1', id: issued.issueId },
+        },
+      );
+      assert.ok(stored);
+      const original = JSON.parse(stored.body) as Record<string, unknown>;
+      const write = (body: string) =>
+        f.base.backend.app.sql.execute('main', {
+          text: `UPDATE ${f.base.backend.schema}.security_records SET body=:body WHERE namespace=:namespace AND id=:id`,
+          bindings: { body, namespace: 'magiclink.records.v1', id: issued.issueId },
+        });
+      for (const patch of [
+        { kind: 'unexpected-record' },
+        { state: 'unexpected-state' },
+        { ownerKey: 'g'.repeat(64) },
+        { validUntil: 'invalid' },
+      ]) {
+        await write(JSON.stringify({ ...original, ...patch }));
+        await assert.rejects(
+          f.second.magic.consume(issued.value, { method: 'POST', purpose: 'login' }),
+          { code: 'EK_BACKEND_UNAVAILABLE' },
+        );
+        await write(stored.body);
+        const current = await f.base.backend.app.sql.queryOne<{ version: string }>('main', {
+          text: `SELECT version::text AS version FROM ${f.base.backend.schema}.security_records WHERE namespace=:namespace AND id=:id`,
+          bindings: { namespace: 'magiclink.records.v1', id: issued.issueId },
+        });
+        assert.equal(current?.version, stored.version);
+      }
+      assert.equal(
+        (await f.second.magic.consume(issued.value, { method: 'POST', purpose: 'login' })).subject
+          .subject,
+        account.subject.subject,
+      );
+      await assert.rejects(
+        f.first.magic.consume(issued.value, { method: 'POST', purpose: 'login' }),
+        { code: 'EK_MAGICLINK_REPLAY' },
+      );
+    } finally {
+      await f.close();
+    }
+  },
+);
