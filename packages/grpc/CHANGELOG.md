@@ -5,6 +5,8 @@
 
 ## 0.1.0
 
+- Capture original authorization callbacks and receivers without custom binding metadata or proxy prototype traps.
+
 - Complete failed server streams with a sanitized native gRPC error status before transport closure, preserving immediate client failure and admission release.
 
 - Add explicit native gRPC unary, server streaming and protected native access.

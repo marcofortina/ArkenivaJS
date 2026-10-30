@@ -42,6 +42,7 @@ function property(value: unknown, key: string): unknown {
     throw failure('EK_CONFIG_INVALID');
   let current: object | null = value;
   for (let depth = 0; current && depth < 32; depth++) {
+    if (types.isProxy(current)) throw failure('EK_CONFIG_INVALID');
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
     if (descriptor) {
       if (!('value' in descriptor)) throw failure('EK_CONFIG_INVALID');
@@ -193,7 +194,10 @@ export function capture(input: GrpcPluginSettings) {
       services: Object.freeze(captured),
       bindings: Object.freeze(bindings),
       tlsProfiles: profiles,
-      require: authorize.bind(data.authority) as TrustedSecurityAuthority['require'],
+      require: (...args: Parameters<TrustedSecurityAuthority['require']>) =>
+        Reflect.apply(authorize, data.authority, args) as ReturnType<
+          TrustedSecurityAuthority['require']
+        >,
       testOnly: usage === 'test-only',
       maxConcurrent: integer(limits.maxConcurrent, 1024),
       timeoutMs: integer(limits.timeoutMs, 60000),
