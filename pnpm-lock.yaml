@@ -2450,6 +2450,9 @@ importers:
       '@arkenivajs/documents-pdf':
         specifier: workspace:*
         version: link:../../packages/documents-pdf
+      '@arkenivajs/grpc':
+        specifier: workspace:*
+        version: link:../../packages/grpc
       '@arkenivajs/health':
         specifier: workspace:*
         version: link:../../packages/health
@@ -2483,6 +2486,9 @@ importers:
       '@arkenivajs/security-ldap':
         specifier: workspace:*
         version: link:../../packages/security-ldap
+      '@arkenivajs/security-mtls':
+        specifier: workspace:*
+        version: link:../../packages/security-mtls
       '@arkenivajs/security-oauth-client':
         specifier: workspace:*
         version: link:../../packages/security-oauth-client
@@ -2522,6 +2528,12 @@ importers:
       '@fastify/multipart':
         specifier: 10.1.6
         version: 10.1.6
+      '@grpc/grpc-js':
+        specifier: 1.14.6
+        version: 1.14.6
+      '@grpc/proto-loader':
+        specifier: 0.8.1
+        version: 0.8.1
       '@js-temporal/polyfill':
         specifier: 0.5.1
         version: 0.5.1
