@@ -68,7 +68,15 @@ export async function streamSse(connection: Connection, source: SseSource): Prom
       connection.activity(selected.bytes, 'send');
     }
   } finally {
-    if (finish) connection.retainCleanup(Promise.resolve().then(finish));
+    if (finish)
+      connection.retainCleanup(
+        Promise.resolve()
+          .then(finish)
+          .then((result) => {
+            if (!result || typeof result !== 'object' || result.done !== true)
+              throw failure('EK_BACKEND_UNAVAILABLE');
+          }),
+      );
     connection.close(false);
   }
 }

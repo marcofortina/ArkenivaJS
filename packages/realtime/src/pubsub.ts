@@ -95,6 +95,7 @@ export class Broadcast {
   }
   async join(connection: Connection): Promise<void> {
     if (this.closed) throw failure('EK_REALTIME_CLOSED');
+    if (this.cleanupFailed) throw failure('EK_BACKEND_UNAVAILABLE');
     const topic = this.topic(connection.tenant);
     let bucket = this.buckets.get(topic);
     if (!bucket) {
@@ -166,6 +167,7 @@ export class Broadcast {
     }
   }
   bind(connection: Connection, deliver: (message: RealtimeMessage) => Promise<void>): void {
+    if (this.cleanupFailed) throw failure('EK_BACKEND_UNAVAILABLE');
     const member = this.buckets.get(this.topic(connection.tenant))?.members.get(connection);
     if (!member || this.closed) throw failure('EK_REALTIME_CLOSED');
     member.deliver = deliver;
@@ -177,6 +179,7 @@ export class Broadcast {
     options: OperationOptions,
   ): Promise<void> {
     if (this.closed) throw failure('EK_REALTIME_CLOSED');
+    if (this.cleanupFailed) throw failure('EK_BACKEND_UNAVAILABLE');
     await this.backend.publish(
       this.topic(tenant),
       Object.freeze({ channel, payload: Buffer.from(payload).toString('base64url') }),

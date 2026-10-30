@@ -12,13 +12,14 @@ import type { MessageBus, Plugin } from '@arkenivajs/core';
 import type { SseEvent } from '../../dist/index.js';
 import { fixture, sseRequest } from '../fixture.js';
 
-for (const mode of ['throw', 'reject', 'late-reject'])
+for (const mode of ['throw', 'reject', 'late-reject', 'incomplete', 'malformed'])
   test(
     `An SSE iterator return ${mode} remains visible after the disconnected connection has retired`,
     { timeout: 10000 },
     async () => {
       let returned!: () => void,
-        rejectCleanup = () => {};
+        rejectCleanup = () => {},
+        allocations = 0;
       const cleanup = new Promise<void>((resolve) => {
         returned = resolve;
       });
@@ -27,6 +28,7 @@ for (const mode of ['throw', 'reject', 'late-reject'])
           events: {
             kind: 'pubsub',
             subscribe(context) {
+              allocations++;
               let sent = false;
               const iterator: AsyncIterableIterator<SseEvent> = {
                 [Symbol.asyncIterator]() {
@@ -46,8 +48,14 @@ for (const mode of ['throw', 'reject', 'late-reject'])
                     );
                   return { done: true as const, value: undefined };
                 },
-                return(): Promise<never> {
+                return(): Promise<IteratorResult<SseEvent>> {
                   returned();
+                  if (mode === 'incomplete')
+                    return Promise.resolve({
+                      done: false,
+                      value: { id: 'pending_1', type: 'update', data: 'Cleanup is incomplete' },
+                    });
+                  if (mode === 'malformed') return Promise.resolve(undefined as never);
                   const error = new Error('Private failed SSE cleanup diagnostic');
                   if (mode === 'throw') throw error;
                   if (mode === 'late-reject')
@@ -81,6 +89,26 @@ for (const mode of ['throw', 'reject', 'late-reject'])
         });
         await cleanup;
         await setImmediate();
+        if (mode !== 'late-reject') {
+          const status = await new Promise<number | undefined>((resolve, reject) => {
+            const probe = get(
+              f.origin + '/events',
+              { headers: { authorization, accept: 'text/event-stream' } },
+              (response) => {
+                response.on('error', () => undefined);
+                response.destroy();
+                resolve(response.statusCode);
+              },
+            );
+            probe.once('error', reject);
+          });
+          assert.equal(status, 503);
+          assert.equal(allocations, 1);
+          const tenant = f.app.auth!.tenantFrom(await f.app.auth!.verifyBearer(authorization));
+          await assert.rejects(f.service.publish('updates', new Uint8Array([1]), tenant), {
+            code: 'EK_REALTIME_CLOSED',
+          });
+        }
         const first = f.service.close(),
           repeated = f.service.close();
         assert.equal(first, repeated);
@@ -177,50 +205,88 @@ test(
   },
 );
 
-test(
-  'Backend cleanup failure remains visible through service and application shutdown',
-  { timeout: 5000 },
-  async () => {
-    let cleaned = false;
-    const backend: MessageBus = {
-      async publish() {
-        return { messageId: 'fixture', acknowledged: false };
-      },
-      async subscribe() {
-        return {
-          async close() {
-            cleaned = true;
-            throw new Error('private-backend-detail');
-          },
-        };
-      },
-    };
-    const broker: Plugin = {
-      id: 'messaging',
-      version: '1.0.0',
-      capabilities: new Set(['messaging']),
-      init(context) {
-        context.provide(COMPONENTS.messaging, backend);
-      },
-      close() {},
-    };
-    const f = await fixture(
-      { pubsub: { provider: 'nats', connectionName: 'messaging' } },
-      undefined,
-      [broker],
-    );
-    let socket: WebSocket | undefined;
-    try {
-      socket = new WebSocket(f.origin.replace('http:', 'ws:') + '/socket', {
-        headers: { authorization: await f.token() },
+for (const mode of ['shutdown', 'disconnect'])
+  test(
+    `Backend cleanup failure after ${mode} remains visible and prevents new broadcast work`,
+    { timeout: 5000 },
+    async () => {
+      let cleanupStarted!: () => void;
+      const cleanupReady = new Promise<void>((resolve) => {
+        cleanupStarted = resolve;
       });
-      await once(socket, 'open');
-      await assert.rejects(f.service.close(), { code: 'EK_BACKEND_UNAVAILABLE' });
-      assert.equal(cleaned, true);
-      assert.ok(!f.logs().includes('private-backend-detail'));
-    } finally {
-      socket?.terminate();
-      await assert.rejects(f.close());
-    }
-  },
-);
+      let cleaned = false,
+        subscriptions = 0,
+        publications = 0;
+      const backend: MessageBus = {
+        async publish() {
+          publications++;
+          return { messageId: 'fixture', acknowledged: false };
+        },
+        async subscribe() {
+          subscriptions++;
+          return {
+            async close() {
+              cleaned = true;
+              cleanupStarted();
+              throw new Error('private-backend-detail');
+            },
+          };
+        },
+      };
+      const broker: Plugin = {
+        id: 'messaging',
+        version: '1.0.0',
+        capabilities: new Set(['messaging']),
+        init(context) {
+          context.provide(COMPONENTS.messaging, backend);
+        },
+        close() {},
+      };
+      const f = await fixture(
+        { pubsub: { provider: 'nats', connectionName: 'messaging' } },
+        undefined,
+        [broker],
+      );
+      let socket: WebSocket | undefined, probe: WebSocket | undefined;
+      try {
+        socket = new WebSocket(f.origin.replace('http:', 'ws:') + '/socket', {
+          headers: { authorization: await f.token() },
+        });
+        await once(socket, 'open');
+        if (mode === 'disconnect') {
+          const closed = once(socket, 'close');
+          socket.terminate();
+          await closed;
+          await cleanupReady;
+          await setImmediate();
+          assert.equal(cleaned, true);
+          const authorization = await f.token();
+          probe = new WebSocket(f.origin.replace('http:', 'ws:') + '/socket', {
+            headers: { authorization },
+          });
+          probe.on('error', () => undefined);
+          const status = await new Promise<number | undefined>((resolve) => {
+            probe!.once('open', () => resolve(101));
+            probe!.once('unexpected-response', (_request, response) => {
+              response.resume();
+              resolve(response.statusCode);
+            });
+          });
+          assert.equal(status, 503);
+          assert.equal(subscriptions, 1);
+          const tenant = f.app.auth!.tenantFrom(await f.app.auth!.verifyBearer(authorization));
+          await assert.rejects(f.service.publish('updates', new Uint8Array([1]), tenant), {
+            code: 'EK_BACKEND_UNAVAILABLE',
+          });
+          assert.equal(publications, 0);
+        }
+        await assert.rejects(f.service.close(), { code: 'EK_BACKEND_UNAVAILABLE' });
+        assert.equal(cleaned, true);
+        assert.ok(!f.logs().includes('private-backend-detail'));
+      } finally {
+        socket?.terminate();
+        probe?.terminate();
+        await assert.rejects(f.close());
+      }
+    },
+  );
