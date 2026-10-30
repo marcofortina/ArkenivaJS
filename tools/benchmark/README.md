@@ -128,6 +128,8 @@ actual native reader children through physical retirement.
 
 The [SFTP/SSH verification](sftp.md) checks pinned-host file exchange, actual hashes,
 remote cleanup and literal allowed commands against the owned OpenSSH server.
+Its bounded download smoke checks exact bytes, independent remote readback and
+client SDK queue pressure, using identical explicit TCP tuning in each profile.
 
 The [Redis comparison](redis.md) checks portable operation results, actual server
 state and ephemeral subscriber observations before optional bounded roundtrips.
