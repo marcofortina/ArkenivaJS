@@ -250,6 +250,75 @@ test('OpenLDAP service bind failure is an operational error and external provide
   );
   assert.deepEqual(secrets.get('fixture://bind-password')!.bytes, original);
 });
+test('OpenLDAP refuses missing and ambiguous identity attributes without treating them as invalid passwords', async () => {
+  const baseDn = metadata.baseDn.replace('ou=people,', 'ou=boundaries,'),
+    directory = createLdapService(settings({ baseDn, userFilterTemplate: '(cn={username})' }));
+  for (const username of ['missing-uid', 'multiple-uid']) {
+    for (const operation of [
+      () => directory.findUser({ username }),
+      () => directory.verifyCredentials({ username }, metadata.userPassword),
+    ])
+      await assert.rejects(
+        operation(),
+        (error: unknown) => error instanceof KitError && error.code === 'EK_LDAP_SEARCH',
+      );
+  }
+  assert.equal(await directory.findUser({ username: 'absent' }), null);
+  assert.equal(await directory.ping(), true);
+});
+test('OpenLDAP rejects excessive native attribute values and oversized native text before exposing an entry', async () => {
+  const baseDn = metadata.baseDn.replace('ou=people,', 'ou=boundaries,'),
+    directory = createLdapService(
+      settings({ baseDn, allowedAttributes: ['uid', 'cn', 'description'] }),
+    );
+  for (const name of ['many-values', 'large-value']) {
+    let delivered = 0;
+    await assert.rejects(
+      async () => {
+        for await (const entry of directory.search({
+          baseDn,
+          filter: { template: '(cn={name})', values: { name } },
+          attributes: ['uid', 'cn', 'description'],
+        })) {
+          void entry;
+          delivered++;
+        }
+      },
+      (error: unknown) => error instanceof KitError && error.code === 'EK_LDAP_SEARCH',
+    );
+    assert.equal(delivered, 0);
+    assert.equal(await directory.ping(), true);
+  }
+});
+test('OpenLDAP rejects ambiguous group names and reports nonexistent search bases as operational errors', async () => {
+  const baseDn = metadata.baseDn.replace('ou=people,', 'ou=boundaries,'),
+    directory = createLdapService(settings({ groupSearchBaseDn: baseDn }));
+  await assert.rejects(
+    directory.getGroups('cn=person-0,' + metadata.baseDn),
+    (error: unknown) => error instanceof KitError && error.code === 'EK_LDAP_SEARCH',
+  );
+  const absent = createLdapService(
+    settings({ baseDn: metadata.baseDn.replace('ou=people,', 'ou=absent,') }),
+  );
+  await assert.rejects(
+    absent.findUser({ username: 'alice' }),
+    (error: unknown) => error instanceof KitError && error.code === 'EK_LDAP_SEARCH',
+  );
+  assert.equal(await directory.ping(), true);
+});
+test('OpenLDAP DNS certificate verification and projected empty results retain native TLS checks', async () => {
+  const directory = createLdapService(settings({ url: 'ldaps://localhost:16389' }));
+  assert.equal(await directory.ping(), true);
+  const entries = [];
+  for await (const entry of directory.search({
+    ...query,
+    filter: { template: '(uid={name})', values: { name: 'alice' } },
+    attributes: ['samaccountname'],
+  }))
+    entries.push(entry);
+  assert.equal(entries.length, 1);
+  assert.deepEqual(entries[0]!.attributes.samaccountname, []);
+});
 test('OpenLDAP native debug and dynamic loader environment settings are excluded from child execution', async () => {
   const beforeDebug = process.env.NODE_DEBUG,
     beforeOptions = process.env.NODE_OPTIONS;
