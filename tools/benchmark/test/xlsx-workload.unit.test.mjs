@@ -83,6 +83,7 @@ test(
         promisify(execFile)(process.execPath, [script, '--smoke', rejected], {
           timeout: 5000,
           maxBuffer: 1048576,
+          env: { ...process.env, ARKENIVA_XLSX_BENCHMARK_DISPOSABLE: '' },
         }),
       );
       await assert.rejects(access(rejected), { code: 'ENOENT' });

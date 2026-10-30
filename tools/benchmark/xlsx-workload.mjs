@@ -4,6 +4,86 @@
 import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import ExcelJS from 'exceljs';
+import { performance } from 'node:perf_hooks';
+import { createHash } from 'node:crypto';
+import { xlsxFixtureBytes, xlsxFixtureSha256 } from './xlsx-fixture.mjs';
+
+const readSamples = new WeakMap();
+
+export function prepareXlsxRead(service, fixture) {
+  assert.equal(readSamples.has(service), false);
+  assert.equal(createHash('sha256').update(xlsxFixtureBytes).digest('hex'), xlsxFixtureSha256);
+  readSamples.set(service, { fixture, results: [], active: false, closed: false });
+}
+
+export function xlsxReadWorkload(service) {
+  const state = readSamples.get(service);
+  assert.ok(state);
+  return {
+    async readFiveRows() {
+      assert.equal(state.closed, false);
+      assert.equal(state.active, false);
+      assert.ok(state.results.length < 120);
+      state.active = true;
+      try {
+        const result = await readWorkbook(service, xlsxFixtureBytes, state.fixture, true);
+        state.results.push(result);
+        return result;
+      } finally {
+        state.active = false;
+      }
+    },
+  };
+}
+
+export function completeXlsxRead(service, { measure, records }) {
+  const state = readSamples.get(service);
+  try {
+    if (!measure) {
+      assert.equal(state, undefined);
+      assert.deepEqual(records, []);
+      return { sampledReads: 0, warmupReads: 0, checkedReads: 0 };
+    }
+    assert.ok(state);
+    assert.equal(state.active, false);
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'readFiveRows');
+    assert.equal(record.sampleCount, 100);
+    assert.equal(record.warmupIterations, 20);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, 100);
+    assert.equal(state.results.length, 120);
+    for (const value of state.results) {
+      assert.equal(value.checkedSheets, 2);
+      assert.equal(value.checkedRows, 5);
+      assert.equal(value.sourceTraversals, 1);
+      assert.equal(value.inputBytes, xlsxFixtureBytes.length);
+      assert.equal(value.sourceRetired, true);
+      assert.equal(value.readerClosed, true);
+      assert.ok(Number.isFinite(value.firstRowMs) && value.firstRowMs >= 0);
+      assert.ok(Number.isFinite(value.elapsedMs) && value.elapsedMs >= value.firstRowMs);
+      assert.ok(Number.isFinite(value.rowsPerSecond) && value.rowsPerSecond > 0);
+    }
+    assert.equal(createHash('sha256').update(xlsxFixtureBytes).digest('hex'), xlsxFixtureSha256);
+    return {
+      sampledReads: 100,
+      warmupReads: 20,
+      checkedReads: 120,
+      fixedInputSha256: xlsxFixtureSha256,
+      measurements: [...state.results],
+      maximumRetainedResults: 128,
+      inputUnchanged: true,
+      opaqueNativeBufferBytes: null,
+    };
+  } finally {
+    if (state) {
+      state.closed = true;
+      state.results.length = 0;
+    }
+    readSamples.delete(service);
+  }
+}
 
 export const xlsxSettings = {
   defaults: {
@@ -173,13 +253,21 @@ async function writeWorkbook(service, fixture) {
 }
 
 async function readWorkbook(service, bytes, fixture, fragmented) {
-  let traversals = 0;
+  const started = performance.now();
+  let traversals = 0,
+    firstRowMs,
+    checkedRows = 0,
+    sourceRetired = false;
   const source = fragmented
     ? {
         async *[Symbol.asyncIterator]() {
           assert.equal(++traversals, 1);
-          for (let offset = 0; offset < bytes.length; offset += 7)
-            yield bytes.subarray(offset, offset + 7);
+          try {
+            for (let offset = 0; offset < bytes.length; offset += 7)
+              yield bytes.subarray(offset, offset + 7);
+          } finally {
+            sourceRetired = true;
+          }
         },
       }
     : bytes;
@@ -193,6 +281,8 @@ async function readWorkbook(service, bytes, fixture, fragmented) {
     for (const sheet of sheets) {
       const actual = [];
       for await (const row of reader.rows(sheet.name)) {
+        firstRowMs ??= performance.now() - started;
+        checkedRows++;
         assert.equal(row.rowIndex, actual.length + 1);
         actual.push(row.cells);
       }
@@ -215,6 +305,18 @@ async function readWorkbook(service, bytes, fixture, fragmented) {
   } finally {
     await reader.close();
   }
+  const elapsedMs = performance.now() - started;
+  return {
+    checkedSheets: 2,
+    checkedRows,
+    firstRowMs,
+    elapsedMs,
+    rowsPerSecond: (checkedRows * 1000) / elapsedMs,
+    inputBytes: bytes.length,
+    sourceTraversals: traversals,
+    sourceRetired,
+    readerClosed: true,
+  };
 }
 
 export async function verifyXlsx(service, fixture) {

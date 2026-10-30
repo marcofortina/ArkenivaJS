@@ -117,7 +117,9 @@ persisted SQL grant budgets and private SDK exports in four isolated profiles. I
 bounded smoke reconciles real grant counts with independent issuer and SQL state.
 
 The [XLSX verification](xlsx.md) exchanges native/public typed and styled workbooks,
-one-shot sources and awaited targets without claiming incomplete child measurements.
+one-shot sources and awaited targets. Its fixed-input read smoke checks exact
+ordered cells, first-row timing and complete reader closure with native child
+resource supervision and explicit unknown internal buffer sizes.
 
 The [PDF verification](pdf.md) exchanges actual searchable documents, metadata,
 rotated text and ordered merged pages through the same four isolated profiles.

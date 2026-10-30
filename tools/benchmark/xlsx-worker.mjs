@@ -3,17 +3,28 @@
 
 import { dataXlsxPlugin, XLSX_CAPABILITY } from '@arkenivajs/data-xlsx';
 import { runPureWorker } from './pure-worker.mjs';
-import { xlsxSettings, nativeXlsx, verifyXlsx } from './xlsx-workload.mjs';
+import {
+  xlsxSettings,
+  nativeXlsx,
+  verifyXlsx,
+  prepareXlsxRead,
+  xlsxReadWorkload,
+  completeXlsxRead,
+} from './xlsx-workload.mjs';
 
 runPureWorker({
   name: 'xlsx',
   asynchronous: true,
   native: nativeXlsx,
   framework: () => ({ plugin: dataXlsxPlugin(xlsxSettings), key: XLSX_CAPABILITY }),
-  verify: verifyXlsx,
-  workload() {
-    throw new Error(
-      'XLSX sampling requires native child accounting and streaming first-row and buffer measurements',
-    );
+  async verify(service, fixture) {
+    const result = await verifyXlsx(service, fixture);
+    if (fixture.sampleReads) prepareXlsxRead(service, fixture);
+    return result;
   },
+  iterations: 100,
+  warmupIterations: 20,
+  retainRawSamples: true,
+  workload: xlsxReadWorkload,
+  complete: completeXlsxRead,
 });
