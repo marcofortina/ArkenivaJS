@@ -73,7 +73,9 @@
     "proxy": "node proxy.mjs",
     "realtime": "node realtime.mjs",
     "mtls": "node mtls.mjs",
-    "saml": "node saml.mjs"
+    "saml": "node saml.mjs",
+    "scim": "node scim.mjs",
+    "test:integration:scim": "node --test test/scim-workload.integration.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -184,7 +186,9 @@
     "ws": "8.22.0",
     "@arkenivajs/security-saml": "workspace:*",
     "@node-saml/node-saml": "5.1.0",
-    "@xmldom/xmldom": "0.8.15"
+    "@xmldom/xmldom": "0.8.15",
+    "@arkenivajs/security-scim": "workspace:*",
+    "scimmy": "1.3.5"
   },
   "license": "AGPL-3.0-or-later"
 }

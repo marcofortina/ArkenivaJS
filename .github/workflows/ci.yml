@@ -416,6 +416,8 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:magiclink
       - name: Verify four session profiles and preserved durable authentication times
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:sessions
+      - name: Verify four SCIM profiles with actual tenant-owned SQL and atomic ETags
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:scim
       - name: Verify immutable tenant SQL registry activation and existing-pool HTTP startup
         run: pnpm --filter @arkenivajs/tenant-routing test:integration:postgres
       - name: Verify all four HTTP modes against real PostgreSQL and telemetry
