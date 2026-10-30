@@ -4,12 +4,25 @@
 import { COMPONENTS } from '@arkenivajs/core';
 import { etcdPlugin } from '@arkenivajs/database-etcd';
 import { runPureWorker } from './pure-worker.mjs';
-import { nativeEtcd, etcdConnection, verifyEtcd } from './etcd-workload.mjs';
+import {
+  nativeEtcd,
+  etcdConnection,
+  verifyEtcd,
+  selectEtcdProfile,
+  etcdWorkload,
+  completeEtcdWorkload,
+  etcdIterations,
+  etcdWarmupIterations,
+} from './etcd-workload.mjs';
 
 runPureWorker({
   name: 'etcd',
-  native: nativeEtcd,
-  framework(fixture) {
+  native(fixture) {
+    Object.assign(fixture, selectEtcdProfile(fixture, 'BASELINE'));
+    return nativeEtcd(fixture);
+  },
+  framework(fixture, mode) {
+    Object.assign(fixture, selectEtcdProfile(fixture, mode));
     etcdConnection(fixture);
     process.env.ARKENIVA_ETCD_COMPARISON_URL = fixture.url;
     return {
@@ -21,5 +34,11 @@ runPureWorker({
     };
   },
   verify: verifyEtcd,
+  asynchronous: true,
+  iterations: etcdIterations,
+  warmupIterations: etcdWarmupIterations,
+  retainRawSamples: true,
+  workload: etcdWorkload,
+  complete: completeEtcdWorkload,
   close: (service) => service?.close(),
 });
