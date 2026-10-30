@@ -9,6 +9,111 @@ import { fork } from 'node:child_process';
 import { readFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+const sampledEchoes = new WeakMap();
+
+/** A distinct listener isolates sampled byte counters from the transport verification corpus. */
+export async function prepareSocketEcho(service, fixture) {
+  assert.equal(sampledEchoes.has(service), false);
+  const handle = service.createTcpServer(
+    { name: 'sampled-tcp64', host: '127.0.0.1', port: 0 },
+    async (peer) => {
+      for await (const bytes of peer.chunks()) await peer.send(bytes);
+      await peer.end();
+    },
+  );
+  try {
+    const binding = await handle.start();
+    sampledEchoes.set(service, {
+      handle,
+      input: { kind: 'tcp', size: 64, binding, marker: fixture.marker },
+      results: [],
+      active: false,
+      closed: false,
+    });
+  } catch (cause) {
+    await handle.stop();
+    throw cause;
+  }
+}
+
+export function socketEchoWorkload(service) {
+  const state = sampledEchoes.get(service);
+  assert.ok(state);
+  return {
+    async tcp64IndependentClient() {
+      assert.equal(state.closed, false);
+      assert.equal(state.active, false);
+      assert.ok(state.results.length < 120);
+      state.active = true;
+      try {
+        const result = await socketClient(state.input);
+        state.results.push(result);
+        return result;
+      } finally {
+        state.active = false;
+      }
+    },
+  };
+}
+
+export async function completeSocketEcho(service, { measure, records }) {
+  const state = sampledEchoes.get(service);
+  try {
+    if (!measure) {
+      assert.equal(state, undefined);
+      assert.deepEqual(records, []);
+      return { sampledEchoes: 0, warmupEchoes: 0, checkedEchoes: 0 };
+    }
+    assert.ok(state);
+    assert.equal(state.active, false);
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'tcp64IndependentClient');
+    assert.equal(record.sampleCount, 100);
+    assert.equal(record.warmupIterations, 20);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, 100);
+    assert.equal(state.results.length, 120);
+    for (const result of state.results) {
+      assert.equal(result.receivedBytes, 64);
+      assert.equal(result.byteIdentityVerified, true);
+      assert.ok(Number.isFinite(result.firstByteMs) && result.firstByteMs >= 0);
+      assert.ok(
+        Number.isFinite(result.exchangeElapsedMs) && result.exchangeElapsedMs >= result.firstByteMs,
+      );
+    }
+    await state.handle.stop();
+    const stats = state.handle.stats();
+    assert.equal(stats.state, 'CLOSED');
+    assert.equal(stats.acceptedConnections, 120);
+    assert.equal(stats.receivedApplicationBytes, 7680);
+    assert.equal(stats.sentApplicationBytes, 7680);
+    return {
+      sampledEchoes: 100,
+      warmupEchoes: 20,
+      checkedEchoes: 120,
+      independentClientProcessesWaited: 120,
+      acceptedConnections: stats.acceptedConnections,
+      receivedApplicationBytes: stats.receivedApplicationBytes,
+      sentApplicationBytes: stats.sentApplicationBytes,
+      measurements: [...state.results],
+      maximumRetainedResults: 128,
+      listenerClosed: true,
+      opaqueKernelBufferBytes: null,
+    };
+  } finally {
+    try {
+      if (state) {
+        state.closed = true;
+        state.results.length = 0;
+        await state.handle.stop();
+      }
+    } finally {
+      sampledEchoes.delete(service);
+    }
+  }
+}
+
 export const socketCases = Object.freeze([
   ['tcp', 64],
   ['tcp', 65536],

@@ -133,6 +133,8 @@ bigint precision, pool release and four isolated instrumentation profiles.
 
 The [socket verification](socket.md) checks five actual TCP/TLS/UDP/Unix scenarios
 with independent native client processes and four isolated server profiles.
+Its bounded TCP64 smoke reconciles exact listener bytes and accepted connections
+with independent client processes, inner first-byte timing and physical retirement.
 
 The [Core NATS verification](nats.md) checks actual mutual-TLS wire interoperability
 with a separate native observer and no invented broker acknowledgment.

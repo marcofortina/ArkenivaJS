@@ -80,6 +80,10 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:mtls
         env:
           ARKENIVA_MTLS_BENCHMARK_DISPOSABLE: '1'
+      - name: Verify sampled TCP echoes and independent client process retirement
+        run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:socket
+        env:
+          ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE: '1'
       - name: Compile and execute examples against packed public artifacts
         run: pnpm test:packed:examples
       - name: Enforce Oracle mock contracts without a live compatibility claim
