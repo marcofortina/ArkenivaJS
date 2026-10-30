@@ -12,6 +12,9 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 export const ROUTING_COMPARISON = Symbol('routing.comparison');
 export const calculatePath = '/api/orders/:id/calculate';
 export const capabilitiesPath = '/api/tenant/capabilities';
+export const routingIterations = 100;
+export const routingWarmupIterations = 20;
+const sampled = new WeakMap();
 
 /** Restrict the comparison to its parent-owned issuer and explicit local TLS material. */
 export function routingCoordinates(fixture) {
@@ -432,5 +435,118 @@ export async function verifyRouting(service, fixture) {
     capabilityLimit: 1,
     capabilityOverflowRejected: true,
     stableRevisionAndGeneration: true,
+  };
+}
+
+/** Small closed-loop HTTPS callbacks retain all authentication, schema and receipt checks. */
+export function routingWorkload(service, fixture) {
+  assert.equal(sampled.has(service), false, 'A comparison service owns one bounded workload');
+  const state = {
+    baseline: service.stats(),
+    completed: { 'local-dispatch': 0, 'capability-discovery': 0, 'authorized-status': 0 },
+    running: false,
+  };
+  sampled.set(service, state);
+  const operation = (name, path, options, expected) => async () => {
+    assert.equal(state.running, false, 'Routing sampling is sequential closed-loop work');
+    assert.ok(
+      state.completed[name] < routingIterations + routingWarmupIterations,
+      'The routing callback count exceeded its bounded campaign',
+    );
+    state.running = true;
+    try {
+      const response = await routingRequest(service, fixture, path, options);
+      assert.equal(response.status, 200, JSON.stringify(response.body));
+      assert.deepEqual(response.body, expected);
+      if (name === 'capability-discovery') {
+        assert.equal(response.headers['cache-control'], 'private, no-store');
+        assert.match(response.headers.vary, /Authorization/i);
+      }
+      state.completed[name]++;
+      return response.body;
+    } finally {
+      state.running = false;
+    }
+  };
+  return {
+    'local-dispatch': operation(
+      'local-dispatch',
+      '/api/orders/' + fixture.row + '/calculate',
+      {
+        method: 'POST',
+        body: {
+          amount: 7,
+          tenantHint: fixture.otherTenant,
+          implementationHint: fixture.implementationHint,
+        },
+      },
+      { found: true, total: 14 },
+    ),
+    'capability-discovery': operation(
+      'capability-discovery',
+      capabilitiesPath,
+      {},
+      {
+        schemaVersion: '1.0.0',
+        revision: 'routing-comparison-content',
+        activationGeneration: 7,
+        capabilities: [
+          {
+            operationId: 'orders.calculate',
+            method: 'POST',
+            path: calculatePath,
+            label: 'Calculate an order',
+          },
+        ],
+      },
+    ),
+    'authorized-status': operation(
+      'authorized-status',
+      '/api/order-status',
+      { token: fixture.expandedToken },
+      { ready: true },
+    ),
+  };
+}
+
+/** Compare independent native handler counters with completed callbacks and retained bench records. */
+export function completeRoutingWorkload(service, { measure, records }) {
+  const state = sampled.get(service);
+  if (!measure) {
+    assert.equal(state, undefined);
+    assert.equal(records.length, 0);
+    assert.deepEqual(service.stats(), { north: 3, south: 1, status: 1, denied: 0 });
+    return {
+      completedSampleCallbacks: 0,
+      expectedUsageChildren: Object.values(service.stats()).reduce((sum, count) => sum + count, 0),
+    };
+  }
+  assert.ok(state && !state.running);
+  assert.deepEqual(
+    records.map((record) => record.operation),
+    Object.keys(state.completed),
+  );
+  for (const record of records) {
+    assert.equal(record.sampleCount, routingIterations);
+    assert.equal(record.warmupIterations, routingWarmupIterations);
+    assert.equal(state.completed[record.operation], record.sampleCount + record.warmupIterations);
+    assert.equal(record.rawLatency?.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+  }
+  assert.deepEqual(service.stats(), {
+    ...state.baseline,
+    north: state.baseline.north + state.completed['local-dispatch'],
+    status: state.baseline.status + state.completed['authorized-status'],
+  });
+  const completedSampleCallbacks = Object.values(state.completed).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  return {
+    completedSampleCallbacks,
+    expectedUsageChildren:
+      Object.values(state.baseline).reduce((sum, count) => sum + count, 0) +
+      state.completed['local-dispatch'] +
+      state.completed['authorized-status'],
   };
 }

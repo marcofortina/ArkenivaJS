@@ -21,10 +21,18 @@ import {
   routingCorpus,
   nativeRouting,
   verifyRouting,
+  routingIterations,
+  routingWarmupIterations,
+  routingWorkload,
+  completeRoutingWorkload,
 } from './routing-workload.mjs';
 
 export const routingAdapter = {
   name: 'tenant-routing',
+  asynchronous: true,
+  iterations: routingIterations,
+  warmupIterations: routingWarmupIterations,
+  retainRawSamples: true,
   native: nativeRouting,
   async framework(fixture, mode) {
     const corpus = routingCorpus(fixture),
@@ -90,8 +98,11 @@ export const routingAdapter = {
     };
   },
   verify: verifyRouting,
-  async complete(service, { fixture }) {
-    if (!service.meter) return { technicalUsageEnabled: false };
+  workload: routingWorkload,
+  async complete(service, options) {
+    const workload = completeRoutingWorkload(service, options);
+    if (!service.meter) return { technicalUsageEnabled: false, ...workload };
+    const { fixture } = options;
     await setImmediate();
     await service.meter.flush();
     const events = (await readFile(join(service.workspace, 'usage.jsonl'), 'utf8'))
@@ -101,7 +112,7 @@ export const routingAdapter = {
       .map((line) => parseMeteringEvent(JSON.parse(line)));
     const children = events.filter((event) => event.operation.startsWith('orders.')),
       parents = events.filter((event) => event.operation === 'http.request');
-    assert.equal(children.length, 5);
+    assert.equal(children.length, workload.expectedUsageChildren);
     assert.equal(new Set(children.map((event) => event.tenantId)).size, 2);
     for (const child of children) {
       const parent = parents.find((event) => event.operationId === child.parentOperationId);
@@ -114,15 +125,25 @@ export const routingAdapter = {
       assert.equal(child.quality.complete, true);
     }
     assert.equal(service.meter.snapshot().activeSessions, 0);
+    const meterQuality = service.meter.stats();
+    assert.equal(meterQuality.dropped, 0);
+    assert.equal(meterQuality.failedExports, 0);
+    assert.equal(meterQuality.queueDepth, 0);
+    assert.equal(meterQuality.exported, meterQuality.enqueued);
+    assert.equal(events.length, meterQuality.exported);
+    assert.equal(new Set(events.map((event) => event.operationId)).size, events.length);
     const encoded = JSON.stringify(events);
     for (const value of routingPrivateValues(fixture)) assert.equal(encoded.includes(value), false);
     assert.doesNotMatch(encoded, /implementationId|registryRevision|registryActivationGeneration/);
     return {
       technicalUsageEnabled: true,
+      ...workload,
       routingChildren: children.length,
       httpParents: parents.length,
       tenantCount: 2,
       duplicateChildByteCounters: 0,
+      meterDroppedEvents: meterQuality.dropped,
+      meterFailedExports: meterQuality.failedExports,
     };
   },
   close: (service) => service.close(),

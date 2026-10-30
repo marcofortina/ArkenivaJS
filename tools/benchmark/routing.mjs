@@ -9,9 +9,15 @@ import { runPureComparison } from './pure-comparison.mjs';
 
 const args = process.argv.slice(2);
 assert.ok(
-  args.length === 2 && args[0] === '--verify',
-  'Use --verify with a fresh absolute external report directory; routing sampling requires separate scale and policy-equivalence work',
+  args.length === 2 && ['--verify', '--smoke'].includes(args[0]),
+  'Use --verify or --smoke with a fresh absolute external report directory; full routing campaigns remain separate',
 );
+if (args[0] === '--smoke')
+  assert.equal(
+    process.env.ARKENIVA_ROUTING_BENCHMARK_DISPOSABLE,
+    '1',
+    'Short routing measurements require an explicitly disposable VM or CI runner',
+  );
 const authority = await startRoutingFixture();
 try {
   await runPureComparison(
@@ -30,12 +36,17 @@ try {
         boundTenants: 2,
         capabilityLimit: 1,
         activationGeneration: 7,
-        samplingSupported: false,
+        samplingSupported: true,
+        smokeScenarios: 3,
+        measuredIterationsPerScenario: 100,
+        warmupIterationsPerScenario: 20,
+        concurrency: 1,
+        traceSamplingRatio: 1,
       },
       observationCoverage:
         'Four actual certificate-verified HTTPS profiles check signed JWTs, schema validation, tenant-derived local dispatch, forbidden-operation effects, known foreign-row absence, immutable logical-operation mapping, revision/generation and private capability discovery including explicit overflow rejection. Standard/detailed additionally verify actual JSONL child/HTTP parentage, no duplicated child bytes and native SDK private-input exclusion. Trusted tenant/registry identifiers remain allowed trace diagnostics.',
       limitations:
-        'Functional fixed-memory catalog and synthetic issuer only. Native reference retains signature/scope/binding/row authorization but omits framework provenance brands, complete hostile-input/registry validation, operation admission/deadline/cancellation and lifecycle policy. No policy-equivalent overhead, REST-without-router profile, HTTP upstream, 100/10000 bindings, large discovery, cold start, rollout, latency/CPU/RSS/throughput, variance budget, five repetitions or one-hour soak acceptance.',
+        'Fixed-memory catalog and synthetic issuer. Optional smoke is sequential closed-loop HTTPS, with a fresh TLS connection and JWT/schema/receipt assertions per callback; whole-worker CPU/memory includes client, server, warmup, sampling and SDK. Native reference retains signature/scope/binding/row authorization but omits framework provenance brands, complete hostile-input/registry validation, operation admission/deadline/cancellation and lifecycle policy. No policy-equivalent overhead, REST-without-router profile, HTTP upstream, 100/10000 bindings, large discovery, cold start, rollout, open-loop/concurrent fairness, confidence interval, calibrated variance budget, five repetitions or one-hour soak acceptance.',
     },
     args,
   );

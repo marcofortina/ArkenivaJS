@@ -143,9 +143,18 @@ async function run({ mode, fixture, measure, endpoint }, adapter) {
           assert.equal(result.state, 'completed');
           const samples = result.latency.samples;
           assert.ok(samples.length >= iterations);
+          if (adapter.retainRawSamples === true)
+            assert.ok(
+              samples.length <= 10000 &&
+                samples.every((sample) => Number.isFinite(sample) && sample >= 0),
+              'Raw latency samples must be finite, nonnegative and bounded',
+            );
           records.push({
             operation,
             sampleCount: samples.length,
+            ...(adapter.retainRawSamples === true
+              ? { rawLatency: { unit: 'milliseconds', values: [...samples] } }
+              : {}),
             warmupIterations,
             latencyNanoseconds: {
               p50: quantile(samples, 0.5) * 1e6,
