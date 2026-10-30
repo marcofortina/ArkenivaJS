@@ -9,6 +9,10 @@ import SCIMMY from 'scimmy';
 import { nativeAuth, authConnection } from './auth-workload.mjs';
 
 let appOwner;
+const readWorkloads = new WeakMap();
+export const scimIterations = 100;
+export const scimWarmupIterations = 20;
+export const scimMaximumRetainedReads = 128;
 export const rememberScimOwner = (app) => {
   appOwner = app;
 };
@@ -99,6 +103,109 @@ const user = (value, direction = 'out') =>
   JSON.parse(JSON.stringify(new SCIMMY.Schemas.User(value, direction)));
 const patchSchema = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 const userSchema = 'urn:ietf:params:scim:schemas:core:2.0:User';
+
+/** A separate durable seed avoids immutable username/external-ID mappings of the verification tombstone. */
+export async function prepareScimRead(service, fixture) {
+  assert.equal(readWorkloads.has(service), false);
+  const auth = service.auth ? service.auth() : appOwner.auth,
+    identity = await auth.verifyBearer('Bearer ' + fixture.grant.token),
+    tenant = auth.tenantFrom(identity),
+    request = (method, path, body) =>
+      service.handle({
+        method,
+        path,
+        body,
+        auth: tenant,
+        headers: {
+          authorization: 'Bearer ' + fixture.grant.token,
+          'content-type': 'application/scim+json',
+        },
+      });
+  const seeded = await request('POST', '/Users', {
+    schemas: [userSchema],
+    userName: fixture.marker + '-read',
+    externalId: fixture.grant.externalId + '-read',
+    active: true,
+  });
+  assert.equal(seeded.status, 201);
+  assert.match(seeded.body.id, /^[a-f0-9-]{36}$/);
+  assert.equal(seeded.headers.etag, '"1"');
+  assert.equal(seeded.body.meta.version, '"1"');
+  readWorkloads.set(service, {
+    request,
+    path: '/Users/' + seeded.body.id,
+    expected: JSON.parse(JSON.stringify(seeded.body)),
+    responses: [],
+    active: false,
+    closed: false,
+  });
+}
+
+/** Timed service reads retain a finite private corpus, never resource data in reports. */
+export function scimReadWorkload(service) {
+  const state = readWorkloads.get(service);
+  assert.ok(state, 'The owned SCIM read seed must exist before sampling');
+  return {
+    async getUser() {
+      assert.equal(state.closed, false, 'The SCIM read corpus is already complete');
+      assert.equal(state.active, false, 'Only one sampled SCIM read may be active');
+      assert.ok(
+        state.responses.length < scimIterations + scimWarmupIterations &&
+          state.responses.length < scimMaximumRetainedReads,
+        'The bounded SCIM read corpus is exhausted',
+      );
+      state.active = true;
+      try {
+        const response = await state.request('GET', state.path, undefined);
+        state.responses.push(response);
+        return response;
+      } finally {
+        state.active = false;
+      }
+    },
+  };
+}
+
+export function completeScimRead(service, { measure, records }) {
+  const state = readWorkloads.get(service);
+  try {
+    if (!measure) {
+      assert.equal(state, undefined);
+      assert.deepEqual(records, []);
+      return { sampledReads: 0, warmupReads: 0, checkedReads: 0 };
+    }
+    assert.ok(state);
+    assert.equal(state.active, false);
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'getUser');
+    assert.equal(record.sampleCount, scimIterations);
+    assert.equal(record.warmupIterations, scimWarmupIterations);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    assert.equal(state.responses.length, record.sampleCount + record.warmupIterations);
+    for (const response of state.responses) {
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.etag, '"1"');
+      assert.deepEqual(JSON.parse(JSON.stringify(response.body)), state.expected);
+    }
+    return {
+      sampledReads: record.sampleCount,
+      warmupReads: record.warmupIterations,
+      checkedReads: state.responses.length,
+      unchangedBodyAndEtag: true,
+      peakRetainedResponses: state.responses.length,
+      maximumRetainedResponses: scimMaximumRetainedReads,
+      activeCallbacks: 0,
+    };
+  } finally {
+    if (state) {
+      state.closed = true;
+      state.responses.length = 0;
+    }
+    readWorkloads.delete(service);
+  }
+}
 
 /** A valid-request reference shares the application SQL provider while native SCIMMY owns schema/PATCH grammar. */
 export async function nativeScim(fixture) {

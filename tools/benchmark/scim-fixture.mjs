@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { createAuthService } from '@arkenivajs/security';
 import { securityStateFixture } from '../../examples/postgres/dist-test/integration/security-state-fixture.js';
 import {
@@ -13,13 +13,15 @@ import {
 import { createIssuer } from './http-issuer.mjs';
 
 /** Actual signed identities and the existing transactional provider remain independently parent-owned. */
-export async function startScimFixture() {
+export async function startScimFixture(sampleReads = false) {
+  assert.equal(typeof sampleReads, 'boolean');
   assert.equal(process.env.ARKENIVA_POSTGRES_DISPOSABLE, '1');
   const backend = await securityStateFixture();
-  let issuer, bridge;
+  let issuer, bridge, auth;
   const tasks = new Set(),
     grants = [],
-    privacyValues = ['127.0.0.1'];
+    privacyValues = ['127.0.0.1'],
+    readSeeds = new Map();
   const bridgeKey = randomBytes(32).toString('base64url'),
     marker = 'owned-scim-private-user';
   let handedOut = 0,
@@ -37,7 +39,11 @@ export async function startScimFixture() {
         await new Promise((done) => bridge.close(done));
       }
       await Promise.allSettled([...tasks]);
-      await issuer?.close();
+      try {
+        await auth?.close();
+      } finally {
+        await issuer?.close();
+      }
     } finally {
       await backend.close();
     }
@@ -51,7 +57,7 @@ export async function startScimFixture() {
       grants.push({ tenant, token, externalId: 'external-' + randomBytes(12).toString('hex') });
       for (const value of Object.values(grants.at(-1))) remember(value);
     }
-    const auth = await createAuthService({
+    auth = await createAuthService({
       issuer: issuer.origin,
       audience: issuer.audience,
       environment: 'test',
@@ -67,6 +73,10 @@ export async function startScimFixture() {
       ]),
     );
     bridge = createServer((request, response) => {
+      if (tasks.size >= 8) {
+        response.writeHead(503, { connection: 'close' }).end();
+        return;
+      }
       const task = (async () => {
         assert.equal(request.method, 'POST');
         const supplied = request.headers.authorization ?? '';
@@ -118,6 +128,44 @@ export async function startScimFixture() {
           const value = await providers[input.kind][input.operation](...input.args, tenant, {
             timeoutMs: 3000,
           });
+          if (sampleReads && input.kind === 'Users') {
+            if (input.operation === 'create' && input.args[0].userName === marker + '-read') {
+              assert.equal(input.args[0].externalId, grant.externalId + '-read');
+              assert.equal(readSeeds.has(tenant.tenantId), false);
+              assert.ok(readSeeds.size < 4);
+              const stored = await backend.app.sql.query('main', {
+                text: `SELECT body FROM ${backend.schema}.scim_resources WHERE id = :id LIMIT 1`,
+                bindings: { id: value.id },
+              });
+              assert.equal(stored.rows.length, 1);
+              const storedBody = stored.rows[0].body,
+                contents = JSON.parse(storedBody);
+              assert.equal(contents.userName, marker + '-read');
+              assert.equal(contents.externalId, grant.externalId + '-read');
+              assert.equal(contents.active, true);
+              assert.deepEqual(contents.schemas, ['urn:ietf:params:scim:schemas:core:2.0:User']);
+              readSeeds.set(tenant.tenantId, {
+                id: value.id,
+                resource: JSON.parse(JSON.stringify(value)),
+                storedBody,
+                ownerKey: createHash('sha256')
+                  .update(
+                    JSON.stringify([
+                      tenant.identity.issuer,
+                      tenant.identity.subject,
+                      tenant.tenantId,
+                    ]),
+                  )
+                  .digest('hex'),
+                reads: 0,
+              });
+            }
+            const seed = readSeeds.get(tenant.tenantId);
+            if (input.operation === 'get' && seed?.id === input.args[0]) {
+              assert.ok(seed.reads < 120);
+              seed.reads++;
+            }
+          }
           for (const record of [...(value?.Resources ?? []), ...(value?.id ? [value] : [])])
             remember(record.id);
           response
@@ -153,6 +201,7 @@ export async function startScimFixture() {
       audience: issuer.audience,
       marker,
       scope,
+      sampleReads,
     };
     Object.values(fixture).forEach(remember);
     return {
@@ -163,18 +212,52 @@ export async function startScimFixture() {
         unavailable = value;
       },
       observations: () => ({ handedOut, providerCalls }),
-      async verify(profiles) {
+      async verify(profiles, expectedReads = 0) {
         assert.equal(handedOut, profiles);
+        assert.equal(profiles, 4);
+        assert.equal(expectedReads, sampleReads ? 480 : 0);
         const { rows } = await backend.app.sql.query('main', {
-          text: `SELECT deleted,version::text AS version,owner_key FROM ${backend.schema}.scim_resources`,
+          text: `SELECT id::text,kind,body,deleted,version::text AS version,owner_key FROM ${backend.schema}.scim_resources LIMIT 9`,
         });
-        assert.equal(rows.length, profiles);
+        assert.equal(rows.length, sampleReads ? 2 * profiles : profiles);
         assert.equal(new Set(rows.map((row) => row.owner_key)).size, profiles);
-        assert.ok(rows.every((row) => row.deleted === true && row.version === '4'));
+        const deleted = rows.filter((row) => row.deleted === true);
+        assert.equal(deleted.length, profiles);
+        assert.ok(deleted.every((row) => row.version === '4'));
+        let observedReads = 0;
+        if (sampleReads) {
+          assert.equal(readSeeds.size, profiles);
+          for (const seed of readSeeds.values()) {
+            const row = rows.find((value) => value.id === seed.id);
+            assert.ok(row);
+            assert.equal(row.deleted, false);
+            assert.equal(row.kind, 'Users');
+            assert.equal(row.version, '1');
+            assert.equal(row.owner_key, seed.ownerKey);
+            assert.equal(seed.resource.meta.version, '"1"');
+            const { id, meta } = seed.resource;
+            assert.equal(id, row.id);
+            assert.equal(meta.resourceType, 'User');
+            assert.equal(row.body, seed.storedBody);
+            assert.equal(seed.reads, expectedReads / profiles);
+            observedReads += seed.reads;
+          }
+          assert.equal(observedReads, expectedReads);
+        }
         return {
-          actualDeletedResources: rows.length,
+          actualDeletedResources: deleted.length,
           independentTenantOwners: profiles,
           durableVersionPerResource: 4,
+          ...(sampleReads
+            ? {
+                actualLiveReadResources: readSeeds.size,
+                unchangedReadResourceVersion: 1,
+                independentlyObservedSampleReads: observedReads,
+                unchangedReadBodyAndOwnership: true,
+                parentProviderResources: null,
+                postgresServerResources: null,
+              }
+            : {}),
           releaseGate: false,
         };
       },

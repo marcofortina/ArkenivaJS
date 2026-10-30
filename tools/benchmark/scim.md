@@ -8,6 +8,7 @@ PostgreSQL fixture environment:
 
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation scim --verify /private/scim-verification
+pnpm --filter @arkenivajs/benchmark-foundation scim --smoke /private/scim-smoke
 ```
 
 Four isolated profiles compare native SCIMMY schema/filter/PATCH handling with
@@ -42,7 +43,35 @@ from a verified JWT. Reports and actual SDK exports must exclude tokens, private
 resource values, tenant identifiers and SQL schema names. Shutdown settles parent
 provider work, closes the issuer/bridge and removes only the owned SQL schema.
 
-Only `--verify` is supported. Sampling is rejected before fixture allocation
-until complete provider/server resource accounting is available. Reports retain
-`releaseGate: false`; dedicated-runner budgets, five paired repetitions and
-one-hour soak acceptance remain separate work.
+`--verify` preserves the existing CRUD, pagination, idempotency and ETag-race
+corpus without latency sampling. `--smoke` prepares one additional User per
+tenant after that verification and outside timing. Its username and external ID
+are distinct from the original deleted resource because the actual provider's
+immutable unique mappings include tombstones. The seed is committed at version
+one with ETag `"1"`.
+
+The sole timed scenario is `GET /Users/{id}` at the authenticated service
+boundary: 20 warmup callbacks and exactly 100 retained Tinybench samples per
+profile. Every sequential callback awaits the actual signed-identity checks,
+provider bridge, PostgreSQL transaction and SCIMMY User representation. There is
+no harness retry or waiting queue. At most 120 response objects are captured
+privately, within an explicit retention ceiling of 128, and released after
+completion. Every returned body and ETag must equal the original seed. Failed
+responses, changed bodies or changed versions reject the entire campaign.
+
+The parent independently counts exactly 120 seed-specific provider reads per
+tenant (480 overall), excluding the existing verification reads. SQL readback
+then proves four original version-four tombstones and four additional live
+version-one resources, with exact immutable bodies and independently derived
+issuer/subject/tenant ownership hashes. The owned schema is dropped in cleanup;
+seed creation and schema cleanup are not measured CRUD operations. Parent work
+settles before its auth service, issuer and SQL application close.
+
+The measured service boundary excludes real HTTP ingress, initial seed setup,
+CRUD verification and independent SQL readback. Worker resource observations
+exclude the separate parent provider, issuer, SQL client and PostgreSQL server;
+those resource costs remain unknown (`null`). This is a bounded read scenario,
+not CRUD performance, a complete SCIM HTTP benchmark or end-to-end federation
+equivalence. Reports retain `releaseGate: false`; complete resource accounting,
+dedicated-runner budgets, five paired repetitions and one-hour soak acceptance
+remain separate work. Unsupported modes reject before fixture allocation.
