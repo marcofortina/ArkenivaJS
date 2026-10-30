@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Verify bounded header/provider policies, corrupted CSRF persistence, native
+  registration and middleware failures, browser nonce renewal and operation ownership.
 - Capture configured providers without evaluating callable metadata, retaining
   original receivers and rejecting proxies before classification or CSRF authorization.
 - Add validated CSP, HSTS, framing and referrer headers through native Fastify/Helmet.
