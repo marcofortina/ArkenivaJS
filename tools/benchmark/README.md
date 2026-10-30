@@ -148,7 +148,8 @@ server-observed calls, explicit TLS trust and real SDK privacy. Its bounded smok
 reconciles actual decoded XML receipts and supervised client lifecycle resources.
 
 The [gRPC mTLS verification](grpc.md) checks native unary/streaming protobuf fidelity,
-independent server counts and actual framework chain/revocation checks.
+independent server counts and actual framework chain/revocation checks. Its bounded
+unary smoke reconciles exact protobuf receipts and supervised client resources.
 
 The [magic-link comparison](magiclink.md) verifies actual one-use SQL consumption,
 concurrent winner counts, external HMAC/authority and exact persisted quotas.
