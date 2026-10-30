@@ -168,6 +168,8 @@ jobs:
         run: python3 examples/xml/test/fixtures/run.py -- pnpm --filter @arkenivajs/data-xml test:integration
       - name: Verify the compiled public XSD application and private standard/detailed SDK observations
         run: python3 examples/xml/test/fixtures/run.py -- pnpm --filter @arkenivajs/example-xml test:integration
+      - name: Verify measured native XSD decisions and descendant resource cleanup
+        run: python3 examples/xml/test/fixtures/run.py -- pnpm --filter @arkenivajs/benchmark-foundation test:integration:xml
       - name: Verify XSD through independently installed archives in the isolated test namespace
         run: pnpm test:packed:examples --integration xml
 

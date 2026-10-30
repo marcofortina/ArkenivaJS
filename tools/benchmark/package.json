@@ -39,6 +39,7 @@
     "mysql-query": "node mysql-query.mjs",
     "mariadb-query": "node mariadb-query.mjs",
     "xml": "node xml.mjs",
+    "test:integration:xml": "node --test test/xml-smoke.integration.test.mjs",
     "json": "node json.mjs",
     "test:integration:json": "node --test test/json-smoke.integration.test.mjs",
     "soap": "node soap.mjs",
