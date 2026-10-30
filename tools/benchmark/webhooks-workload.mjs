@@ -4,7 +4,17 @@
 import assert from 'node:assert/strict';
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
+const providerObservations = new WeakMap();
+
 export function webhookPorts(fixture) {
+  if (!providerObservations.has(fixture))
+    providerObservations.set(fixture, {
+      authorizations: 0,
+      secretReads: 0,
+      claimAttempts: 0,
+      acceptedClaims: 0,
+    });
+  const observed = providerObservations.get(fixture);
   const url = new URL(fixture.endpoint);
   assert.equal(url.protocol, 'http:');
   assert.equal(url.hostname, '127.0.0.1');
@@ -21,7 +31,15 @@ export function webhookPorts(fixture) {
     assert.equal(response.status, 200);
     const body = await response.text();
     assert.ok(Buffer.byteLength(body) <= 4096);
-    return JSON.parse(body).result;
+    const result = JSON.parse(body).result;
+    if (method === 'authorize') observed.authorizations++;
+    else if (method === 'secret') observed.secretReads++;
+    else if (method === 'claimOnce') {
+      observed.claimAttempts++;
+      assert.equal(typeof result, 'boolean');
+      if (result) observed.acceptedClaims++;
+    }
+    return result;
   };
   const deny = async () => {
     throw new Error('The webhook comparison exposes only atomic nonce claims');
@@ -153,6 +171,8 @@ export function nativeWebhooks(fixture) {
   };
 }
 
+const observations = new WeakMap();
+
 export async function verifyWebhooks(service, fixture) {
   const context = {
     destinationId: 'receiver',
@@ -174,11 +194,94 @@ export async function verifyWebhooks(service, fixture) {
   assert.equal(verified.destinationId, context.destinationId);
   assert.equal(verified.eventId, context.eventId);
   await assert.rejects(service.verify(raw, expected, context));
+  const provider = providerObservations.get(fixture);
+  assert.ok(provider);
+  observations.set(service, {
+    callbacks: 0,
+    completed: 0,
+    replayChecks: 0,
+    last: undefined,
+    provider,
+    verification: { ...provider },
+  });
   return {
     nativeSignatureMatched: true,
     unchangedBytesVerified: true,
     reserializedBodyRejected: true,
     replayRejected: true,
     parsedEventVerified: true,
+  };
+}
+
+/** Each untampered byte sequence is signed and durably consumed with a fresh nonce. */
+export function webhookWorkload(service, fixture) {
+  const state = observations.get(service);
+  assert.ok(state, 'Webhook corpus verification must precede workload execution');
+  const raw = Buffer.from(
+    JSON.stringify(
+      { id: 'owned-event', type: 'owned.event', payload: { value: fixture.marker } },
+      null,
+      2,
+    ) + '\n',
+  );
+  return {
+    'sign-and-durable-verify': async () => {
+      state.callbacks++;
+      const context = {
+        destinationId: 'receiver',
+        eventId: 'owned-event',
+        timestamp: new Date().toISOString(),
+        nonce: randomBytes(24).toString('base64url'),
+        keyId: 'one',
+      };
+      const signature = await service.sign(raw, 'current', context),
+        verified = await service.verify(raw, signature, context);
+      assert.equal(verified.destinationId, context.destinationId);
+      assert.equal(verified.eventId, context.eventId);
+      assert.ok(Number.isFinite(Date.parse(verified.verifiedAt)));
+      state.completed++;
+      // Private receipt bytes are retained only for the untimed final replay check.
+      state.last = { raw, signature, context };
+      return true;
+    },
+  };
+}
+
+/** Cross-check actual invocations before independent parent-owned SQL readback. */
+export async function webhookObservations(service, { measure, records }) {
+  const state = observations.get(service);
+  assert.ok(state, 'Webhook corpus verification must precede completion');
+  assert.equal(state.completed, state.callbacks);
+  if (measure) {
+    assert.equal(records.length, 1);
+    const record = records[0];
+    assert.equal(record.operation, 'sign-and-durable-verify');
+    assert.equal(record.sampleCount, 100);
+    assert.equal(record.warmupIterations, 20);
+    assert.equal(record.rawLatency.unit, 'milliseconds');
+    assert.equal(record.rawLatency.values.length, record.sampleCount);
+    assert.ok(record.rawLatency.values.every((value) => Number.isFinite(value) && value >= 0));
+    assert.equal(state.callbacks, record.sampleCount + record.warmupIterations);
+  } else assert.equal(records.length, 0);
+  if (state.last && state.replayChecks === 0) {
+    await assert.rejects(service.verify(state.last.raw, state.last.signature, state.last.context));
+    state.replayChecks++;
+    state.last = undefined;
+  }
+  const expected = {
+    acceptedClaims: state.verification.acceptedClaims + state.completed,
+    claimAttempts: state.verification.claimAttempts + state.completed + state.replayChecks,
+    authorizations: state.verification.authorizations + 2 * state.completed + state.replayChecks,
+    secretReads: state.verification.secretReads + 2 * state.completed + state.replayChecks,
+  };
+  assert.deepEqual(state.provider, expected);
+  return {
+    actualPairedCallbacks: state.callbacks,
+    successfulPairedVerifications: state.completed,
+    finalReplayDenials: state.replayChecks,
+    expectedAcceptedClaims: expected.acceptedClaims,
+    expectedClaimAttempts: expected.claimAttempts,
+    expectedAuthorizations: expected.authorizations,
+    expectedSecretReads: expected.secretReads,
   };
 }

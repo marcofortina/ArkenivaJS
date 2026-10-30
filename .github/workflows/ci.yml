@@ -421,6 +421,8 @@ jobs:
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:password
       - name: Verify native webhook signatures and durable one-use nonce claims
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:webhooks
+        env:
+          ARKENIVA_WEBHOOKS_BENCHMARK_DISPOSABLE: '1'
       - name: Verify native OAuth HTTPS machine grants and persisted technical budgets
         run: pnpm --filter @arkenivajs/benchmark-foundation test:integration:oauth
       - name: Verify four magic-link profiles and atomic single-use SQL consumption
