@@ -67,7 +67,9 @@
     "csv": "node csv.mjs",
     "mail": "node mail.mjs",
     "password": "node password.mjs",
-    "test:integration:password": "node --test test/password-workload.integration.test.mjs"
+    "test:integration:password": "node --test test/password-workload.integration.test.mjs",
+    "etcd": "node etcd.mjs",
+    "test:integration:etcd": "node --test test/etcd-workload.integration.test.mjs"
   },
   "devDependencies": {
     "@arkenivajs/api": "workspace:*",
@@ -166,7 +168,10 @@
     "uuid": "14.0.3",
     "validator": "13.15.35",
     "yaml": "2.9.1",
-    "yauzl": "3.4.0"
+    "yauzl": "3.4.0",
+    "@arkenivajs/database-etcd": "workspace:*",
+    "etcd3": "1.1.2",
+    "cockatiel": "3.2.1"
   },
   "license": "AGPL-3.0-or-later"
 }
