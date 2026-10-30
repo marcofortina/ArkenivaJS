@@ -13,6 +13,7 @@ import { KitError } from '@arkenivajs/core';
 import { capture, spec, limits } from '../../dist/settings.js';
 import { managedService } from '../../dist/service.js';
 import type { DocumentsPdfPluginSettings, PdfTextSpec } from '../../dist/index.js';
+import { operation } from '../../dist/runtime.js';
 
 const config = (): DocumentsPdfPluginSettings => ({
   defaults: {},
@@ -25,6 +26,51 @@ function fixture(settings = config()) {
   const controller = new AbortController();
   return { ...managedService(capture(settings), controller.signal, () => true), controller };
 }
+
+test('PDF cancellation retains owned native cleanup after caller hook replacement on success and abort', async () => {
+  const document = await PDFDocument.create();
+  document.addPage();
+  const bytes = await document.save();
+  for (const cancelled of [false, true]) {
+    const f = fixture(),
+      controller = new AbortController();
+    let effects = 0;
+    try {
+      const pending = f.service.inspect(bytes, { signal: controller.signal });
+      Object.defineProperty(controller.signal, 'removeEventListener', {
+        value() {
+          effects++;
+        },
+      });
+      if (cancelled) {
+        controller.abort();
+        await assert.rejects(pending, code('EK_ABORTED'));
+      } else assert.equal((await pending).pages, 1);
+      await f.close();
+      assert.equal(effects, 0);
+      assert.ok(bytes.some((value) => value !== 0));
+    } finally {
+      await f.close();
+    }
+  }
+});
+test('PDF operation controls reject proxy signals and excessive prototype depth without evaluating traps', () => {
+  let effects = 0;
+  const signal = new AbortController().signal;
+  const proxy = new Proxy(signal, {
+    getPrototypeOf(target) {
+      effects++;
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  assert.throws(() => operation({ signal: proxy }, 1000), code('EK_PDF_PARSE'));
+  assert.equal(effects, 0);
+  const deep = new AbortController().signal;
+  let prototype: object = AbortSignal.prototype;
+  for (let index = 0; index < 65; index++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(deep, prototype);
+  assert.throws(() => operation({ signal: deep }, 1000), code('EK_PDF_PARSE'));
+});
 
 test('Real AES-encrypted native PDF fixtures are rejected without accepting a password bypass', async () => {
   const require = createRequire(import.meta.url),
