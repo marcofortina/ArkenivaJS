@@ -62,6 +62,30 @@ const source = async function* (input: Uint8Array) {
 };
 const code = (value: string) => (error: unknown) =>
   error instanceof KitError && error.code === value;
+test('OpenSSH command completion retains independent cancellation cleanup after caller hook replacement', async () => {
+  const f = await fixture(),
+    controller = new AbortController();
+  let effects = 0;
+  try {
+    const pending = f.ssh.exec(
+      'fixture',
+      'report',
+      { value: 'owned-signal' },
+      { signal: controller.signal },
+    );
+    Object.defineProperty(controller.signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+    const receipt = await pending;
+    assert.equal(receipt.exitCode, 0);
+    assert.equal(Buffer.from(receipt.stdout).toString(), 'owned-signal');
+    assert.equal(effects, 0);
+  } finally {
+    await f.close();
+  }
+});
 test('OpenSSH streams binary files with backpressure, integrity receipts, listing and a real native instance', async () => {
   const f = await fixture(),
     file = path(),
@@ -212,11 +236,12 @@ test('OpenSSH bounds transfer bytes, preserves literal command arguments and ret
     await f.close();
   }
 });
-test('OpenSSH integrates both public capabilities at READY and closes the owned native session on application shutdown', async () => {
+test('OpenSSH integrates both public capabilities at READY and closes the owned native session on application shutdown', async (t) => {
   const app = await createApplication({
     service: { name: 'sftp-fixture', version: '1.0.0', environment: 'test' },
     plugins: [sftpPlugin(settings())],
   });
+  t.after(() => app.stop());
   await app.start();
   const sftp = app.resolve<SftpService>(SFTP_CAPABILITY),
     ssh = app.resolve<SshService>(SSH_CAPABILITY);

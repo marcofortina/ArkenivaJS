@@ -382,15 +382,9 @@ export function managedService(
       if (Buffer.byteLength(rendered) > 64 * 1024) throw failure('EK_SSH_FORBIDDEN');
       return launch(name, options, 'exec', async (connection, request) => {
         request.submitted = true;
-        const channel = await request.wait(
-          new Promise<ClientChannel>((resolve, reject) =>
-            connection.native.client.exec(rendered, (error, channel) =>
-              error ? reject(failure('EK_SFTP_TRANSFER', true)) : resolve(channel),
-            ),
-          ),
-        );
         const stdout: Buffer[] = [],
           stderr: Buffer[] = [];
+        let channel: ClientChannel | undefined;
         let size = 0,
           truncated = false,
           exitCode: number | null = null;
@@ -403,21 +397,29 @@ export function managedService(
           }
           if (part.length > remaining) {
             truncated = true;
-            channel.close();
+            channel?.close();
           }
         };
-        channel.on('data', collect(stdout));
-        channel.stderr.on('data', collect(stderr));
-        channel.stderr.on('error', () => request.stop('EK_SFTP_TRANSFER'));
-        channel.on('exit', (code: number | null) => {
-          if (Number.isInteger(code)) exitCode = code;
-        });
         try {
-          channel.end();
           await request.wait(
             new Promise<void>((resolve, reject) => {
-              channel.once('close', () => resolve());
-              channel.once('error', () => reject(failure('EK_SFTP_TRANSFER', true)));
+              connection.native.client.exec(rendered, (error, opened) => {
+                if (error) {
+                  reject(failure('EK_SFTP_TRANSFER', true));
+                  return;
+                }
+                channel = opened;
+                // Native exit and close packets may follow this callback before a promise resumes.
+                channel.on('data', collect(stdout));
+                channel.stderr.on('data', collect(stderr));
+                channel.stderr.on('error', () => request.stop('EK_SFTP_TRANSFER'));
+                channel.on('exit', (code: number | null) => {
+                  if (Number.isInteger(code)) exitCode = code;
+                });
+                channel.once('close', () => resolve());
+                channel.once('error', () => reject(failure('EK_SFTP_TRANSFER', true)));
+                channel.end();
+              });
             }),
           );
           observe.measure('command.output.bytes', size);
@@ -428,7 +430,7 @@ export function managedService(
             truncated,
           });
         } finally {
-          channel.destroy();
+          channel?.destroy();
         }
       });
     },
