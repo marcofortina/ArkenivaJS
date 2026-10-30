@@ -45,6 +45,7 @@
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
+    "@arkenivajs/example-postgres": "workspace:*",
     "@arkenivajs/logging": "workspace:*",
     "@arkenivajs/security": "workspace:*",
     "@arkenivajs/telemetry": "workspace:*",
