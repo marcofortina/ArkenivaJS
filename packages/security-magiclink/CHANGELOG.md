@@ -5,6 +5,8 @@
 
 ## 0.1.0
 
+- Verify corrupted durable records and quotas, bounded rejected writes, late expiry,
+  canonical authority output, operation ownership and real PostgreSQL single-use recovery.
 - Capture configured provider methods without evaluating callable metadata,
   retaining original receivers and rejecting executable proxy prototypes.
 - Add native random magic links, external versioned HMAC and shared atomic one-use state.
