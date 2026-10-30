@@ -52,6 +52,8 @@ Compressed input is a finite captured snapshot. ZIP inspection precedes native r
 
 Abort/deadlines terminate owned children. Uncooperative source/target promises retain admission until actual settlement; application drain waits and may report its explicit shutdown deadline. Partial target writes cannot be rolled back; failures after a target attempt carry `details.outcome:'unknown'`. Successful write acknowledgement follows actual child exit. Public failures expose only `EK_XLSX_FORMAT`, `EK_XLSX_LIMIT`, `EK_XLSX_UNSUPPORTED` and common lifecycle/deadline errors, without native exception causes, paths or cell contents.
 
+Operation cancellation captures a native signal before admission. Later caller hook replacement cannot alter cleanup; proxy signals, shadowed lifecycle hooks and prototype traversal beyond 64 levels fail with the existing workbook format error.
+
 Optional Pino/OTel integration records fixed operations/outcomes, actual byte counts, decoded cells, first-row latency, cells per second and sampled worker RSS high-water measurements. RSS is sampled at IPC replies, not continuously. Workbook contents, sheet names and paths never enter diagnostics.
 
 ## Dependency compatibility

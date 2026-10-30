@@ -15,6 +15,7 @@ import { managedService } from '../../dist/service.js';
 import { capture } from '../../dist/settings.js';
 import { cell, style, formula, row } from '../../dist/cells.js';
 import { options } from '../../dist/settings.js';
+import { operation } from '../../dist/runtime.js';
 
 const code = (expected: string) => (error: unknown) =>
   error instanceof KitError && error.code === expected;
@@ -48,6 +49,58 @@ const value = (cell: XlsxCell) =>
   cell && typeof cell === 'object' && !(cell instanceof Date) && 'value' in cell
     ? cell.value
     : cell;
+test('XLSX cancellation owns native hooks independently of later caller mutation', async () => {
+  const f = fixture(),
+    controller = new AbortController();
+  let release!: (value: IteratorResult<Uint8Array>) => void,
+    effects = 0;
+  const pending = f.service.open(
+    {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () =>
+            new Promise<IteratorResult<Uint8Array>>((resolve) => {
+              release = resolve;
+            }),
+        };
+      },
+    },
+    { signal: controller.signal },
+  );
+  try {
+    await delay(0);
+    Object.defineProperty(controller.signal, 'removeEventListener', {
+      value() {
+        effects++;
+      },
+    });
+    release({ done: true, value: undefined });
+    await assert.rejects(pending, code('EK_XLSX_FORMAT'));
+    assert.equal(effects, 0);
+    const writer = f.service.create();
+    await writer.close();
+  } finally {
+    release?.({ done: true, value: undefined });
+    await f.close();
+  }
+});
+test('XLSX operation signals reject proxies and bounded prototype overflow without executing traps', () => {
+  let effects = 0;
+  const signal = new AbortController().signal;
+  const proxy = new Proxy(signal, {
+    getPrototypeOf(target) {
+      effects++;
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  assert.throws(() => operation({ signal: proxy }, 1000), code('EK_XLSX_FORMAT'));
+  assert.equal(effects, 0);
+  const deep = new AbortController().signal;
+  let prototype: object = AbortSignal.prototype;
+  for (let index = 0; index < 65; index++) prototype = Object.create(prototype) as object;
+  Object.setPrototypeOf(deep, prototype);
+  assert.throws(() => operation({ signal: deep }, 1000), code('EK_XLSX_FORMAT'));
+});
 test('Real XLSX 1900 and 1904 date epochs preserve UTC milliseconds and ordinary numeric styles', async () => {
   const f = fixture();
   try {

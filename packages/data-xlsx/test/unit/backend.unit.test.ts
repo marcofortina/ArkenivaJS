@@ -11,6 +11,9 @@ import { options } from '../../dist/settings.js';
 import { createWriter, openReader } from '../../dist/backend.js';
 import { inspect } from '../../dist/archive.js';
 import type { XlsxCell } from '../../dist/contracts.js';
+import ExcelJS from 'exceljs';
+import type { Style } from 'exceljs';
+import { KitError } from '@arkenivajs/core';
 
 const value = (cell: XlsxCell) =>
   cell && typeof cell === 'object' && !(cell instanceof Date) && 'value' in cell
@@ -114,6 +117,84 @@ test('The reviewed CommonJS ZIP decoder preserves the native ExcelJS streaming e
     assert.ok(paths.includes('xl/workbook.xml'));
     assert.ok(paths.includes('xl/worksheets/sheet1.xml'));
   } finally {
+    writer.close();
+  }
+});
+
+test('Native XLSX style projection fails explicitly for unsupported formatting instead of silently losing fidelity', async () => {
+  const samples: Partial<Style>[] = [
+    { font: { underline: true } },
+    { font: { strike: true } },
+    { alignment: { horizontal: 'justify' } },
+    { alignment: { vertical: 'top' } },
+    { alignment: { textRotation: 45 } },
+    { border: { bottom: { style: 'thin' } } },
+    { fill: { type: 'pattern', pattern: 'darkGrid' } },
+    { fill: { type: 'pattern', pattern: 'solid', fgColor: { theme: 99 } } },
+    { font: { color: { argb: '00112233' } } },
+    {
+      fill: {
+        type: 'gradient',
+        gradient: 'angle',
+        degree: 45,
+        stops: [
+          { position: 0, color: { argb: 'FF000000' } },
+          { position: 1, color: { argb: 'FFFFFFFF' } },
+        ],
+      },
+    },
+  ];
+  for (const [index, presentation] of samples.entries()) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('Data').getCell('A1').value = 'Owned';
+    workbook.getWorksheet('Data')!.getCell('A1').style = presentation;
+    const reader = await openReader(Buffer.from(await workbook.xlsx.writeBuffer()), options());
+    try {
+      await assert.rejects(
+        async () => {
+          for await (const item of reader.rows('Data')) void item;
+        },
+        (error: unknown) => error instanceof KitError && error.code === 'EK_XLSX_UNSUPPORTED',
+        `Native style boundary ${index}`,
+      );
+    } finally {
+      reader.close();
+    }
+  }
+});
+
+test('Native XLSX writer preserves minimal explicit styles and nullable formula caches', async () => {
+  const policy = options({ formulaPolicy: 'preserve' }),
+    writer = createWriter(policy, 1048576);
+  let reader: Awaited<ReturnType<typeof openReader>> | undefined;
+  try {
+    writer.addSheet('Data');
+    writer.addRows(0, [
+      [
+        { value: 'plain', style: { horizontalAlignment: 'center' } },
+        { value: 1, style: { bold: false, italic: false, fontSize: 10 } },
+        { formula: '1', cachedValue: null },
+        { formula: '2' },
+      ],
+    ]);
+    const output = await writer.finish();
+    reader = await openReader(Buffer.concat(output.chunks), policy);
+    const rows = [];
+    for await (const item of reader.rows('Data')) rows.push(item);
+    assert.deepEqual(rows[0]!.cells.map(value), [
+      'plain',
+      1,
+      { formula: '1', cachedValue: null },
+      { formula: '2', cachedValue: null },
+    ]);
+    await assert.rejects(
+      async () => {
+        for await (const item of reader!.rows('Missing')) void item;
+      },
+      (error: unknown) => error instanceof KitError && error.code === 'EK_XLSX_UNSUPPORTED',
+    );
+  } finally {
+    reader?.close();
     writer.close();
   }
 });
