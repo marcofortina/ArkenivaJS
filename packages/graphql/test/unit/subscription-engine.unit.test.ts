@@ -64,7 +64,11 @@ async function nativeFixture(
   }).security.limits;
   server.addHook('onRoute', (options) => {
     const route = options as typeof options & {
-      wsHandler?: (this: FastifyInstance, socket: WebSocket, request: FastifyRequest) => unknown;
+      wsHandler?: (
+        this: FastifyInstance,
+        socket: WebSocket,
+        request: FastifyRequest,
+      ) => void | Promise<void>;
     };
     const native = route.wsHandler;
     if (!native) return;

@@ -5,16 +5,93 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import mercurius from 'mercurius';
+import websocket from '@fastify/websocket';
 import type { MercuriusContext } from 'mercurius';
 import { createClient } from 'graphql-ws';
 import WebSocket from 'ws';
 import type { WebSocketServer } from 'ws';
-import { COMPONENTS } from '@arkenivajs/core';
+import { COMPONENTS, KitError } from '@arkenivajs/core';
 import type { Plugin, AuthService, VerifiedTenantContext } from '@arkenivajs/core';
 import type { ManagedApiServer } from '@arkenivajs/api';
 import { realtimePlugin } from '@arkenivajs/realtime';
 import { subscriptionSocket } from '../../dist/subscription-socket.js';
+import type { GraphqlPluginSettings } from '../../dist/index.js';
 import { fixture, tlsFiles, send } from '../fixture.js';
+
+for (const configuration of [
+  { name: 'compression enabled', perMessageDeflate: true, maxPayload: 4096 },
+  { name: 'unlimited payload', perMessageDeflate: false, maxPayload: 0 },
+  { name: 'non-finite payload', perMessageDeflate: false, maxPayload: Infinity },
+  { name: 'fractional payload', perMessageDeflate: false, maxPayload: 4096.5 },
+])
+  test(
+    `Public GraphQL rejects an existing dispatcher with ${configuration.name} before listening`,
+    { timeout: 10000 },
+    async () => {
+      const tls = await tlsFiles();
+      let listening = 0,
+        acquired = 0,
+        registered = false;
+      const preexisting: Plugin = {
+        id: 'existing-websocket-dispatcher',
+        version: '0.1.0',
+        capabilities: new Set(),
+        dependencies: ['api'],
+        async init(context) {
+          const root = context.require<ManagedApiServer>(COMPONENTS.api).native();
+          root.server.on('listening', () => listening++);
+          await root.register(websocket, {
+            options: {
+              perMessageDeflate: configuration.perMessageDeflate,
+              maxPayload: configuration.maxPayload,
+            },
+          });
+          registered = true;
+        },
+        close() {},
+      };
+      const settings: GraphqlPluginSettings = {
+        schema: 'type Query { ping: String! } type Subscription { notice: String! }',
+        resolvers: { Query: { ping: () => 'pong' } },
+        security: { auth: { required: true }, authorizeField: ({ context }) => !!context.auth },
+        subscriptions: {
+          enabled: true,
+          pubsub: {
+            subscribe() {
+              acquired++;
+              throw new Error('Rejected listener configuration must not acquire a source');
+            },
+            async publish() {},
+            async close() {},
+          },
+          maxConnections: 2,
+          maxOperationsPerConnection: 2,
+          maxQueuedEventsPerConnection: 4,
+          revalidateIntervalMs: 1000,
+          allowedOrigins: ['https://portal.example.test'],
+        },
+      };
+      try {
+        await assert.rejects(
+          fixture(settings, {
+            tls: tls.tls,
+            plugins: [preexisting],
+            graphqlDependencies: [preexisting.id],
+          }),
+          (error: unknown) =>
+            error instanceof KitError &&
+            error.code === 'EK_PLUGIN_FAILED' &&
+            error.cause instanceof KitError &&
+            error.cause.code === 'EK_GQL_CONFIG',
+        );
+        assert.equal(registered, true, 'The native dispatcher must actually be registered');
+        assert.equal(listening, 0, 'Invalid shared transports must fail before public listening');
+        assert.equal(acquired, 0);
+      } finally {
+        await tls.close();
+      }
+    },
+  );
 
 function nativeProbe(): Plugin {
   return {

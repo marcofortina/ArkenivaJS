@@ -82,6 +82,11 @@ distribution. These deployment declarations never replace authentication or
 verification of the real shared broker. Never add production labels to memory
 fixtures or derive them from client input.
 
+When another application plugin registers the shared WebSocket dispatcher first,
+it must explicitly disable compression and set a positive safe integer payload
+limit. GraphQL rejects incompatible dispatchers before the HTTP listener opens.
+Compatible routes retain one dispatcher and their own message limits.
+
 Configure finite connection, operation and event queue caps, explicit browser
 origins and periodic identity revalidation. Failed revalidation closes the
 connection. Client tenant hints cannot select a namespace. Return each iterator
