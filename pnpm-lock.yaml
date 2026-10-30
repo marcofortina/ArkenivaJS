@@ -2435,6 +2435,9 @@ importers:
       '@arkenivajs/dns':
         specifier: workspace:*
         version: link:../../packages/dns
+      '@arkenivajs/documents-pdf':
+        specifier: workspace:*
+        version: link:../../packages/documents-pdf
       '@arkenivajs/health':
         specifier: workspace:*
         version: link:../../packages/health
@@ -2549,6 +2552,12 @@ importers:
       otplib:
         specifier: 13.5.0
         version: 13.5.0
+      pdf-lib:
+        specifier: 1.17.1
+        version: 1.17.1
+      pdfjs-dist:
+        specifier: 6.4.299
+        version: 6.4.299
       pg:
         specifier: 8.23.1
         version: 8.23.1
