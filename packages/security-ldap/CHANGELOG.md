@@ -7,6 +7,7 @@ Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 ## 0.1.0
 
+- Verify isolated native worker connection ownership, driver failures, projection bounds, paged completion, group cycles and user-bind classification alongside real OpenLDAP compatibility.
 - Capture native cancellation independently of later caller hook replacement; verify process/IPC failure, exit acknowledgement, search ownership and passive diagnostic boundaries.
 - Validate and copy provider secret bytes through native typed-array slots before allocation; reject shared/proxy/structural inputs without executing instance metadata and verify real OpenLDAP authentication.
 - Verify native OpenLDAP identity/group ambiguity, attribute size/count limits,
