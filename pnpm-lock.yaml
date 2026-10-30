@@ -2378,6 +2378,9 @@ importers:
       '@arkenivajs/logging':
         specifier: workspace:*
         version: link:../logging
+      '@arkenivajs/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
 
   tools/benchmark:
     devDependencies:

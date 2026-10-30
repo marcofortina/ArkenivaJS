@@ -7,6 +7,7 @@ import { Writable } from 'node:stream';
 import { createApplication } from '@arkenivajs/core';
 import type { TenantId } from '@arkenivajs/core';
 import { loggingPlugin } from '@arkenivajs/logging';
+import { telemetryPlugin } from '@arkenivajs/telemetry';
 import { webhooksPlugin, WEBHOOKS_CAPABILITY } from '../../dist/index.js';
 import type {
   WebhookService,
@@ -152,7 +153,10 @@ export function fixtureSettings(origin = 'http://127.0.0.1:9') {
     }),
   };
 }
-export async function fixture(input?: ReturnType<typeof fixtureSettings>) {
+export async function fixture(
+  input?: ReturnType<typeof fixtureSettings>,
+  telemetryEndpoint?: string,
+) {
   const f = input ?? fixtureSettings(),
     destination = new Writable({
       write(chunk: Buffer, _encoding, done) {
@@ -163,7 +167,20 @@ export async function fixture(input?: ReturnType<typeof fixtureSettings>) {
   const app = await createApplication({
     service: { name: 'webhooks-fixture', version: '1.0.0', environment: 'test' },
     logging: { level: 'debug' },
-    plugins: [loggingPlugin({ destination }), webhooksPlugin(f.settings)],
+    ...(telemetryEndpoint ? { telemetry: { mode: 'standard' as const, samplingRatio: 1 } } : {}),
+    plugins: [
+      loggingPlugin({ destination }),
+      ...(telemetryEndpoint
+        ? [
+            telemetryPlugin({
+              endpoint: telemetryEndpoint,
+              allowInsecureLoopback: true,
+              exportIntervalMs: 60000,
+            }),
+          ]
+        : []),
+      webhooksPlugin(f.settings),
+    ],
   });
   try {
     await app.start();
