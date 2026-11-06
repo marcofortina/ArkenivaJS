@@ -3,6 +3,7 @@
 
 import { test } from 'node:test';
 import { createServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -19,6 +20,8 @@ import {
 import { createMeter, meteringPlugin, parseMeteringEvent } from '@arkenivajs/metering';
 import type { ManagedUsageMeter, TenantVerifier } from '@arkenivajs/metering';
 import { fixture, send, settings, registry } from '../http-fixture.js';
+import { tlsFiles } from '../http-fixture.js';
+import { within } from '@arkenivajs/core/support';
 import { registryContentChecksum } from '../../dist/registry.js';
 import type { TenantRoutingEventV1 } from '../../dist/index.js';
 
@@ -29,6 +32,196 @@ async function events(directory: string): Promise<MeteringEvent[]> {
     .filter(Boolean)
     .map((line) => parseMeteringEvent(JSON.parse(line)));
 }
+
+test('An interrupted real HTTPS response reports only observed partner bytes and isolates incomplete usage from healthy work', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-routing-partial-usage-')),
+    material = await tlsFiles(),
+    prefix = '{"id":"partner-',
+    wire = '{"id":"healthy-partner","tenant":"south","implementation":"partner"}';
+  let enter!: () => void,
+    release!: () => void,
+    disconnect!: () => void,
+    effects = 0,
+    partial = true,
+    lateWrites = 0;
+  const entered = new Promise<void>((done) => {
+      enter = done;
+    }),
+    gate = new Promise<void>((done) => {
+      release = done;
+    }),
+    closed = new Promise<void>((done) => {
+      disconnect = done;
+    }),
+    tasks = new Set<Promise<void>>();
+  const upstream = createHttpsServer(
+    {
+      key: await readFile(material.tls.privateKeyFile),
+      cert: await readFile(material.tls.certificateFile),
+    },
+    (request, response) => {
+      const task = (async () => {
+        effects++;
+        assert.equal(request.url, '/fixed');
+        assert.equal(request.headers.authorization, undefined);
+        response.setHeader('content-type', 'application/json');
+        if (!partial) {
+          response.end(wire);
+          return;
+        }
+        response.once('close', disconnect);
+        response.write(prefix);
+        enter();
+        await gate;
+        if (!response.destroyed) {
+          lateWrites++;
+          response.end('late"}');
+        }
+      })().finally(() => tasks.delete(task));
+      tasks.add(task);
+      void task.catch(() => response.destroy());
+    },
+  );
+  await new Promise<void>((done) => upstream.listen(0, '127.0.0.1', done));
+  t.after(async () => {
+    release();
+    upstream.closeAllConnections();
+    try {
+      await new Promise<void>((done) => upstream.close(() => done()));
+      await Promise.allSettled([...tasks]);
+    } finally {
+      await material.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+  const address = upstream.address();
+  assert.ok(address && typeof address === 'object');
+  const snapshot = registry(),
+    content = {
+      ...snapshot,
+      operations: snapshot.operations.map((operation) => ({
+        ...operation,
+        timeoutMs: 500,
+        maxConcurrency: 1,
+      })),
+      implementations: [
+        snapshot.implementations[0]!,
+        {
+          id: 'south-orders',
+          kind: 'http' as const,
+          upstreamKey: 'partner',
+          upstreamPath: '/fixed',
+          method: 'GET' as const,
+        },
+      ],
+    };
+  const f = await fixture(
+    {
+      ...settings(),
+      registry: {
+        loadSnapshot: async () => ({
+          ...content,
+          contentChecksum: registryContentChecksum(content),
+        }),
+      },
+      approvedUpstreams: [
+        {
+          key: 'partner',
+          origin: 'https://127.0.0.1:' + address.port,
+          allowedHostnames: ['127.0.0.1'],
+          allowedCidrs: ['127.0.0.1/32'],
+          connectionTimeoutMs: 1000,
+          allowRedirects: false,
+          tlsCaFile: material.tls.certificateFile,
+        },
+      ],
+    },
+    {
+      metering: { enabled: true, exporter: 'jsonl', path: 'usage.jsonl' },
+      plugins: [meteringPlugin({ workspace: directory })],
+    },
+  );
+  try {
+    await f.tenant('south');
+    const south = await f.token('south'),
+      north = await f.token('north'),
+      pending = send(f.origin, '/api/orders/partial', { headers: { authorization: south } });
+    await within(() => entered, { timeoutMs: 2000 });
+    const local = await send(f.origin, '/api/orders', {
+      method: 'POST',
+      body: { id: 'healthy-local' },
+      headers: { authorization: north },
+    });
+    assert.equal(local.status, 200, local.body);
+    assert.equal(effects, 1);
+    const expired = await pending;
+    assert.equal(expired.status, 504, expired.body);
+    assert.doesNotMatch(expired.body, /partner-|127\.0\.0\.1|Bearer/);
+    await within(() => closed, { timeoutMs: 2000 });
+    await within(
+      async () => {
+        while (f.app.meter.snapshot().activeSessions) await nextTurn();
+      },
+      { timeoutMs: 2000 },
+    );
+    await f.app.meter.flush();
+    const early = await events(directory),
+      failed = early.find((event) => event.operation === 'orders.read')!,
+      localChild = early.find((event) => event.operation === 'orders.create')!;
+    assert.equal(early.length, 4);
+    assert.ok(failed && localChild);
+    assert.equal(failed.tenantId, 'south');
+    assert.equal(failed.status, 'unknown');
+    assert.equal(failed.counters['http.client.requests']?.value, 1);
+    assert.equal(failed.counters['http.client.response.bytes']?.value, Buffer.byteLength(prefix));
+    assert.equal(failed.quality.complete, false);
+    assert.ok(failed.quality.missing.includes('driver_bytes_unavailable'));
+    assert.equal(failed.counters['http.response.bytes'], undefined);
+    assert.equal(localChild.tenantId, 'north');
+    assert.equal(localChild.status, 'ok');
+    assert.equal(localChild.quality.complete, true);
+    assert.equal(localChild.counters['http.client.requests'], undefined);
+    assert.equal(localChild.counters['http.client.response.bytes'], undefined);
+    for (const parent of early.filter((event) => event.operation === 'http.request'))
+      assert.equal(parent.counters['http.client.response.bytes'], undefined);
+    partial = false;
+    const recovered = await send(f.origin, '/api/orders/recovered', {
+      headers: { authorization: south },
+    });
+    assert.equal(recovered.status, 200, recovered.body);
+    assert.equal(recovered.json().id, 'healthy-partner');
+    assert.equal(effects, 2);
+    await within(
+      async () => {
+        while (f.app.meter.snapshot().activeSessions) await nextTurn();
+      },
+      { timeoutMs: 2000 },
+    );
+    await f.app.meter.flush();
+    const recorded = await events(directory),
+      healthy = recorded.find(
+        (event) => event.operation === 'orders.read' && event.requestId !== failed.requestId,
+      )!;
+    assert.equal(recorded.length, 6);
+    assert.ok(healthy);
+    assert.equal(healthy.tenantId, 'south');
+    assert.equal(healthy.status, 'ok');
+    assert.equal(healthy.quality.complete, true);
+    assert.equal(healthy.counters['http.client.response.bytes']?.value, Buffer.byteLength(wire));
+    assert.equal(lateWrites, 0);
+    assert.doesNotMatch(
+      JSON.stringify(recorded) + f.logs(),
+      /healthy-local|healthy-partner|partner-|127\.0\.0\.1|Bearer/,
+    );
+    release();
+    await Promise.allSettled([...tasks]);
+    assert.equal(lateWrites, 0);
+    assert.equal(effects, 2);
+  } finally {
+    release();
+    await f.close();
+  }
+});
 
 test('Real JSONL records verified tenant HTTP parents and logical operation children without repeating entity bytes', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-routing-usage-'));
