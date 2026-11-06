@@ -11,7 +11,11 @@ import { cpus, totalmem, platform, release, arch } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { once } from 'node:events';
 import { createIssuer } from './http-issuer.mjs';
-import { runOrder, pairedComparison } from './http-analysis.mjs';
+import {
+  httpBenchmarkPolicy,
+  compareHttpMetric,
+  parseHttpBenchmarkArguments,
+} from './http-policy.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const modes = ['BASELINE', 'FRAMEWORK', 'STANDARD', 'DETAILED'];
@@ -208,7 +212,7 @@ async function load(configuration, directory, phase, executable, cpu, signal) {
     await unlink(configurationPath);
   }
 }
-function comparisons(runs, seed) {
+function comparisons(runs, seed, policy) {
   const result = [];
   const baseline = runs
     .filter((run) => run.mode === 'BASELINE')
@@ -230,7 +234,7 @@ function comparisons(runs, seed) {
       result.push({
         mode,
         metric,
-        ...pairedComparison(baseline.map(read), candidate.map(read), seed),
+        ...compareHttpMetric(baseline.map(read), candidate.map(read), policy, seed),
       });
     }
   }
@@ -239,7 +243,7 @@ function comparisons(runs, seed) {
 
 /** Run matched workloads in owned processes and retain raw evidence outside the checkout. */
 export async function runHttpBenchmark(path, policy = 'campaign') {
-  assert.ok(['campaign', 'smoke', 'soak'].includes(policy));
+  const plan = httpBenchmarkPolicy(policy);
   assert.equal(process.env.ARKENIVA_POSTGRES_DISPOSABLE, '1');
   assert.ok(process.env.ARKENIVAJS_OTLP_ENDPOINT);
   assert.ok(process.env.ARKENIVA_BENCHMARK_K6);
@@ -270,17 +274,19 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
   let issuer;
   const runs = [],
     seed = 137,
-    warmupSeconds = policy === 'smoke' ? 1 : 60;
-  const measuredSeconds = policy === 'smoke' ? 3 : policy === 'soak' ? 3600 : 180;
-  const order =
-    policy === 'soak'
-      ? [{ repeat: 1, mode: 'STANDARD' }]
-      : runOrder(policy === 'smoke' ? 1 : 5, seed);
+    { warmupSeconds, measuredSeconds, order } = plan;
   try {
     const metadata = {
       measured: true,
       releaseGate: false,
       policy,
+      ...(policy === 'pilot'
+        ? {
+            evidenceKind: 'single-sustained-pilot',
+            calibrationStatus: 'NOT_CALIBRATED',
+            sufficientlyRepeated: false,
+          }
+        : {}),
       sha,
       dirty,
       startedAt: new Date().toISOString(),
@@ -318,7 +324,7 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
       workload: {
         warmupSeconds,
         measuredSeconds,
-        repeats: policy === 'campaign' ? 5 : 1,
+        repeats: plan.repeats,
         seed,
         order,
         ratePerRoute: 50,
@@ -447,7 +453,7 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
       finishedAt: new Date().toISOString(),
       status: 'MEASURED',
       runs,
-      comparisons: comparisons(runs, seed),
+      comparisons: comparisons(runs, seed, policy),
     };
     await jsonFile(join(directory, 'report.json'), report);
     const rows = [
@@ -495,9 +501,8 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
 }
 if (process.argv[1] && import.meta.url === new URL('file://' + resolve(process.argv[1])).href) {
   try {
-    const args = process.argv.slice(2);
-    assert.ok(args.length === 1 || (args.length === 2 && ['--smoke', '--soak'].includes(args[1])));
-    console.log(JSON.stringify(await runHttpBenchmark(args[0], args[1]?.slice(2) ?? 'campaign')));
+    const { directory, policy } = parseHttpBenchmarkArguments(process.argv.slice(2));
+    console.log(JSON.stringify(await runHttpBenchmark(directory, policy)));
   } catch {
     console.error('The HTTP benchmark failed; inspect the protected external artifacts');
     process.exitCode = 1;

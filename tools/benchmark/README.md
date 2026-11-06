@@ -321,6 +321,18 @@ upstream security information before updating tool pins.
 
 ### Long comparisons and soak
 
+Use an explicit single sustained pilot when repeated campaigns remain deferred:
+
+```sh
+python3 packages/database-postgres/test/fixtures/run.py /private/postgres/environment.json node tools/benchmark/http.mjs /private/http-pilot --pilot
+```
+
+The pilot uses one seeded four-mode trial with 60 seconds warmup and 180 seconds
+measurement per mode, approximately 16 minutes total. It requires the same clean,
+controlled disposable runner and fixture metadata as a campaign. Its descriptive
+changes have no confidence interval, variance calibration or release acceptance.
+See the [single-pilot interpretation](analysis.md#single-sustained-http-pilot).
+
 The default campaign uses five independent repetitions of all four modes in a
 seeded randomized order: 60 seconds of warmup and 180 seconds of measured load
 per run. Each route receives 50 requests/second with 25 preallocated and maximum
