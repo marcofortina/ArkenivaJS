@@ -3,6 +3,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+import { within } from '@arkenivajs/core/support';
 import type {
   SqlProvider,
   SqlResult,
@@ -303,3 +305,103 @@ test('Invalid deadlines and cancelled loads perform no transaction or checkpoint
   assert.equal(state.names.length, 0);
   assert.equal(state.checkpointCalls, 0);
 });
+
+test(
+  'An expired SQL load retains admission until its physical query retires without activating late data',
+  { timeout: 5000 },
+  async () => {
+    const { state, sql, options } = fixture();
+    let enter!: () => void,
+      release!: () => void,
+      retire!: () => void,
+      transactions = 0,
+      active = 0,
+      maximumActive = 0,
+      queryStarts = 0,
+      firstSignal: AbortSignal | undefined;
+    const entered = new Promise<void>((done) => {
+        enter = done;
+      }),
+      gate = new Promise<void>((done) => {
+        release = done;
+      }),
+      retired = new Promise<void>((done) => {
+        retire = done;
+      }),
+      transaction = sql.transaction;
+    sql.transaction = async function <T>(
+      name: string,
+      work: (tx: SqlTransaction) => Promise<T>,
+      operation?: OperationOptions,
+    ): Promise<T> {
+      assert.equal(this, sql);
+      const attempt = ++transactions;
+      active++;
+      maximumActive = Math.max(maximumActive, active);
+      try {
+        return await transaction(
+          name,
+          (tx) =>
+            work({
+              ...tx,
+              async query<Row extends object>(
+                statement: SqlStatement,
+                queryOptions?: SqlQueryOptions,
+              ) {
+                queryStarts++;
+                if (attempt === 1) {
+                  firstSignal = queryOptions?.signal;
+                  enter();
+                  // This injected SQL adapter deliberately completes after cancellation.
+                  await gate;
+                }
+                return tx.query<Row>(statement, queryOptions);
+              },
+            }),
+          operation,
+        );
+      } finally {
+        active--;
+        if (attempt === 1) retire();
+      }
+    };
+    state.rows = [row('50', 'late')];
+    const provider = tenantRegistrySqlProvider(options),
+      failed = assert.rejects(provider.loadSnapshot({ timeoutMs: 100 }), safe);
+    try {
+      await within(() => entered, { timeoutMs: 2000 });
+      await assert.rejects(provider.loadSnapshot(), safe);
+      assert.equal(transactions, 1);
+      assert.equal(queryStarts, 1);
+      assert.equal(active, 1);
+      assert.equal(state.checkpointCalls, 0);
+      await failed;
+      assert.equal(firstSignal?.aborted, true);
+      await assert.rejects(provider.loadSnapshot(), safe);
+      assert.equal(transactions, 1);
+      assert.equal(queryStarts, 1);
+      assert.equal(active, 1);
+      assert.equal(state.checkpointCalls, 0);
+      release();
+      await within(() => retired, { timeoutMs: 2000 });
+      await nextTurn();
+      assert.equal(active, 0);
+      assert.equal(state.checkpointCalls, 0);
+      state.rows = [row('1', 'recovered')];
+      const recovered = await provider.loadSnapshot();
+      assert.equal(recovered.revision, 'recovered');
+      assert.equal(recovered.activationGeneration, 1);
+      assert.equal(state.checkpointCalls, 1);
+      assert.equal(transactions, 2);
+      assert.equal(queryStarts, 2);
+      assert.equal(maximumActive, 1);
+      assert.equal(active, 0);
+      assert.deepEqual(state.names, ['control', 'control']);
+    } finally {
+      release();
+      await failed;
+      await within(() => retired, { timeoutMs: 2000 });
+      await nextTurn();
+    }
+  },
+);
