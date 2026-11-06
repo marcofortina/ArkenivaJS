@@ -11,7 +11,7 @@ A public behavior change includes its meaningful positive, negative, failure and
 
 `pnpm docs:build` renders the API reference under `.build/api` and checks local Markdown links. Component ports intentionally omitted from direct package exports are described through the application interface; they do not imply an installed runtime adapter. API documentation treats broken links and converter warnings as errors. Keep build outputs and local reports outside version control.
 
-Work directly on main with focused commits that keep it reproducibly buildable. Each commit should describe one logical behavior and include the tests that make it reviewable. Do not create development branches or pull requests. Pass applicable local checks before a normal fast-forward push to origin/main, then verify mandatory GitHub Actions on the exact pushed commit. A failed mandatory job blocks further development until a corrective main commit or revert passes. GitHub Actions run only on pushes to main, with full immutable action references and read-only permissions. Verify dependency release sources, licenses and compatibility before changing exact pins. Run `pnpm audit --audit-level=high` after dependency changes.
+Work directly on main with focused commits that keep it reproducibly buildable. Each commit should describe one logical behavior and include the tests that make it reviewable. Do not create development branches or pull requests. Pass applicable local checks before a normal fast-forward push to origin/main, then verify mandatory GitHub Actions on the exact pushed commit. A failed mandatory job blocks further development until a corrective main commit or revert passes. GitHub Actions use main-only pushes and explicitly permitted manual or scheduled entry points, with full immutable action references and read-only permissions. Verify dependency release sources, licenses and compatibility before changing exact pins. Run `pnpm audit --audit-level=high` after dependency changes.
 
 Mermaid diagrams are optional. If a diagram is added, include a pinned renderer and a successful rendering check; the documentation gate rejects unconfigured Mermaid blocks. Keep a complete textual explanation alongside a diagram.
 
@@ -26,3 +26,54 @@ an unpatched SDK in a private temporary consumer. The separate NATS matrix
 requires verified TLS, scoped accounts, negative transport tests, actual
 telemetry export and independent metering. See the
 [NATS fixture](packages/messaging/test/fixtures/README.md).
+
+## Private release preparation
+
+The manually dispatched `release.yml` workflow prepares evidence for an existing,
+owner-signed exact version tag. Select the `main` branch when dispatching it. The
+workflow never creates a tag, changes versions or package privacy, publishes an
+npm package, requests an OIDC token or declares a release approved. Ordinary
+pushes do not run release preparation.
+
+Before using this workflow, the repository owner must configure the
+`release-preparation` environment with at least one required reviewer. Self-review prevention
+is an optional stricter owner policy. The workflow independently reads its protection rules
+and fails if approval protection is absent or inaccessible. Configure
+`ARKENIVA_RELEASE_PUBLIC_KEY` as the owner's ASCII-armored OpenPGP **public** key
+and `ARKENIVA_RELEASE_KEY_FINGERPRINT` as the full uppercase primary fingerprint
+in repository or environment variables. Never supply a private signing key.
+Creating signing identities, tags, environments or publisher configuration is a
+separate owner operation.
+
+Preparation accepts only an annotated, valid OpenPGP signature from that exact
+primary key, including a signing subkey bound to it. It rejects expired/revoked
+signatures, mismatched tag annotations or versions, commits outside
+`origin/main`, dirty source and versions that are not identical across all
+framework packages. Keys are imported into a disposable private GnuPG directory;
+the runner's existing keyring and trust configuration are not used.
+
+For the exact tag commit, the latest attempts of `ci.yml`, `security.yml`,
+`compatibility.yml` and `performance.yml` must have completed successfully. Every
+job in those attempts must succeed; skipped, missing, cancelled, pending or
+failed jobs reject preparation. Workflow and job results are read with bounded,
+complete pagination. A previous green run cannot conceal a newer failed run.
+The same checks run again after building. Missing permission to read the required
+API evidence fails closed.
+
+The job verifies the workspace and packed examples, captures clean commit-bound
+SPDX inventories, audits dependencies and rebuilds/inspects the actual private
+package archives and their checksums. Private artifacts include the selected
+commit and workflow-attempt receipts and are retained for 14 days. These are
+build and source-binding evidence, not npm provenance attestations or proof of
+publication. The existing package inspection report deliberately retains
+`publicationAuthorized: false`.
+
+A green preparation job is insufficient for publication: calibrated performance
+acceptance, complete required compatibility and security evidence, the public
+API review, release notes and external federation gates still apply. Short
+performance smoke jobs do not replace full measurements or owner-deferred
+repetitions and soak tests. A future publication change requires separate owner
+authorization, approved scope/publisher identity, an explicitly reviewed package
+privacy/version transition and a protected publishing environment. Only that
+separate publishing job should receive the narrowly scoped OIDC permissions
+needed by trusted npm publishing; no npm credential belongs in normal tests.

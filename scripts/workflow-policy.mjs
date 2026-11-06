@@ -35,6 +35,28 @@ export function validateWorkflow(name, text) {
         'A schedule requires an explicit five-field cron',
       );
   }
+  if (name === 'release.yml') {
+    assert.deepEqual(
+      events,
+      ['workflow_dispatch'],
+      'Release preparation must be explicitly dispatched',
+    );
+    assert.equal(
+      workflow.concurrency?.['cancel-in-progress'],
+      false,
+      'Release preparation cannot be superseded',
+    );
+    assert.equal(
+      workflow.jobs?.prepare?.environment,
+      'release-preparation',
+      'Release preparation requires its protected environment',
+    );
+    assert.deepEqual(
+      Object.keys(workflow.jobs ?? {}),
+      ['prepare'],
+      'Publication jobs require a separate review',
+    );
+  }
   assert.ok(workflow.jobs && typeof workflow.jobs === 'object');
   let actions = 0;
   for (const [jobName, job] of Object.entries(workflow.jobs)) {
@@ -59,7 +81,9 @@ export function validateWorkflow(name, text) {
       const permitted =
         name === 'security.yml' && jobName === 'codeql'
           ? { actions: 'read', contents: 'read', 'security-events': 'write' }
-          : { contents: 'read' };
+          : name === 'release.yml' && jobName === 'prepare'
+            ? { actions: 'read', contents: 'read' }
+            : { contents: 'read' };
       assert.deepEqual(job.permissions, permitted, 'A job requests unapproved permissions');
     }
     if (!workflow.on.push)
