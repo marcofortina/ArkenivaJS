@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 import unittest
 
-from package_contents import ROOT, create_evidence, inspect_archive
+from package_contents import ROOT, create_evidence, inspect_archive, workspace_versions
 
 
 class PackageContentsTests(unittest.TestCase):
@@ -39,7 +39,7 @@ class PackageContentsTests(unittest.TestCase):
             if path not in {"package/package.json", "package/LICENSE"}:
                 (self.location / path.removeprefix("package/")).write_bytes(payload)
 
-    def inspect(self, extra=()):
+    def inspect(self, extra=(), versions=None):
         archive = self.location / "fixture.tgz"
         with tarfile.open(archive, "w:gz") as target:
             for path, payload in self.entries.items():
@@ -49,7 +49,8 @@ class PackageContentsTests(unittest.TestCase):
             for member, payload in extra:
                 target.addfile(member, io.BytesIO(payload))
         return inspect_archive(archive, self.location, self.manifest,
-                               {"@arkenivajs/core": "0.1.0"}, self.license)
+                               versions if versions is not None else {"@arkenivajs/core": "0.1.0"},
+                               self.license)
 
     def update_metadata(self):
         self.entries["package/package.json"] = json.dumps(self.metadata).encode()
@@ -115,6 +116,49 @@ class PackageContentsTests(unittest.TestCase):
         (self.location / "THIRD_PARTY_NOTICES.md").write_text("Synthetic third-party attribution.\n")
         with self.assertRaisesRegex(ValueError, "legal notices"):
             self.inspect()
+
+    def test_example_and_tooling_workspace_versions_validate_real_packed_development_dependencies(self):
+        root = self.location / "workspace"
+        root.mkdir()
+        entries = {
+            "package.json": ("workspace", "0.1.0"),
+            "packages/core/package.json": ("@arkenivajs/core", "0.1.0"),
+            "examples/postgres/package.json": ("@arkenivajs/example-postgres", "0.2.3"),
+            "tools/benchmark/package.json": ("@arkenivajs/benchmark", "0.4.0"),
+        }
+        for name, (identity, version) in entries.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"name": identity, "version": version}))
+        versions = workspace_versions(root)
+        self.manifest["devDependencies"] = {
+            "@arkenivajs/example-postgres": "workspace:*", "@arkenivajs/benchmark": "workspace:*"}
+        self.metadata["devDependencies"] = {
+            "@arkenivajs/example-postgres": "0.2.3", "@arkenivajs/benchmark": "0.4.0"}
+        self.update_metadata()
+        self.assertEqual(set(self.inspect(versions=versions)["files"]), set(self.entries))
+        for wrong in ["workspace:*", "0.1.0", "file:/outside"]:
+            self.metadata["devDependencies"]["@arkenivajs/example-postgres"] = wrong
+            self.update_metadata()
+            with self.assertRaisesRegex(ValueError, "workspace dependency"):
+                self.inspect(versions=versions)
+        self.metadata["devDependencies"]["@arkenivajs/example-postgres"] = "0.2.3"
+        self.update_metadata()
+        del versions["@arkenivajs/example-postgres"]
+        with self.assertRaisesRegex(ValueError, "workspace dependency"):
+            self.inspect(versions=versions)
+
+    def test_workspace_version_lookup_rejects_duplicate_names_and_unresolved_versions(self):
+        root = self.location / "workspace"
+        root.mkdir()
+        (root / "package.json").write_text(json.dumps({"name": "workspace", "version": "0.1.0"}))
+        path = root / "examples/postgres/package.json"
+        path.parent.mkdir(parents=True)
+        for name, version in [("workspace", "0.1.0"), ("example", "workspace:*"),
+                              ("example", "file:/outside"), ("example", ""), ("example", True)]:
+            path.write_text(json.dumps({"name": name, "version": version}))
+            with self.assertRaisesRegex(ValueError, "invalid or duplicated"):
+                workspace_versions(root)
 
     def test_evidence_cannot_be_retained_in_git_or_at_a_relative_path(self):
         with self.assertRaisesRegex(ValueError, "absolute"):

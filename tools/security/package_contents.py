@@ -24,6 +24,23 @@ def sha256(value):
     return hashlib.sha256(value).hexdigest()
 
 
+def workspace_versions(root):
+    """Resolve packed references against runtime, example and tooling workspace manifests."""
+    paths = [root / "package.json"]
+    for group in ("packages", "examples", "tools"):
+        paths.extend(sorted((root / group).glob("*/package.json")))
+    versions = {}
+    for path in paths:
+        manifest = json.loads(path.read_bytes())
+        name, version = manifest.get("name"), manifest.get("version")
+        if (not isinstance(name, str) or not name or name in versions
+                or not isinstance(version, str) or len(version) > 128
+                or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version)):
+            raise ValueError("Workspace package identity or version is invalid or duplicated")
+        versions[name] = version
+    return versions
+
+
 def bundled_ide_files(location, manifest):
     """Recognize only the owned GraphQL IDE build, its exact asset manifest and notices."""
     if manifest.get("name") != "@arkenivajs/graphql":
@@ -172,8 +189,8 @@ def create_evidence(destination):
     if root_manifest["packageManager"] != "pnpm@" + package_manager:
         raise ValueError("Package evidence requires the exact reviewed package manager")
     manifests = [(path.parent, json.loads(path.read_text())) for path in sorted((ROOT / "packages").glob("*/package.json"))]
-    versions = {manifest["name"]: manifest["version"] for _, manifest in manifests}
-    if not manifests or len(versions) != len(manifests):
+    versions = workspace_versions(ROOT)
+    if not manifests or len({manifest["name"] for _, manifest in manifests}) != len(manifests):
         raise ValueError("Package evidence requires a nonempty set of distinct framework packages")
     for _, manifest in manifests:
         if not re.fullmatch(r"@arkenivajs/[a-z][a-z0-9-]*", manifest["name"]):
