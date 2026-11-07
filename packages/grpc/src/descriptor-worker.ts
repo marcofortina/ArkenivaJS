@@ -34,26 +34,28 @@ function compile(entry: string): protobuf.INamespace {
     if (visited.size >= 32) throw new Error('Descriptor import limit exceeded');
     visited.add(path);
     active.add(path);
-    const before = lstatSync(path);
+    // Native bigint metadata retains uint64 identity and nanosecond capture stability.
+    const before = lstatSync(path, { bigint: true });
     if (!before.isFile() || before.isSymbolicLink() || realpathSync(path) !== path)
       throw new Error('Untrusted descriptor asset');
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     let source: string;
     try {
-      const stat = fstatSync(fd);
+      const stat = fstatSync(fd, { bigint: true });
       if (
         !stat.isFile() ||
-        stat.size < 1 ||
-        stat.size > 1048576 ||
-        stat.mode & 0o022 ||
-        (stat.uid !== 0 && stat.uid !== process.getuid?.()) ||
+        stat.size < 1n ||
+        stat.size > 1048576n ||
+        stat.mode & 0o022n ||
+        (stat.uid !== 0n && stat.uid !== BigInt(process.getuid?.() ?? -1)) ||
         stat.dev !== before.dev ||
         stat.ino !== before.ino
       )
         throw new Error('Invalid descriptor asset');
-      total += stat.size;
+      const size = Number(stat.size);
+      total += size;
       if (total > 8388608) throw new Error('Descriptor graph size exceeded');
-      const bytes = Buffer.alloc(stat.size);
+      const bytes = Buffer.alloc(size);
       let offset = 0;
       while (offset < bytes.length) {
         const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
@@ -62,11 +64,11 @@ function compile(entry: string): protobuf.INamespace {
       }
       source = bytes.toString('utf8');
       if (!Buffer.from(source).equals(bytes)) throw new Error('Invalid descriptor encoding');
-      const after = fstatSync(fd);
+      const after = fstatSync(fd, { bigint: true });
       if (
         after.size !== stat.size ||
-        after.mtimeMs !== stat.mtimeMs ||
-        after.ctimeMs !== stat.ctimeMs
+        after.mtimeNs !== stat.mtimeNs ||
+        after.ctimeNs !== stat.ctimeNs
       )
         throw new Error('Descriptor changed during capture');
     } finally {

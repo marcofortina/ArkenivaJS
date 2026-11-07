@@ -5,6 +5,8 @@
 
 ## 0.1.0
 
+- Preserve exact native file identity and nanosecond stability when capturing offline descriptors.
+
 - Capture original authorization callbacks and receivers without custom binding metadata or proxy prototype traps.
 
 - Complete failed server streams with a sanitized native gRPC error status before transport closure, preserving immediate client failure and admission release.
