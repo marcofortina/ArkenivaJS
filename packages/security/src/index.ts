@@ -309,6 +309,7 @@ export async function createAuthService(
           const identity: Identity = options.assuranceResolver
             ? Object.freeze({ ...verifiedIdentity, assurance: resolveAssurance(verifiedIdentity) })
             : verifiedIdentity;
+          open();
           identities.add(identity);
           counters.verified++;
           observe({ outcome: 'verified' });
@@ -355,6 +356,7 @@ export async function createAuthService(
           });
         // Reevaluate issuer freshness at authorization time without upgrading an older decision.
         const currentAssurance = resolveAssurance(identity);
+        open();
         if (
           Math.min(
             assuranceLevels.indexOf(identity.assurance),
@@ -387,6 +389,7 @@ export async function createAuthService(
             cause,
           });
         }
+        open();
         let context = contexts.get(identity);
         if (!context) {
           context = Object.freeze({

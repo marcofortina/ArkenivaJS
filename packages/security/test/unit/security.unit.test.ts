@@ -9,7 +9,7 @@ import type { JWTPayload } from 'jose';
 import { KitError, createApplication, COMPONENTS } from '@arkenivajs/core';
 import type { Plugin, Logger } from '@arkenivajs/core';
 import { createAuthService, securityPlugin } from '@arkenivajs/security';
-import type { AuthOptions, AuthObservation } from '@arkenivajs/security';
+import type { AuthOptions, AuthObservation, ManagedAuthService } from '@arkenivajs/security';
 import { createApi, apiPlugin } from '@arkenivajs/api';
 
 const code = (expected: string) => (error: unknown) =>
@@ -647,6 +647,58 @@ test('MFA-AUTH-001 only explicit issuer mapping and current freshness grant assu
     await source.close();
   }
 });
+
+for (const stage of ['verification', 'assurance', 'tenant'] as const)
+  test(`Trusted policy callbacks cannot return ${stage} success after closing their verifier`, async () => {
+    const source = await issuer();
+    let auth: ManagedAuthService | undefined,
+      armed = stage === 'verification',
+      policyCalls = 0,
+      effects = 0;
+    try {
+      auth = await createAuthService({
+        ...source.options,
+        assuranceResolver() {
+          if (stage !== 'tenant') {
+            policyCalls++;
+            if (armed) void auth!.close();
+          }
+          return 'mfa';
+        },
+        authorizeTenant() {
+          if (stage === 'tenant') {
+            policyCalls++;
+            if (armed) void auth!.close();
+          }
+          return true;
+        },
+      });
+      const bearer = await source.bearer();
+      if (stage === 'verification') {
+        await assert.rejects(auth.verifyBearer(bearer), code('EK_RESOURCE_CLOSED'));
+        assert.equal(policyCalls, 1);
+        assert.deepEqual(auth.stats(), { verified: 0, rejected: 1, observerFailures: 0 });
+      } else {
+        const identity = await auth.verifyBearer(bearer),
+          tenant = auth.tenantFrom(identity);
+        assert.equal(auth.isVerifiedTenant(tenant), true);
+        armed = true;
+        assert.throws(() => {
+          if (stage === 'assurance') auth!.requireAssurance(identity, 'mfa');
+          else auth!.tenantFrom(identity);
+          effects++;
+        }, code('EK_RESOURCE_CLOSED'));
+        assert.equal(policyCalls, 2);
+        assert.equal(auth.isVerifiedTenant(tenant), false);
+      }
+      assert.equal(effects, 0);
+      assert.equal(auth.hasAssurancePolicy(), false);
+      await assert.rejects(auth.verifyBearer(bearer), code('EK_RESOURCE_CLOSED'));
+    } finally {
+      await auth?.close();
+      await source.close();
+    }
+  });
 
 test('MFA-AUTH-001 missing, invalid and failing assurance resolvers cannot fabricate elevated proof', async () => {
   const source = await issuer();
