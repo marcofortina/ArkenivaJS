@@ -37,30 +37,100 @@ test('Kafka integration uses actual pinned KRaft, TLS/SASL, native ABI builds an
   const directory = mkdtempSync(join(tmpdir(), 'arkenivajs-native-build-contract-'));
   try {
     const executable = join(directory, 'pnpm'),
-      log = join(directory, 'native-build.log');
+      log = join(directory, 'native-build.log'),
+      trace = join(directory, 'commands.log'),
+      proof = join(directory, 'native-zlib-isolation.json');
     writeFileSync(
       executable,
-      '#!/bin/sh\n[ "$1" = rebuild ] && [ "$2" = @confluentinc/kafka-javascript ] && [ "$#" = 2 ] || exit 93\nprintf "Owned native build diagnostic\\n"\nexit "$ARKENIVA_TEST_BUILD_EXIT"\n',
+      `#!/bin/sh
+if [ "$#" = 1 ] && [ "$1" = test:dependency-patches ]; then
+  stage=dependency-patches
+elif [ "$#" = 2 ] && [ "$1" = rebuild ] && [ "$2" = @confluentinc/kafka-javascript ]; then
+  stage=native-build
+else
+  exit 93
+fi
+printf '%s\\n' "$stage" >> "$ARKENIVA_TEST_COMMAND_TRACE"
+[ "$stage" != "$ARKENIVA_TEST_FAIL_STAGE" ] || exit 31
+if [ "$stage" = native-build ]; then
+  printf 'Owned native build diagnostic\\n'
+  exit "$ARKENIVA_TEST_BUILD_EXIT"
+fi
+`,
       { mode: 0o700 },
     );
-    for (const status of [0, 7]) {
+    writeFileSync(
+      join(directory, 'python3'),
+      `#!/bin/sh
+if [ "$#" = 8 ] && [ "$1" = -B ] && [ "$2" = -m ] && [ "$3" = unittest ] && [ "$4" = discover ] && [ "$5" = -s ] && [ "$6" = tools/ci ] && [ "$7" = -p ]; then
+  case "$8" in
+    test_seed_kafka_source.py) stage=seed-tests ;;
+    test_verify_kafka_native.py) stage=isolation-tests ;;
+    *) exit 94 ;;
+  esac
+elif [ "$#" = 4 ] && [ "$1" = -B ] && [ "$2" = tools/ci/seed_kafka_source.py ] && [ "$3" = "$GITHUB_WORKSPACE" ] && [ "$4" = "$ARKENIVA_TEST_REPORT_DIRECTORY" ]; then
+  stage=seed
+elif [ "$#" = 3 ] && [ "$1" = -B ] && [ "$2" = tools/ci/verify_kafka_native.py ] && [ "$3" = packages/messaging-kafka/node_modules/@confluentinc/kafka-javascript/build/Release/confluent-kafka-javascript.node ]; then
+  stage=isolation-proof
+else
+  exit 94
+fi
+printf '%s\\n' "$stage" >> "$ARKENIVA_TEST_COMMAND_TRACE"
+[ "$stage" != "$ARKENIVA_TEST_FAIL_STAGE" ] || exit 31
+if [ "$stage" = isolation-proof ]; then
+  printf '{"status":"PASS"}\\n'
+fi
+`,
+      { mode: 0o700 },
+    );
+    const stages = [
+      'dependency-patches',
+      'seed-tests',
+      'seed',
+      'native-build',
+      'isolation-tests',
+      'isolation-proof',
+    ];
+    const cases = [
+      { buildExit: 0, failStage: '', status: 0 },
+      { buildExit: 7, failStage: '', status: 7 },
+      ...stages
+        .filter((stage) => stage !== 'native-build')
+        .map((failStage) => ({ buildExit: 0, failStage, status: 31 })),
+    ];
+    for (const { buildExit, failStage, status } of cases) {
+      writeFileSync(trace, '');
+      rmSync(log, { force: true });
+      rmSync(proof, { force: true });
       const result = spawnSync('bash', ['-c', build], {
         timeout: 5000,
         encoding: 'utf8',
         env: {
           ...process.env,
           PATH: directory + delimiter + (process.env.PATH ?? ''),
+          GITHUB_WORKSPACE: join(directory, 'owned workspace'),
           ARKENIVA_TEST_REPORT_DIRECTORY: directory,
-          ARKENIVA_TEST_BUILD_EXIT: String(status),
+          ARKENIVA_TEST_BUILD_EXIT: String(buildExit),
+          ARKENIVA_TEST_FAIL_STAGE: failStage,
+          ARKENIVA_TEST_COMMAND_TRACE: trace,
         },
       });
       assert.ifError(result.error);
       assert.equal(
         result.status,
         status,
-        'Retaining native logs must preserve the actual build exit status',
+        'Native prerequisites, pipefail and isolation proof must preserve the failed command status',
       );
-      assert.equal(readFileSync(log, 'utf8'), 'Owned native build diagnostic\n');
+      const expected = failStage
+        ? stages.slice(0, stages.indexOf(failStage) + 1)
+        : buildExit
+          ? stages.slice(0, stages.indexOf('native-build') + 1)
+          : stages;
+      assert.deepEqual(readFileSync(trace, 'utf8').trim().split('\n'), expected);
+      if (expected.includes('native-build'))
+        assert.equal(readFileSync(log, 'utf8'), 'Owned native build diagnostic\n');
+      if (status === 0)
+        assert.deepEqual(JSON.parse(readFileSync(proof, 'utf8')), { status: 'PASS' });
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });
