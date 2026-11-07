@@ -51,7 +51,7 @@ interface Envelope {
   readonly resourceMetrics?: readonly { scopeMetrics: readonly { metrics: readonly Metric[] }[] }[];
 }
 
-export async function runPublicOidc(
+export async function createPublicOidcFixture(
   files: {
     certificate: string;
     privateKey: string;
@@ -576,235 +576,282 @@ export async function runPublicOidc(
       },
     ],
   });
-  try {
-    await app.start();
-    assert.ok(health);
-    if (system === 'cie')
-      assert.throws(() => app.resolve(SPID_CAPABILITY), { code: 'EK_UNSUPPORTED_CAPABILITY' });
-    assert.equal(await health.check({ timeoutMs: 5000 }), true);
-    base.state.storage = false;
-    assert.equal(await health.check({ timeoutMs: 5000 }), false);
-    base.state.storage = true;
-    const rootService = app.resolve<SpidService>(adapter.capability),
-      service = rootService.forProfile(profile.profileId);
-    assert.equal(service, rootService.forProfile(profile.profileId));
-    assert.throws(() => rootService.forProfile('missing-profile'), { code: 'EK_EID_PROFILE' });
-    await assert.rejects(() => rootService.metadata(), { code: 'EK_EID_PROFILE' });
-    const before = rootRequests;
-    await assert.rejects(
-      () => rootService.beginAuthentication({ returnPath: '/private' }, assurance),
-      { code: 'EK_EID_PROFILE' },
-    );
-    assert.equal(rootRequests, before);
-    await assert.rejects(
-      () =>
-        rootService
-          .forProfile('alternate-profile')
-          .beginAuthentication({ returnPath: '/private' }, assurance),
-      { code: 'EK_EID_ASSURANCE' },
-    );
-    state.beginAllowed = false;
-    const denied = rootRequests;
-    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, assurance), {
-      code: 'EK_EID_FEDERATION',
-    });
-    assert.equal(rootRequests, denied);
-    state.beginAllowed = true;
-    const count = state.signingReads,
-      metadata = await service.metadata();
-    assert.equal(state.signingReads, count + 1);
-    await jwtVerify(metadata, rpPair.publicKey, {
-      algorithms: ['RS256'],
-      issuer: rp,
-      subject: rp,
-      typ: 'entity-statement+jwt',
-    });
-    const begin = async () => {
-      const login = await service.beginAuthentication(
-          { returnPath: '/private', tenantId: 'tenant-A', issuer: op },
-          assurance,
-        ),
-        request = await jwtVerify(
-          new URL(login.redirectUrl).searchParams.get('request')!,
-          rpPair.publicKey,
-          { issuer: rp, audience: op },
-        ),
-        code = randomUUID(),
-        target = new URL(profile.redirectUri);
-      codes.set(code, {
-        nonce: String(request.payload.nonce),
-        challenge: String(request.payload.code_challenge),
-        used: false,
-      });
-      markers.push(
-        code,
-        login.transactionId,
-        String(request.payload.nonce),
-        new URL(login.redirectUrl).searchParams.get('request')!,
-      );
-      target.searchParams.set('code', code);
-      target.searchParams.set('state', login.transactionId);
-      target.searchParams.set('iss', op);
-      return target;
-    };
-    const incoming = await begin(),
-      identity = await service.consumeAuthentication(incoming.href);
-    assert.equal(identity.issuer, origin + '/accounts');
-    assert.equal(identity.subject, 'canonical-account');
-    assert.equal(identity.claims.tenant_id, 'tenant-A');
-    assert.equal(identity.federationAssurance, assurance);
-    assert.equal(identity.system, system);
-    assert.deepEqual(identity.attributes.name, ['Public Fixture']);
-    assert.equal(identity.assurance, undefined);
-    assert.equal(tokenRequests, 1);
-    assert.equal(userInfoRequests, 1);
-    await assert.rejects(() => service.consumeAuthentication(incoming.href), {
-      code: 'EK_EID_FEDERATION',
-    });
-    assert.equal(tokenRequests, 1);
-    assert.equal(
-      (await service.verifyFederationTrust(await providerConfiguration())).trusted,
-      true,
-    );
-    assert.equal((await service.verifyFederationTrust('invalid-statement')).trusted, false);
-    let release!: () => void, entered!: () => void;
-    const wait = new Promise<void>((resolve) => {
-        release = resolve;
-      }),
-      arrived = new Promise<void>((resolve) => {
-        entered = resolve;
-      }),
-      controller = new AbortController();
-    state.statusGate = { entered, wait };
+  let closing: Promise<void> | undefined;
+  const close = () =>
+    (closing ??= (async () => {
+      await app.stop();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      collector.closeAllConnections();
+      await new Promise<void>((resolve) => collector.close(() => resolve()));
+      destination.end();
+      await base.close();
+    })());
+  async function runConformance() {
     try {
-      const pending = service.verifyFederationTrust(await providerConfiguration(), {
-          signal: controller.signal,
-        }),
-        rejected = assert.rejects(pending, { code: 'EK_ABORTED' });
-      await arrived;
-      controller.abort();
-      await rejected;
-    } finally {
-      state.statusGate = undefined;
-      release();
-    }
-    state.rpActive = false;
-    assert.equal(await health.check({ timeoutMs: 5000 }), false);
-    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, assurance), {
-      code: 'EK_EID_FEDERATION',
-    });
-    state.rpActive = true;
-    assert.equal(await health.check({ timeoutMs: 5000 }), true);
-    state.rotateSigning = true;
-    state.signingReads = 0;
-    await assert.rejects(() => service.beginAuthentication({ returnPath: '/private' }, assurance), {
-      code: 'EK_EID_FEDERATION',
-    });
-    state.rotateSigning = false;
-    const rotatedCallback = await begin(),
-      issued = tokenRequests;
-    state.rotateDecrypt = true;
-    state.decryptionReads = 0;
-    await assert.rejects(() => service.consumeAuthentication(rotatedCallback.href), {
-      code: 'EK_EID_FEDERATION',
-    });
-    assert.equal(tokenRequests, issued);
-    state.rotateDecrypt = false;
-    const concurrent = await begin(),
-      attempts = await Promise.allSettled(
-        Array.from({ length: 8 }, () => service.consumeAuthentication(concurrent.href)),
+      await app.start();
+      assert.ok(health);
+      if (system === 'cie')
+        assert.throws(() => app.resolve(SPID_CAPABILITY), { code: 'EK_UNSUPPORTED_CAPABILITY' });
+      assert.equal(await health.check({ timeoutMs: 5000 }), true);
+      base.state.storage = false;
+      assert.equal(await health.check({ timeoutMs: 5000 }), false);
+      base.state.storage = true;
+      const rootService = app.resolve<SpidService>(adapter.capability),
+        service = rootService.forProfile(profile.profileId);
+      assert.equal(service, rootService.forProfile(profile.profileId));
+      assert.throws(() => rootService.forProfile('missing-profile'), { code: 'EK_EID_PROFILE' });
+      await assert.rejects(() => rootService.metadata(), { code: 'EK_EID_PROFILE' });
+      const before = rootRequests;
+      await assert.rejects(
+        () => rootService.beginAuthentication({ returnPath: '/private' }, assurance),
+        { code: 'EK_EID_PROFILE' },
       );
-    assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
-    assert.equal(serverFailure, undefined);
-    await app.telemetry.flush();
-    await app.logger.flush();
-    const metrics = envelopes
-      .flatMap((envelope) => envelope.resourceMetrics ?? [])
-      .flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics))
-      .filter((metric) => metric.name.startsWith(system + '.'));
-    const expectedMetrics =
-      system === 'spid'
-        ? ['spid.handshakes', 'spid.trust.failures']
-        : ['cie.authentication.duration', 'cie.failures', 'cie.federation.checks'];
-    assert.deepEqual([...new Set(metrics.map((metric) => metric.name))].sort(), expectedMetrics);
-    const authentication = metrics.filter(
-      (metric) =>
-        metric.name === (system === 'spid' ? 'spid.handshakes' : 'cie.authentication.duration'),
-    );
-    const observedAttempts = authentication
-      .flatMap((metric) =>
-        system === 'spid' ? (metric.sum?.dataPoints ?? []) : (metric.histogram?.dataPoints ?? []),
-      )
-      .reduce(
-        (total, point) =>
-          total +
-          (system === 'spid'
-            ? (point.asDouble ?? Number(point.asInt ?? 0))
-            : Number(point.count ?? 0)),
-        0,
+      assert.equal(rootRequests, before);
+      await assert.rejects(
+        () =>
+          rootService
+            .forProfile('alternate-profile')
+            .beginAuthentication({ returnPath: '/private' }, assurance),
+        { code: 'EK_EID_ASSURANCE' },
       );
-    assert.equal(
-      observedAttempts,
-      20,
-      'Internal federation steps cannot duplicate public authentication attempts',
-    );
-    if (system === 'cie') {
-      assert.ok(
-        authentication
-          .flatMap((metric) => metric.histogram?.dataPoints ?? [])
-          .every((point) => typeof point.sum === 'number' && point.sum >= 0),
+      state.beginAllowed = false;
+      const denied = rootRequests;
+      await assert.rejects(
+        () => service.beginAuthentication({ returnPath: '/private' }, assurance),
+        {
+          code: 'EK_EID_FEDERATION',
+        },
       );
-      assert.equal(
-        envelopes
-          .flatMap((envelope) => envelope.resourceMetrics ?? [])
-          .flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics))
-          .some((metric) => metric.name.startsWith('spid.')),
-        false,
-      );
-    }
-    const points = metrics.flatMap((metric) => [
-      ...(metric.sum?.dataPoints ?? []),
-      ...(metric.histogram?.dataPoints ?? []),
-    ]);
-    for (const outcome of ['ok', 'federation'])
-      assert.ok(
-        points.some((point) =>
-          point.attributes.some(
-            (attribute) =>
-              attribute.key === system + '.outcome' && attribute.value.stringValue === outcome,
+      assert.equal(rootRequests, denied);
+      state.beginAllowed = true;
+      const count = state.signingReads,
+        metadata = await service.metadata();
+      assert.equal(state.signingReads, count + 1);
+      await jwtVerify(metadata, rpPair.publicKey, {
+        algorithms: ['RS256'],
+        issuer: rp,
+        subject: rp,
+        typ: 'entity-statement+jwt',
+      });
+      const begin = async () => {
+        const login = await service.beginAuthentication(
+            { returnPath: '/private', tenantId: 'tenant-A', issuer: op },
+            assurance,
           ),
-        ),
+          request = await jwtVerify(
+            new URL(login.redirectUrl).searchParams.get('request')!,
+            rpPair.publicKey,
+            { issuer: rp, audience: op },
+          ),
+          code = randomUUID(),
+          target = new URL(profile.redirectUri);
+        codes.set(code, {
+          nonce: String(request.payload.nonce),
+          challenge: String(request.payload.code_challenge),
+          used: false,
+        });
+        markers.push(
+          code,
+          login.transactionId,
+          String(request.payload.nonce),
+          new URL(login.redirectUrl).searchParams.get('request')!,
+        );
+        target.searchParams.set('code', code);
+        target.searchParams.set('state', login.transactionId);
+        target.searchParams.set('iss', op);
+        return target;
+      };
+      const incoming = await begin(),
+        identity = await service.consumeAuthentication(incoming.href);
+      assert.equal(identity.issuer, origin + '/accounts');
+      assert.equal(identity.subject, 'canonical-account');
+      assert.equal(identity.claims.tenant_id, 'tenant-A');
+      assert.equal(identity.federationAssurance, assurance);
+      assert.equal(identity.system, system);
+      assert.deepEqual(identity.attributes.name, ['Public Fixture']);
+      assert.equal(identity.assurance, undefined);
+      assert.equal(tokenRequests, 1);
+      assert.equal(userInfoRequests, 1);
+      await assert.rejects(() => service.consumeAuthentication(incoming.href), {
+        code: 'EK_EID_FEDERATION',
+      });
+      assert.equal(tokenRequests, 1);
+      assert.equal(
+        (await service.verifyFederationTrust(await providerConfiguration())).trusted,
+        true,
       );
-    for (const point of points)
-      for (const attribute of point.attributes)
-        assert.ok([system + '.operation', system + '.outcome'].includes(attribute.key));
-    const serialized = JSON.stringify({ envelopes, logs });
-    for (const marker of [
-      ...markers,
-      rp,
-      root,
-      op,
-      profile.profileId,
-      'tenant-A',
-      'canonical-account',
-      'upstream-subject',
-      '/private',
-      'signing-ref',
-      'oidc-decryption-ref',
-      'BEGIN PRIVATE KEY',
-      metadata,
-    ])
-      assert.equal(serialized.includes(marker), false, 'Sensitive federation data was exported');
-    await app.stop();
-    await assert.rejects(() => service.metadata(), { code: 'EK_RESOURCE_CLOSED' });
-    return { publicFlow: true as const };
-  } finally {
-    await app.stop();
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    collector.closeAllConnections();
-    await new Promise<void>((resolve) => collector.close(() => resolve()));
-    destination.end();
-    await base.close();
+      assert.equal((await service.verifyFederationTrust('invalid-statement')).trusted, false);
+      let release!: () => void, entered!: () => void;
+      const wait = new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+        arrived = new Promise<void>((resolve) => {
+          entered = resolve;
+        }),
+        controller = new AbortController();
+      state.statusGate = { entered, wait };
+      try {
+        const pending = service.verifyFederationTrust(await providerConfiguration(), {
+            signal: controller.signal,
+          }),
+          rejected = assert.rejects(pending, { code: 'EK_ABORTED' });
+        await arrived;
+        controller.abort();
+        await rejected;
+      } finally {
+        state.statusGate = undefined;
+        release();
+      }
+      state.rpActive = false;
+      assert.equal(await health.check({ timeoutMs: 5000 }), false);
+      await assert.rejects(
+        () => service.beginAuthentication({ returnPath: '/private' }, assurance),
+        {
+          code: 'EK_EID_FEDERATION',
+        },
+      );
+      state.rpActive = true;
+      assert.equal(await health.check({ timeoutMs: 5000 }), true);
+      state.rotateSigning = true;
+      state.signingReads = 0;
+      await assert.rejects(
+        () => service.beginAuthentication({ returnPath: '/private' }, assurance),
+        {
+          code: 'EK_EID_FEDERATION',
+        },
+      );
+      state.rotateSigning = false;
+      const rotatedCallback = await begin(),
+        issued = tokenRequests;
+      state.rotateDecrypt = true;
+      state.decryptionReads = 0;
+      await assert.rejects(() => service.consumeAuthentication(rotatedCallback.href), {
+        code: 'EK_EID_FEDERATION',
+      });
+      assert.equal(tokenRequests, issued);
+      state.rotateDecrypt = false;
+      const concurrent = await begin(),
+        attempts = await Promise.allSettled(
+          Array.from({ length: 8 }, () => service.consumeAuthentication(concurrent.href)),
+        );
+      assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
+      assert.equal(serverFailure, undefined);
+      await app.telemetry.flush();
+      await app.logger.flush();
+      const metrics = envelopes
+        .flatMap((envelope) => envelope.resourceMetrics ?? [])
+        .flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics))
+        .filter((metric) => metric.name.startsWith(system + '.'));
+      const expectedMetrics =
+        system === 'spid'
+          ? ['spid.handshakes', 'spid.trust.failures']
+          : ['cie.authentication.duration', 'cie.failures', 'cie.federation.checks'];
+      assert.deepEqual([...new Set(metrics.map((metric) => metric.name))].sort(), expectedMetrics);
+      const authentication = metrics.filter(
+        (metric) =>
+          metric.name === (system === 'spid' ? 'spid.handshakes' : 'cie.authentication.duration'),
+      );
+      const observedAttempts = authentication
+        .flatMap((metric) =>
+          system === 'spid' ? (metric.sum?.dataPoints ?? []) : (metric.histogram?.dataPoints ?? []),
+        )
+        .reduce(
+          (total, point) =>
+            total +
+            (system === 'spid'
+              ? (point.asDouble ?? Number(point.asInt ?? 0))
+              : Number(point.count ?? 0)),
+          0,
+        );
+      assert.equal(
+        observedAttempts,
+        20,
+        'Internal federation steps cannot duplicate public authentication attempts',
+      );
+      if (system === 'cie') {
+        assert.ok(
+          authentication
+            .flatMap((metric) => metric.histogram?.dataPoints ?? [])
+            .every((point) => typeof point.sum === 'number' && point.sum >= 0),
+        );
+        assert.equal(
+          envelopes
+            .flatMap((envelope) => envelope.resourceMetrics ?? [])
+            .flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics))
+            .some((metric) => metric.name.startsWith('spid.')),
+          false,
+        );
+      }
+      const points = metrics.flatMap((metric) => [
+        ...(metric.sum?.dataPoints ?? []),
+        ...(metric.histogram?.dataPoints ?? []),
+      ]);
+      for (const outcome of ['ok', 'federation'])
+        assert.ok(
+          points.some((point) =>
+            point.attributes.some(
+              (attribute) =>
+                attribute.key === system + '.outcome' && attribute.value.stringValue === outcome,
+            ),
+          ),
+        );
+      for (const point of points)
+        for (const attribute of point.attributes)
+          assert.ok([system + '.operation', system + '.outcome'].includes(attribute.key));
+      const serialized = JSON.stringify({ envelopes, logs });
+      for (const marker of [
+        ...markers,
+        rp,
+        root,
+        op,
+        profile.profileId,
+        'tenant-A',
+        'canonical-account',
+        'upstream-subject',
+        '/private',
+        'signing-ref',
+        'oidc-decryption-ref',
+        'BEGIN PRIVATE KEY',
+        metadata,
+      ])
+        assert.equal(serialized.includes(marker), false, 'Sensitive federation data was exported');
+      await app.stop();
+      await assert.rejects(() => service.metadata(), { code: 'EK_RESOURCE_CLOSED' });
+      return { publicFlow: true as const };
+    } finally {
+      await close();
+    }
   }
+  return Object.freeze({
+    system,
+    assurance,
+    async start() {
+      await app.start();
+      return app.resolve<SpidService>(adapter.capability).forProfile(profile.profileId);
+    },
+    close,
+    runConformance,
+    counters() {
+      return Object.freeze({
+        rootRequests,
+        tokenRequests,
+        userInfoRequests,
+        pendingCodes: codes.size,
+        collectorBatches: envelopes.length,
+        logEntries: logs.length,
+        serverListening: server.listening,
+        collectorListening: collector.listening,
+      });
+    },
+  });
+}
+
+/** Preserve the original conformance entry point and its complete twenty-attempt corpus. */
+export async function runPublicOidc(
+  files: Parameters<typeof createPublicOidcFixture>[0],
+  adapter?: Parameters<typeof createPublicOidcFixture>[1],
+) {
+  const fixture = await createPublicOidcFixture(files, adapter);
+  return fixture.runConformance();
 }
