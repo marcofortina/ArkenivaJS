@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { constants } from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import { open, mkdir, lstat, realpath, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
@@ -110,13 +111,14 @@ async function locked<T>(path: string, scope: Scope, work: () => Promise<T>): Pr
   } catch {
     throw failure('The project is busy or its lock is unavailable', 'EK_BACKEND_UNAVAILABLE');
   }
-  const owned = await lock.stat();
+  // Adjacent uint64 inode values must remain distinct before releasing an owned lock.
+  const owned = await lock.stat({ bigint: true });
   try {
     scope.check();
     return await work();
   } finally {
     await lock.close();
-    const current = await lstat(path).catch(() => undefined);
+    const current = await lstat(path, { bigint: true }).catch(() => undefined);
     if (current?.ino === owned.ino && current.dev === owned.dev) await unlink(path);
   }
 }
@@ -166,10 +168,11 @@ export async function addModule(module: string, options?: ProjectOptions): Promi
         path,
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
       );
-      let original: string, identity: Awaited<ReturnType<FileHandle['stat']>>;
+      let original: string, identity: BigIntStats;
       try {
-        identity = await handle.stat();
-        if (!identity.isFile() || identity.nlink !== 1 || identity.size > 1048576) throw failure();
+        identity = await handle.stat({ bigint: true });
+        if (!identity.isFile() || identity.nlink !== 1n || identity.size > 1048576n)
+          throw failure();
         const bytes = Buffer.alloc(1048577);
         let offset = 0;
         while (offset < bytes.length) {
@@ -201,7 +204,7 @@ export async function addModule(module: string, options?: ProjectOptions): Promi
       const candidate = await open(
         temporary,
         constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-        identity.mode & 0o777,
+        Number(identity.mode & 0o777n),
       );
       let committed = false;
       try {
@@ -209,13 +212,14 @@ export async function addModule(module: string, options?: ProjectOptions): Promi
         await candidate.sync();
         await candidate.close();
         scope.check();
-        const current = await lstat(path);
+        const current = await lstat(path, { bigint: true });
         if (
           current.ino !== identity.ino ||
           current.dev !== identity.dev ||
           current.size !== identity.size ||
-          current.mtimeMs !== identity.mtimeMs ||
-          current.nlink !== 1
+          current.mtimeNs !== identity.mtimeNs ||
+          current.ctimeNs !== identity.ctimeNs ||
+          current.nlink !== 1n
         )
           throw failure('The manifest changed during the operation');
         scope.mutation();

@@ -2,6 +2,8 @@
 
 ## 0.1.0
 
+- Preserve exact lock ownership and reject manifest changes using native bigint file metadata.
+
 - Include all 60 implemented application runtime modules in the explicit dependency catalog.
 - Verify catalog completeness, per-module idempotence and installed CLI additions for GraphQL and tenant routing.
 - Add an offline ESM project starter with explicit Fastify and Pino composition.
