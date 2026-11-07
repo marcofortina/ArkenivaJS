@@ -26,6 +26,7 @@ import { loggingPlugin } from '@arkenivajs/logging';
 import { telemetryPlugin } from '@arkenivajs/telemetry';
 import { meteringPlugin } from '@arkenivajs/metering';
 import { postgresPlugin } from '@arkenivajs/database-postgres';
+import { logWriteBoundary, auditLogWindow } from './http-log-audit.mjs';
 
 const require = createRequire(import.meta.url);
 const response = { ok: true, value: 7, padding: 'x'.repeat(94) };
@@ -152,6 +153,26 @@ export async function startWorker(settings) {
     maxPoolWaiting: 0,
     maxMeterQueue: 0,
     maxLogBacklogBytes: 0,
+    authenticationVerified: 0,
+    authenticationRejected: 0,
+    authorizedOperations: 0,
+    databaseQueries: 0,
+  };
+  const observeAuthentication = (event) => {
+    assert.ok(event.outcome === 'verified' || event.outcome === 'rejected');
+    if (event.outcome === 'verified') counts.authenticationVerified++;
+    else counts.authenticationRejected++;
+  };
+  const nativeAuthenticationAudit = (request, event) => {
+    observeAuthentication(event);
+    logger.info(
+      {
+        requestId: request.id,
+        outcome: event.outcome,
+        ...(event.code ? { code: event.code } : {}),
+      },
+      'Authentication completed',
+    );
   };
   const collect = () => {
     if (sinkFailure)
@@ -178,6 +199,7 @@ export async function startWorker(settings) {
   gc.observe({ entryTypes: ['gc'] });
   const startup = performance.now();
   async function query(tenant) {
+    counts.databaseQueries++;
     if (app) {
       const value = await app.sql.queryOne('main', {
         text: 'SELECT :value::integer AS value, :tenant::text AS tenant',
@@ -282,7 +304,15 @@ export async function startWorker(settings) {
           async (request, reply) => {
             let tenant;
             if (path !== '/json') {
+              let verificationCode = 'EK_AUTH_INVALID';
               try {
+                if (
+                  request.headers.authorization === undefined ||
+                  request.headers.authorization === ''
+                ) {
+                  verificationCode = 'EK_AUTH_REQUIRED';
+                  throw new Error('Bearer authentication is required');
+                }
                 assert.ok(typeof request.headers.authorization === 'string');
                 assert.ok(request.headers.authorization.length <= 16384);
                 assert.match(
@@ -307,6 +337,7 @@ export async function startWorker(settings) {
                 assert.ok(
                   typeof scopes === 'string' && scopes.length <= 4096 && !hasControls(scopes),
                 );
+                nativeAuthenticationAudit(request, { outcome: 'verified' });
                 if (!scopes.split(' ').includes('orders:read'))
                   return reply.code(403).send({ error: { code: 'EK_AUTH_FORBIDDEN' } });
                 if (
@@ -315,8 +346,10 @@ export async function startWorker(settings) {
                 )
                   return reply.code(403).send({ error: { code: 'EK_TENANT_UNVERIFIED' } });
                 tenant = payload.tenant_id;
+                counts.authorizedOperations++;
               } catch {
-                return reply.code(401).send({ error: { code: 'EK_AUTH_INVALID' } });
+                nativeAuthenticationAudit(request, { outcome: 'rejected', code: verificationCode });
+                return reply.code(401).send({ error: { code: verificationCode } });
               }
             }
             if (path === '/database') await query(tenant);
@@ -351,7 +384,7 @@ export async function startWorker(settings) {
         },
         plugins: [
           loggingPlugin({ destination: sink }),
-          securityPlugin({ allowInsecureLoopback: true }),
+          securityPlugin({ allowInsecureLoopback: true, onObservation: observeAuthentication }),
           ...(mode === 'off'
             ? []
             : [
@@ -376,6 +409,7 @@ export async function startWorker(settings) {
             ...(path === '/json' ? {} : { scopes: ['orders:read'] }),
           },
           handler: async (context) => {
+            if (path !== '/json') counts.authorizedOperations++;
             if (path === '/database') await query(context.auth.tenantId);
             return response;
           },
@@ -426,6 +460,7 @@ export async function startWorker(settings) {
       assert.equal(counts.active, 0);
       await meter?.flush();
       await telemetry?.flush();
+      const logStartByte = await logWriteBoundary(sink);
       for (const name of Object.keys(counts)) counts[name] = 0;
       if (settings.mode === 'DETAILED') {
         profiler = new Session();
@@ -441,6 +476,7 @@ export async function startWorker(settings) {
         await command('Profiler.start');
       }
       measurement = {
+        logStartByte,
         at: performance.now(),
         cpu: process.cpuUsage(),
         loop: performance.eventLoopUtilization(),
@@ -526,6 +562,16 @@ export async function startWorker(settings) {
         meter: difference(meter?.stats(), measurement.meter),
         telemetry: difference(telemetry?.stats?.(), measurement.telemetry),
       };
+      const logEndByte = await logWriteBoundary(sink);
+      result.logAudit = await auditLogWindow(
+        join(settings.directory, 'application.jsonl'),
+        measurement.logStartByte,
+        logEndByte,
+      );
+      assert.equal(result.logAudit.httpCompleted, result.counts.completed);
+      assert.equal(result.logAudit.authenticationVerified, result.counts.authenticationVerified);
+      assert.equal(result.logAudit.authenticationRejected, result.counts.authenticationRejected);
+      assert.equal(result.logAudit.protectedSuccesses, result.counts.authorizedOperations);
       return result;
     },
     close,
