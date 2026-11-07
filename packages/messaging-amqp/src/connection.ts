@@ -79,7 +79,14 @@ export class Connection {
         try {
           const stat = await file.stat();
           task.check();
-          if (!stat.isFile() || stat.size < 1 || stat.size > 256 * 1024 || stat.mode & 0o022)
+          if (
+            !stat.isFile() ||
+            stat.dev !== entry.dev ||
+            stat.ino !== entry.ino ||
+            stat.size < 1 ||
+            stat.size > 256 * 1024 ||
+            stat.mode & 0o022
+          )
             throw failure('EK_AMQP_CONFIG');
           ca = Buffer.alloc(stat.size);
           let offset = 0;
