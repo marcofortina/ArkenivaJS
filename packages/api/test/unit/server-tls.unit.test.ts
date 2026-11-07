@@ -5,7 +5,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, X509Certificate, createPrivateKey } from 'node:crypto';
 import { once } from 'node:events';
 import { connect as connectHttp2, type ClientHttp2Session } from 'node:http2';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -310,9 +310,54 @@ test('Mounted secret symlinks resolve explicitly; failed consumers still clear a
 
 test('Expired certificates and excessive chains fail before context construction', async () => {
   const expired = join(directory, 'expired.pem');
-  await execute('openssl', ['x509', '-in', cert, '-signkey', key, '-days', '-1', '-out', expired], {
-    timeout: 10000,
-  });
+  await Promise.all([
+    writeFile(join(directory, 'expired.index'), '', { mode: 0o600 }),
+    writeFile(join(directory, 'expired.serial'), '01\n', { mode: 0o600 }),
+    writeFile(
+      join(directory, 'expired.cnf'),
+      '[ca]\ndefault_ca=fixture\n[fixture]\ndatabase=expired.index\n' +
+        'new_certs_dir=.\nserial=expired.serial\ncertificate=server.pem\n' +
+        'private_key=server.key\ndefault_md=sha256\npolicy=subject\n' +
+        'x509_extensions=leaf\n[subject]\ncommonName=supplied\n[leaf]\n' +
+        'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n' +
+        'extendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1\n',
+      { mode: 0o600 },
+    ),
+  ]);
+  const options = { cwd: directory, timeout: 10000 };
+  await execute(
+    'openssl',
+    ['req', '-new', '-key', 'server.key', '-subj', '/CN=localhost', '-out', 'expired.csr'],
+    options,
+  );
+  await execute(
+    'openssl',
+    [
+      'ca',
+      '-batch',
+      '-selfsign',
+      '-notext',
+      '-config',
+      'expired.cnf',
+      '-in',
+      'expired.csr',
+      '-startdate',
+      '20200101000000Z',
+      '-enddate',
+      '20200102000000Z',
+      '-out',
+      'expired.pem',
+    ],
+    options,
+  );
+  const expiredCertificate = new X509Certificate(await readFile(expired));
+  assert.equal(Date.parse(expiredCertificate.validFrom), Date.UTC(2020, 0, 1));
+  assert.equal(Date.parse(expiredCertificate.validTo), Date.UTC(2020, 0, 2));
+  assert.ok(Date.parse(expiredCertificate.validFrom) < Date.parse(expiredCertificate.validTo));
+  assert.ok(Date.parse(expiredCertificate.validTo) < Date.now());
+  assert.equal(expiredCertificate.checkHost('localhost'), 'localhost');
+  assert.equal(expiredCertificate.checkIP('127.0.0.1'), '127.0.0.1');
+  assert.equal(expiredCertificate.checkPrivateKey(createPrivateKey(await readFile(key))), true);
   const excessive = join(directory, 'excessive.pem'),
     empty = join(directory, 'empty.pem');
   await writeFile(excessive, (await readFile(cert, 'utf8')).repeat(33));
