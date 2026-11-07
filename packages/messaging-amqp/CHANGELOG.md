@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Preserve full-width CA file identities and nanosecond metadata without changing byte limits.
 - Bind the opened CA descriptor to the checked regular file identity before reading trust material; reject atomic file replacement while preserving descriptor cleanup and verified TLS options.
 - Capture the secret resolver with its original receiver without reading callable metadata; reject proxy resolvers and hidden usage classification beyond bounded prototype traversal.
 - Capture operation cancellation into owned native signals; reject proxy controls and excessive prototype depth before task admission and preserve physical settlement on abort.

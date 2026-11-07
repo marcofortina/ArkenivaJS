@@ -70,25 +70,25 @@ export class Connection {
         fields = endpoint(secret);
       if (this.config.tlsCaFile) {
         const path = this.config.tlsCaFile,
-          entry = await task.wait(lstat(path));
+          entry = await task.wait(lstat(path, { bigint: true }));
         if (!entry.isFile() || entry.isSymbolicLink()) throw failure('EK_AMQP_CONFIG');
         const file = await open(
           path,
           constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
         );
         try {
-          const stat = await file.stat();
+          const stat = await file.stat({ bigint: true });
           task.check();
           if (
             !stat.isFile() ||
             stat.dev !== entry.dev ||
             stat.ino !== entry.ino ||
-            stat.size < 1 ||
-            stat.size > 256 * 1024 ||
-            stat.mode & 0o022
+            stat.size < 1n ||
+            stat.size > 256n * 1024n ||
+            stat.mode & 0o022n
           )
             throw failure('EK_AMQP_CONFIG');
-          ca = Buffer.alloc(stat.size);
+          ca = Buffer.alloc(Number(stat.size));
           let offset = 0;
           while (offset < ca.length) {
             const result = await file.read(ca, offset, ca.length - offset, offset);
@@ -96,11 +96,11 @@ export class Connection {
             if (!result.bytesRead) throw failure('EK_AMQP_CONFIG');
             offset += result.bytesRead;
           }
-          const after = await file.stat();
+          const after = await file.stat({ bigint: true });
           if (
             after.size !== stat.size ||
-            after.mtimeMs !== stat.mtimeMs ||
-            after.ctimeMs !== stat.ctimeMs
+            after.mtimeNs !== stat.mtimeNs ||
+            after.ctimeNs !== stat.ctimeNs
           )
             throw failure('EK_AMQP_CONFIG');
         } finally {

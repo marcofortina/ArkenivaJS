@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
+import type { Stats, BigIntStats } from 'node:fs';
 import fs from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
@@ -16,7 +17,16 @@ import { amqpPlugin } from '../../dist/index.js';
 
 const amqp = createRequire(import.meta.url)('amqplib') as typeof import('amqplib');
 
-async function startupWithCa(context: TestContext, replace: boolean): Promise<void> {
+function wideMetadata<T extends Stats | BigIntStats>(value: T, inode: bigint): T {
+  const bigint = typeof value.ino === 'bigint',
+    device = 1n << 54n;
+  return Object.assign(value, {
+    dev: bigint ? device : Number(device),
+    ino: bigint ? inode : Number(inode),
+  });
+}
+
+async function startupWithCa(context: TestContext, replace: boolean, wide = false): Promise<void> {
   const directory = await fs.mkdtemp(join(tmpdir(), 'arkenivajs-amqp-ca-identity-')),
     caFile = join(directory, 'ca.pem'),
     replacement = join(directory, 'replacement.pem'),
@@ -27,13 +37,25 @@ async function startupWithCa(context: TestContext, replace: boolean): Promise<vo
   await fs.writeFile(replacement, changed, { mode: 0o600 });
   const before = await fs.lstat(caFile),
     other = await fs.lstat(replacement),
-    open = fs.open;
+    open = fs.open,
+    lstat = fs.lstat,
+    firstInode = 1n << 53n;
   assert.equal(before.dev, other.dev);
   assert.notEqual(before.ino, other.ino);
   let replaced = false,
     reads = 0,
     nativeCalls = 0,
     descriptor: FileHandle | undefined;
+
+  if (wide) {
+    assert.notEqual(firstInode, firstInode + 1n);
+    assert.equal(Number(firstInode), Number(firstInode + 1n));
+    // Model legal full-width identities; all file bytes and descriptor operations remain native.
+    context.mock.method(fs, 'lstat', (async (...arguments_: Parameters<typeof fs.lstat>) => {
+      const value = await lstat(...arguments_);
+      return arguments_[0] === caFile ? wideMetadata(value, firstInode) : value;
+    }) as typeof fs.lstat);
+  }
 
   // Replace real regular files at the open boundary; metadata and descriptor reads stay native.
   context.mock.method(fs, 'open', async (path: string, flags: number) => {
@@ -48,6 +70,16 @@ async function startupWithCa(context: TestContext, replace: boolean): Promise<vo
     descriptor = await open(path, flags);
     const actual = await descriptor.stat();
     assert.equal(actual.ino, replace ? other.ino : before.ino);
+    if (wide) {
+      const stat = descriptor.stat.bind(descriptor);
+      context.mock.method(descriptor, 'stat', (async (
+        ...arguments_: Parameters<FileHandle['stat']>
+      ) =>
+        wideMetadata(
+          await stat(...arguments_),
+          firstInode + (replace ? 1n : 0n),
+        )) as FileHandle['stat']);
+    }
     const read = descriptor.read;
     context.mock.method(descriptor, 'read', function (this: FileHandle, ...args: unknown[]) {
       reads++;
@@ -124,4 +156,12 @@ test('Public AMQP startup rejects a different regular CA inode before reading it
 
 test('Public AMQP startup reads and closes an unchanged CA before verified native TLS setup', async (context) => {
   await startupWithCa(context, false);
+});
+
+test('Public AMQP startup distinguishes adjacent full-width CA inode identities', async (context) => {
+  await startupWithCa(context, true, true);
+});
+
+test('Public AMQP startup accepts an unchanged full-width CA inode identity', async (context) => {
+  await startupWithCa(context, false, true);
 });
