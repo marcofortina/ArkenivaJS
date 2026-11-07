@@ -15,6 +15,7 @@ import tempfile
 from urllib.parse import quote
 
 from control import ready, run
+from diagnostics import startup_failure
 
 IMAGE = 'rabbitmq:4.2.9-management@sha256:b8674f6c6dcd8fb5f96c87d66586875960da032ae2674ee93168db7a4df58745'
 
@@ -28,6 +29,29 @@ def available_port():
     with socket.socket() as stream:
         stream.bind(('127.0.0.1', 0))
         return stream.getsockname()[1]
+
+
+def generate_certificates(root):
+    """Create the private fixture chain with explicit RFC 5280 extensions."""
+    run('openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '2',
+        '-subj', '/CN=Owned AMQP Fixture CA',
+        '-addext', 'basicConstraints=critical,CA:TRUE',
+        '-addext', 'keyUsage=critical,keyCertSign,cRLSign',
+        '-addext', 'subjectKeyIdentifier=hash',
+        '-addext', 'authorityKeyIdentifier=keyid:always',
+        '-keyout', str(root / 'ca.key'), '-out', str(root / 'ca.crt'))
+    run('openssl', 'req', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=Owned AMQP Server',
+        '-keyout', str(root / 'server.key'), '-out', str(root / 'server.csr'))
+    (root / 'server.ext').write_text('''basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+subjectAltName=IP:127.0.0.1,DNS:localhost
+''')
+    run('openssl', 'x509', '-req', '-in', str(root / 'server.csr'), '-CA', str(root / 'ca.crt'),
+        '-CAkey', str(root / 'ca.key'), '-CAcreateserial', '-days', '2', '-sha256',
+        '-extfile', str(root / 'server.ext'), '-out', str(root / 'server.crt'))
 
 
 def main():
@@ -50,14 +74,7 @@ def main():
     name, network, volume = root.name, root.name + '-net', root.name + '-data'
     created = []
     try:
-        run('openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '2',
-            '-subj', '/CN=Owned AMQP Fixture CA', '-keyout', str(root / 'ca.key'), '-out', str(root / 'ca.crt'))
-        run('openssl', 'req', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=Owned AMQP Server',
-            '-keyout', str(root / 'server.key'), '-out', str(root / 'server.csr'))
-        (root / 'server.ext').write_text('subjectAltName=IP:127.0.0.1,DNS:localhost\nextendedKeyUsage=serverAuth\n')
-        run('openssl', 'x509', '-req', '-in', str(root / 'server.csr'), '-CA', str(root / 'ca.crt'),
-            '-CAkey', str(root / 'ca.key'), '-CAcreateserial', '-days', '2', '-sha256',
-            '-extfile', str(root / 'server.ext'), '-out', str(root / 'server.crt'))
+        generate_certificates(root)
         users = {role: {'username': role + '-' + secrets.token_hex(4), 'password': secrets.token_urlsafe(32)}
                  for role in ['admin', 'service', 'denied']}
         vhost = 'fixture'
@@ -123,6 +140,8 @@ log.file = false
         (root / 'runtime.json').write_text(json.dumps(metadata))
         ready(metadata)
     except BaseException:
+        if ('container', name) in created:
+            startup_failure(root, name)
         for kind, resource in reversed(created):
             field = '.Config.Labels' if kind == 'container' else '.Labels'
             try:

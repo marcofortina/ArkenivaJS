@@ -5,6 +5,7 @@
 import argparse
 import json
 from pathlib import Path
+import platform
 import re
 import shutil
 import socket
@@ -41,14 +42,24 @@ def owned(path):
 def ready(value, timeout=45):
     context = ssl.create_default_context(cafile=value['caFile'])
     deadline = time.monotonic() + timeout
+    last_verification = None
     while time.monotonic() < deadline:
         try:
             with socket.create_connection(('127.0.0.1', value['port']), timeout=1) as stream:
                 with context.wrap_socket(stream, server_hostname='localhost'):
                     return
+        except ssl.SSLCertVerificationError as error:
+            # OpenSSL supplies a verification reason, never certificate/key data.
+            last_verification = {'verifyCode': error.verify_code,
+                                 'verifyMessage': error.verify_message[:256]}
+            time.sleep(0.1)
         except (OSError, ssl.SSLError):
             time.sleep(0.1)
-    raise RuntimeError('The owned verified AMQPS listener did not become ready')
+    evidence = {'python': platform.python_version(), 'openssl': ssl.OPENSSL_VERSION,
+                'verifyFlags': int(context.verify_flags),
+                'lastCertificateVerification': last_verification}
+    raise RuntimeError('The owned verified AMQPS listener did not become ready: '
+                       + json.dumps(evidence, ensure_ascii=True))
 
 
 def main():
