@@ -7,6 +7,7 @@ Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 ## 0.1.0
 
+- Preserve full-width font file identities and nanosecond metadata without changing byte limits.
 - Reject custom fonts replaced between path inspection and opening before reading their bytes, while closing the opened descriptor.
 - Capture native cancellation independently of caller hook replacement; reject proxy signals and excessive prototype traversal before native document admission.
 - Verify native indirect signature forms, active actions, graph depth/reference/array limits, cycle handling and metadata/text/output budgets.

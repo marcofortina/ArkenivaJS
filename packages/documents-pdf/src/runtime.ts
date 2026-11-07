@@ -130,12 +130,12 @@ export class Request {
     const fonts: Record<string, Uint8Array> = Object.create(null);
     try {
       this.check();
-      let total = 0;
+      let total = 0n;
       for (const name of new Set(this.work.specs.map((spec) => spec.font))) {
         if (!this.settings.fonts.includes(name)) throw failure();
         if (builtins.has(name)) continue;
         this.check();
-        const entry = await lstat(name);
+        const entry = await lstat(name, { bigint: true });
         this.check();
         if (!entry.isFile() || entry.isSymbolicLink()) throw failure();
         const file = await open(
@@ -143,18 +143,18 @@ export class Request {
           constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
         );
         try {
-          const before = await file.stat();
+          const before = await file.stat({ bigint: true });
           this.check();
           if (before.dev !== entry.dev || before.ino !== entry.ino) throw failure();
           if (
             !before.isFile() ||
-            before.size < 1 ||
-            before.size > 4 * 1024 * 1024 ||
-            (before.mode & 0o022) !== 0 ||
-            (total += before.size) > 16 * 1024 * 1024
+            before.size < 1n ||
+            before.size > 4n * 1024n * 1024n ||
+            (before.mode & 0o022n) !== 0n ||
+            (total += before.size) > 16n * 1024n * 1024n
           )
             throw failure('EK_PDF_LIMIT');
-          const data = Buffer.alloc(before.size);
+          const data = Buffer.alloc(Number(before.size));
           fonts[name] = data;
           let position = 0;
           while (position < data.length) {
@@ -163,11 +163,11 @@ export class Request {
             if (!read.bytesRead) throw failure();
             position += read.bytesRead;
           }
-          const after = await file.stat();
+          const after = await file.stat({ bigint: true });
           if (
             after.size !== before.size ||
-            after.mtimeMs !== before.mtimeMs ||
-            after.ctimeMs !== before.ctimeMs
+            after.mtimeNs !== before.mtimeNs ||
+            after.ctimeNs !== before.ctimeNs
           )
             throw failure();
         } finally {
