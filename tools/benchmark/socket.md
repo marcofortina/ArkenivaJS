@@ -10,6 +10,7 @@ report directory:
 pnpm --filter @arkenivajs/benchmark-foundation socket --verify /private/socket-verification
 ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation socket --smoke /private/socket-smoke
 ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation socket --smoke-unix /private/socket-unix-smoke
+ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation socket --smoke-tls /private/socket-tls-smoke
 ```
 
 Four isolated server profiles compare native Node `net`, `tls` and `dgram` with
@@ -58,7 +59,8 @@ and cleanup. Every owned process must be waited, with no remaining descendants
 and no inaccessible or truncated resource observations. CPU is aggregate for
 that lifecycle. Sampled summed RSS can count shared pages repeatedly and miss
 brief peaks; it is neither exact peak memory nor PSS. Kernel socket buffer bytes
-remain unknown. TLS and UDP remain functional verification, and no handshake-rate
+remain unknown. TLS and UDP remain functional verification in these original modes;
+the explicit TLS mode below adds one bounded measured scope. No handshake-rate
 or backpressure campaign is claimed. Dedicated-runner budgets, calibrated policy-equivalent overhead, five
 paired repetitions and one-hour soak acceptance remain separate work.
 
@@ -104,3 +106,64 @@ parent, its diagnostic collector, certificate creation and the Python observer
 are excluded. The broader window cannot be interpreted as CPU spent only on
 the 100 measured Unix echoes. Neither window measures filesystem/kernel buffer
 memory or calibrates a production overhead budget.
+
+## TLS 64-byte client lifecycle sampling
+
+`--smoke-tls` selects the R6 TLS/TCP **64-byte** echo scope. It leaves `--verify`,
+TCP `--smoke` and Unix `--smoke-unix` selections unchanged. Both direct native
+`tls.createServer` and framework `createTlsServer` use a distinct sampled listener
+with minimum TLS **1.3**. The five original untimed protocol scenarios retain
+their TLS 1.2 minimum and their existing result fields. Their hostname control
+must specifically fail with native `ERR_TLS_CERT_ALTNAME_INVALID`; the independent
+child forwards only that allowlisted code and a fixed safe error, never native
+certificate diagnostics.
+
+The sampled listener accepts 120 independent clients per profile: 20 warmups and
+100 raw Tinybench samples. Each fresh child trusts only the owned fixture
+certificate, verifies its exact hostname, completes a nonresumed handshake and
+checks every echoed byte. No TLS session, socket or client pool is shared across
+callbacks. The listener independently requires 120 accepted connections and
+**7,680 application bytes per direction**, then closes. Four profiles retain
+400 raw samples, verify 480 authorized nonresumed handshakes and observe
+**30,720 application bytes per direction** on sampled listeners. The original
+24 verification client lifecycles and 280,064 bytes per direction are separately
+reported; their deliberately rejected TLS hostname connections never enter the
+sampled listener or its byte counters.
+
+Every sampled client records actual native TLS protocol and cipher, peer
+authorization and session-reuse status. The certificate public key is inspected
+as EC `prime256v1`; its 256-bit size is identified from that P-256 named curve.
+This certificate key is distinct from the ephemeral exchange key. When Node
+exposes `getEphemeralKeyInfo()`, its actual type and available name/size fields are
+recorded separately. Native hybrid groups may expose a group name without a
+size; the size field remains absent in that case. If no metadata is exposed, the
+field is `null`, without an invented value. Reports
+contain no certificate, key, SAN, endpoint, marker or credential-file path.
+
+The existing generic `firstByteMs` and `exchangeElapsedMs` observations remain
+available. Only TLS sampling adds these monotonic event windows:
+
+| Field                      | Observed interval                                                        |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `tcpConnectElapsedMs`      | Immediately before native TLS client construction through TCP `connect`  |
+| `handshakeElapsedMs`       | TCP `connect` through TLS `secureConnect`                                |
+| `firstByteFromConnectMs`   | The same construction origin through the first incoming application byte |
+| `exchangeFromConnectMs`    | The same construction origin through application stream end              |
+| `payloadFirstByteMs`       | TLS `secureConnect` through the first incoming application byte          |
+| `payloadExchangeElapsedMs` | TLS `secureConnect` through application stream end                       |
+
+CA-file reading occurs before the TLS construction origin. Certificate metadata
+inspection occurs after the application-end timestamp. Both remain inside the
+outer Tinybench callback, which includes complete child startup, IPC, connection,
+handshake, echo verification, resource retirement and physical process exit.
+Client event-loop scheduling remains part of its observed intervals. No field
+claims isolated cryptographic CPU time or a steady-connection payload benchmark.
+
+The existing server-only and whole-process-tree resource windows retain their
+different meanings. The broader supervised window includes the real independent
+TLS clients and their metadata validation; the server-only window does not
+include client CPU or RSS. All children must retire, resource observations must
+remain accessible and SDK privacy/drop checks must pass. This bounded sample
+does not establish TLS-engine handshake capacity, calibrated protocol-equivalent
+framework overhead, production resource budgets, five paired repetitions,
+one-hour soak or release acceptance.

@@ -15,12 +15,25 @@ const sampledEchoes = new WeakMap();
 export async function prepareSocketEcho(service, fixture) {
   assert.equal(sampledEchoes.has(service), false);
   const unix = fixture.sampleUnixEcho === true,
+    tls = fixture.sampleTlsEcho === true,
     path = unix ? join(fixture.directory, 'sampled-unix4096.sock') : undefined;
+  assert.ok(!unix || !tls);
   if (unix) await assert.rejects(lstat(path), { code: 'ENOENT' });
-  const handle = service[unix ? 'createUnixServer' : 'createTcpServer'](
+  const handle = service[unix ? 'createUnixServer' : tls ? 'createTlsServer' : 'createTcpServer'](
     unix
       ? { name: 'sampled-unix4096', path, mode: 0o600 }
-      : { name: 'sampled-tcp64', host: '127.0.0.1', port: 0 },
+      : tls
+        ? {
+            name: 'sampled-tls64',
+            host: '127.0.0.1',
+            port: 0,
+            tls: {
+              certificateFile: fixture.certificateFile,
+              privateKeyFile: fixture.privateKeyFile,
+              minVersion: 'TLSv1.3',
+            },
+          }
+        : { name: 'sampled-tcp64', host: '127.0.0.1', port: 0 },
     async (peer) => {
       for await (const bytes of peer.chunks()) await peer.send(bytes);
       await peer.end();
@@ -39,12 +52,23 @@ export async function prepareSocketEcho(service, fixture) {
     sampledEchoes.set(service, {
       handle,
       input: {
-        kind: unix ? 'unix' : 'tcp',
+        kind: unix ? 'unix' : tls ? 'tls' : 'tcp',
         size: unix ? 4096 : 64,
         binding,
         marker: fixture.marker,
+        ...(tls
+          ? {
+              caFile: fixture.certificateFile,
+              sampleTls: true,
+              minimumTlsVersion: 'TLSv1.3',
+            }
+          : {}),
       },
-      operation: unix ? 'unix4096IndependentClient' : 'tcp64IndependentClient',
+      operation: unix
+        ? 'unix4096IndependentClient'
+        : tls
+          ? 'tls64IndependentClient'
+          : 'tcp64IndependentClient',
       path,
       identity,
       results: [],
@@ -102,6 +126,26 @@ export async function completeSocketEcho(service, { measure, records }) {
       assert.ok(
         Number.isFinite(result.exchangeElapsedMs) && result.exchangeElapsedMs >= result.firstByteMs,
       );
+      if (state.input.kind === 'tls') {
+        assert.equal(result.tls.protocol, 'TLSv1.3');
+        assert.ok(typeof result.tls.cipher === 'string' && result.tls.cipher.length > 0);
+        assert.equal(result.tls.authorized, true);
+        assert.equal(result.tls.sessionReused, false);
+        assert.equal(result.tls.certificateKeyType, 'ec');
+        assert.equal(result.tls.certificateNamedCurve, 'prime256v1');
+        assert.equal(result.tls.certificateKeyBits, 256);
+        for (const name of [
+          'tcpConnectElapsedMs',
+          'handshakeElapsedMs',
+          'firstByteFromConnectMs',
+          'exchangeFromConnectMs',
+          'payloadFirstByteMs',
+          'payloadExchangeElapsedMs',
+        ])
+          assert.ok(Number.isFinite(result.tls[name]) && result.tls[name] >= 0);
+        assert.ok(result.tls.firstByteFromConnectMs <= result.tls.exchangeFromConnectMs);
+        assert.ok(result.tls.payloadFirstByteMs <= result.tls.payloadExchangeElapsedMs);
+      }
     }
     if (state.identity) {
       const current = await lstat(state.path, { bigint: true });
@@ -138,6 +182,18 @@ export async function completeSocketEcho(service, { measure, records }) {
             unixSocketInodeStable: true,
             unixSocketMode: 0o600,
             unixPathRemoved: true,
+          }
+        : {}),
+      ...(state.input.kind === 'tls'
+        ? {
+            sampledTransport: 'tls',
+            sampledPayloadBytes: 64,
+            completedAuthorizedTlsHandshakes: state.results.length,
+            resumedTlsHandshakes: state.results.filter((value) => value.tls.sessionReused).length,
+            observedTlsProtocols: [...new Set(state.results.map((value) => value.tls.protocol))],
+            observedTlsCiphers: [...new Set(state.results.map((value) => value.tls.cipher))],
+            tlsTimingOrigin: 'Before native TLS client construction, after reading its private CA',
+            handshakeTimingWindow: 'Native TCP connect event through secureConnect',
           }
         : {}),
       opaqueKernelBufferBytes: null,
@@ -185,9 +241,12 @@ export function socketClient(input) {
     });
     child.once('close', (code) => {
       clearTimeout(timer);
-      if (failed || code !== 0 || message?.ok !== true)
-        reject(new Error('The independent owned socket client failed'));
-      else resolve(message.result);
+      if (failed || code !== 0 || message?.ok !== true) {
+        const error = new Error('The independent owned socket client failed');
+        if (message?.code === 'ERR_TLS_CERT_ALTNAME_INVALID')
+          error.code = 'ERR_TLS_CERT_ALTNAME_INVALID';
+        reject(error);
+      } else resolve(message.result);
     });
     child.send(input);
   });
@@ -258,7 +317,7 @@ export function nativeSocket() {
                     allowHalfOpen: true,
                     key: await readFile(options.tls.privateKeyFile),
                     cert: await readFile(options.tls.certificateFile),
-                    minVersion: 'TLSv1.2',
+                    minVersion: options.tls.minVersion ?? 'TLSv1.2',
                   },
                   handler,
                 )
@@ -367,7 +426,9 @@ export async function verifySocket(service, fixture) {
       const observed = await socketClient(input);
       clientProcessesWaited++;
       if (kind === 'tls') {
-        await assert.rejects(socketClient({ ...input, wrongName: true }));
+        await assert.rejects(socketClient({ ...input, wrongName: true }), {
+          code: 'ERR_TLS_CERT_ALTNAME_INVALID',
+        });
         clientProcessesWaited++;
       }
       await handle.stop();
@@ -396,7 +457,7 @@ export async function verifySocket(service, fixture) {
     scenarios: results,
     tlsWrongNameRejected: true,
     unixPathRemoved: true,
-    ...(fixture.sampleUnixEcho
+    ...(fixture.sampleUnixEcho || fixture.sampleTlsEcho
       ? {
           independentClientProcessesWaited: clientProcessesWaited,
           acceptedConnections,
