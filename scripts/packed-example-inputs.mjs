@@ -3,8 +3,9 @@
 
 import assert from 'node:assert/strict';
 import { matchesGlob, join, dirname } from 'node:path';
-import { lstat, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { captureFile } from './file-capture.mjs';
 
 /** Execute the requested compiled suite, including integration files without a .test suffix. */
 export function selectTestFiles(pattern, names) {
@@ -36,9 +37,11 @@ export async function snapshotReviewedPatches({ patches, archives, root, directo
     const owner = archives.get(match[1]);
     assert.ok(owner?.manifest.files.includes('compat'));
     const source = join(root, path);
-    assert.ok((await lstat(source)).isFile());
-    const bytes = await readFile(source);
-    assert.ok(bytes.length > 0 && bytes.length <= 1024 * 1024);
+    const { bytes } = await captureFile(
+      source,
+      1024 * 1024,
+      'Reviewed compatibility source changed or is not a regular file',
+    );
     const extracted = spawnSync('tar', ['-xOf', owner.archive, 'package/' + match[2]], {
       maxBuffer: 1024 * 1024,
     });

@@ -3,11 +3,12 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { copyFile, lstat, readFile, unlink } from 'node:fs/promises';
+import { lstat, open, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { captureFile } from './file-capture.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const licenseHash = '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0';
@@ -16,29 +17,50 @@ const licenseHash = '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079
 export async function withPackageLicense(repository, location, action) {
   const source = join(repository, 'LICENSE'),
     target = join(location, 'LICENSE');
-  const bytes = await readFile(source);
+  const { bytes, info } = await captureFile(source, 1024 * 1024, 'Unreviewed root license');
   assert.equal(
     createHash('sha256').update(bytes).digest('hex'),
     licenseHash,
     'Unreviewed root license',
   );
-  let created = false;
+  let created;
   try {
+    let file;
     try {
-      await copyFile(source, target, constants.COPYFILE_EXCL);
-      created = true;
+      file = await open(
+        target,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        Number(info.mode & 0o777n),
+      );
+      created = await file.stat({ bigint: true });
+      await file.writeFile(bytes);
+      await file.chmod(Number(info.mode & 0o777n));
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
+    } finally {
+      await file?.close();
     }
-    assert.ok((await lstat(target)).isFile(), 'Package license must be a regular file');
-    assert.deepEqual(
-      await readFile(target),
-      bytes,
-      'Package license differs from the root license',
+    const captured = await captureFile(
+      target,
+      1024 * 1024,
+      'Package license must be a regular file and remain unchanged',
     );
+    if (created)
+      assert.ok(
+        captured.info.dev === created.dev && captured.info.ino === created.ino,
+        'Package license was replaced before packing',
+      );
+    assert.ok(captured.bytes.equals(bytes), 'Package license differs from the root license');
     return await action();
   } finally {
-    if (created) await unlink(target);
+    if (created) {
+      const current = await lstat(target, { bigint: true });
+      assert.ok(
+        current.isFile() && current.dev === created.dev && current.ino === created.ino,
+        'Package license was replaced before cleanup',
+      );
+      await unlink(target);
+    }
   }
 }
 

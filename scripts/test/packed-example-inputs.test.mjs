@@ -3,6 +3,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { mkdtemp, mkdir, writeFile, readFile, stat, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -31,6 +33,76 @@ test('Packed verification selects the exact unit, integration or browser glob in
     'dist-test/test/unit/unit.test.js',
   ]);
   assert.throws(() => selectTestFiles('dist-test/../*.js', names));
+});
+
+test('Packed patch capture rejects a same-byte regular replacement before reading or publishing it', async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), 'arkenivajs-patch-replacement-')),
+    root = join(directory, 'source'),
+    packageRoot = join(directory, 'archive'),
+    destination = join(directory, 'consumer'),
+    path = 'packages/native/compat/fidelity.diff',
+    source = join(root, path),
+    replacement = join(directory, 'replacement'),
+    bytes = 'diff --git a/value.js b/value.js\n';
+  await mkdir(join(root, 'packages/native/compat'), { recursive: true });
+  await mkdir(join(packageRoot, 'package/compat'), { recursive: true });
+  await mkdir(destination);
+  await writeFile(source, bytes);
+  await writeFile(replacement, bytes);
+  await writeFile(join(packageRoot, 'package/compat/fidelity.diff'), bytes);
+  assert.notEqual((await fs.lstat(source)).ino, (await fs.lstat(replacement)).ino);
+  const archive = join(directory, 'native.tgz');
+  execFileSync('tar', ['-czf', archive, '-C', packageRoot, 'package']);
+  const archives = new Map([['native', { archive, manifest: { files: ['dist', 'compat'] } }]]),
+    patches = { 'native-sdk@1.2.3': path },
+    originalStat = fs.lstat,
+    originalRead = fs.readFile,
+    originalOpen = fs.open,
+    descriptors = [];
+  let replaced = false,
+    reads = 0,
+    descriptorReads = 0;
+  context.mock.method(fs, 'lstat', async (path, options) => {
+    const value = await originalStat(path, options);
+    if (path === source && !replaced) {
+      replaced = true;
+      await fs.rename(replacement, source);
+    }
+    return value;
+  });
+  context.mock.method(fs, 'readFile', async (path, options) => {
+    if (path === source) reads++;
+    return originalRead(path, options);
+  });
+  context.mock.method(fs, 'open', async (path, flags) => {
+    const file = await originalOpen(path, flags),
+      read = file.read;
+    descriptors.push(file);
+    context.mock.method(file, 'read', function (...args) {
+      descriptorReads++;
+      return Reflect.apply(read, this, args);
+    });
+    return file;
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(
+      snapshotReviewedPatches({ patches, archives, root, directory: destination }),
+      /changed/,
+    );
+    assert.equal(replaced, true);
+    assert.equal(reads, 0);
+    assert.equal(descriptorReads, 0);
+    assert.equal(descriptors.length, 1);
+    assert.equal(descriptors[0].fd, -1);
+    assert.deepEqual(await fs.readdir(join(destination, 'reviewed-compat')), []);
+    assert.equal(await originalRead(source, 'utf8'), bytes);
+  } finally {
+    context.diagnostic(JSON.stringify({ replaced, reads, descriptorReads }));
+    context.mock.restoreAll();
+    syncBuiltinESMExports();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 test('Independent pnpm graph selection preserves resolved native patches and omits absent test-only dependencies', () => {
   const patches = {
