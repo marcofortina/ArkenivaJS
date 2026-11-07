@@ -118,6 +118,7 @@ def run_case(base, pnpm, manager, label, preimages, targets, patch, negative=Fal
     (case / "fixture.diff").write_text(patch)
     (case / "package.json").write_text(json.dumps({
         "name": "private-" + name, "version": "1.0.0", "private": True,
+        "packageManager": manager,
         "dependencies": {name: "file:./fixture.tgz"},
     }) + "\n")
     (case / "pnpm-workspace.yaml").write_text(
@@ -130,6 +131,7 @@ def run_case(base, pnpm, manager, label, preimages, targets, patch, negative=Fal
         "PATH": os.environ.get("PATH", os.defpath), "HOME": str(home),
         "LANG": "C.UTF-8", "TZ": "UTC", "NO_COLOR": "1",
         "COREPACK_ENABLE_NETWORK": "0", "PNPM_CONFIG_UPDATE_NOTIFIER": "false",
+        "PNPM_CONFIG_PM_ON_FAIL": "ignore",
         "PNPM_CONFIG_STORE_DIR": str(case / "store"),
         "PNPM_CONFIG_CACHE_DIR": str(case / "cache"),
         "PNPM_CONFIG_STATE_DIR": str(case / "state"),
@@ -143,6 +145,12 @@ def run_case(base, pnpm, manager, label, preimages, targets, patch, negative=Fal
         cached = Path.home() / ".cache/node/corepack"
         if cached.is_dir():
             env["COREPACK_HOME"] = str(cached)
+
+    # The fixture pins Corepack, while this exact check replaces pnpm's online boot resolution.
+    version = subprocess.check_output([pnpm, "--version"], cwd=case, env=env,
+                                      text=True, timeout=60).strip()
+    if version != manager.removeprefix("pnpm@"):
+        raise ValueError("The private fixture must execute the exact reviewed pnpm version")
 
     def invoke(*args):
         result = subprocess.run([pnpm, *args], cwd=case, env=env,
