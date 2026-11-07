@@ -41,10 +41,10 @@ function packageMatches(output: string): boolean {
   );
 }
 async function engineIdentity(): Promise<string> {
-  const value = await lstat(engine);
-  if (!value.isFile() || value.isSymbolicLink() || value.uid !== 0 || value.mode & 0o022)
+  const value = await lstat(engine, { bigint: true });
+  if (!value.isFile() || value.isSymbolicLink() || value.uid !== 0n || value.mode & 0o022n)
     throw failure('EK_BACKEND_UNAVAILABLE');
-  return [value.dev, value.ino, value.size, value.mtimeMs, value.ctimeMs].join(':');
+  return [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs].join(':');
 }
 
 /** Native diagnostics are drained with a fixed byte ceiling and never exposed as document errors. */
@@ -90,13 +90,13 @@ async function command(
   });
 }
 async function trustedExecutable(path: string) {
-  const value = await lstat(path);
+  const value = await lstat(path, { bigint: true });
   return (
     value.isFile() &&
     !value.isSymbolicLink() &&
-    value.uid === 0 &&
-    !(value.mode & 0o022) &&
-    !!(value.mode & 0o111)
+    value.uid === 0n &&
+    !(value.mode & 0o022n) &&
+    !!(value.mode & 0o111n)
   );
 }
 async function available(runtime: Runtime): Promise<boolean> {
@@ -132,22 +132,22 @@ async function available(runtime: Runtime): Promise<boolean> {
 }
 async function readSchema(path: string, signal: AbortSignal): Promise<string> {
   if (signal.aborted) throw failure('EK_ABORTED');
-  const before = await lstat(path);
+  const before = await lstat(path, { bigint: true });
   if (!before.isFile() || before.isSymbolicLink() || (await realpath(path)) !== path)
     throw failure('EK_XML_SECURITY');
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const stat = await file.stat();
+    const stat = await file.stat({ bigint: true });
     if (
       !stat.isFile() ||
       stat.dev !== before.dev ||
       stat.ino !== before.ino ||
-      stat.size < 1 ||
-      stat.size > schemaPolicy.maxBytes ||
-      stat.mode & 0o022
+      stat.size < 1n ||
+      stat.size > BigInt(schemaPolicy.maxBytes) ||
+      stat.mode & 0o022n
     )
       throw failure('EK_XML_SECURITY');
-    const data = Buffer.alloc(stat.size);
+    const data = Buffer.alloc(Number(stat.size));
     let position = 0;
     try {
       while (position < data.length) {
@@ -156,12 +156,12 @@ async function readSchema(path: string, signal: AbortSignal): Promise<string> {
         if (!read.bytesRead) throw failure('EK_XML_SCHEMA');
         position += read.bytesRead;
       }
-      const after = await file.stat();
+      const after = await file.stat({ bigint: true });
       if (
         after.ino !== stat.ino ||
         after.size !== stat.size ||
-        after.mtimeMs !== stat.mtimeMs ||
-        after.ctimeMs !== stat.ctimeMs ||
+        after.mtimeNs !== stat.mtimeNs ||
+        after.ctimeNs !== stat.ctimeNs ||
         signal.aborted
       )
         throw failure('EK_XML_SECURITY');

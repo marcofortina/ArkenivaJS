@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Preserve full-width file and validator identities with native bigint metadata and nanosecond stability checks.
 - Reject registered XSD files replaced between path inspection and descriptor capture before reading them.
 - Capture native cancellation sources before admission and reject executable proxy controls.
 - Add explicit XML contracts, capability registration and trusted finite configuration.
