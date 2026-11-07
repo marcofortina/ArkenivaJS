@@ -138,7 +138,14 @@ async function readSchema(path: string, signal: AbortSignal): Promise<string> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size < 1 || stat.size > schemaPolicy.maxBytes || stat.mode & 0o022)
+    if (
+      !stat.isFile() ||
+      stat.dev !== before.dev ||
+      stat.ino !== before.ino ||
+      stat.size < 1 ||
+      stat.size > schemaPolicy.maxBytes ||
+      stat.mode & 0o022
+    )
       throw failure('EK_XML_SECURITY');
     const data = Buffer.alloc(stat.size);
     let position = 0;
