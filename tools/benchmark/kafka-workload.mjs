@@ -35,6 +35,18 @@ export function kafkaConnection(fixture) {
 
 export async function nativeKafkaClient(fixture, clientId) {
   kafkaConnection(fixture);
+  const { KafkaJS } = require('@confluentinc/kafka-javascript');
+  const binding = createRequire(require.resolve('@confluentinc/kafka-javascript/package.json'))(
+    './librdkafka.js',
+  );
+  for (const [name, expected] of [
+    ['arkenivajsNativeCompatibilityVersion', 3],
+    ['arkenivajsNativeZlibVersion', '1.4'],
+  ]) {
+    const descriptor = Object.getOwnPropertyDescriptor(binding, name);
+    assert.ok(descriptor && Object.hasOwn(descriptor, 'value'));
+    assert.equal(descriptor.value, expected);
+  }
   const ca = await readFile(fixture.caFile, 'utf8'),
     encoded = await readFile(fixture.secretFile, 'utf8');
   assert.ok(ca.length > 0 && ca.length <= 1048576 && encoded.length <= 16384);
@@ -42,11 +54,6 @@ export async function nativeKafkaClient(fixture, clientId) {
   assert.equal(credential.mechanism, 'plain');
   assert.equal(typeof credential.username, 'string');
   assert.equal(typeof credential.password, 'string');
-  const { KafkaJS } = require('@confluentinc/kafka-javascript');
-  const binding = createRequire(require.resolve('@confluentinc/kafka-javascript/package.json'))(
-    './librdkafka.js',
-  );
-  assert.equal(binding.arkenivajsNativeCompatibilityVersion, 2);
   return new KafkaJS.Kafka({
     log_level: 0,
     'security.protocol': 'sasl_ssl',

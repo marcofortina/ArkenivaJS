@@ -801,6 +801,10 @@ jobs:
           python3 -B -m unittest discover -s tools/ci -p test_seed_kafka_source.py
           python3 -B tools/ci/seed_kafka_source.py "$GITHUB_WORKSPACE" "$ARKENIVA_TEST_REPORT_DIRECTORY"
           pnpm rebuild @confluentinc/kafka-javascript 2>&1 | tee "$ARKENIVA_TEST_REPORT_DIRECTORY/native-build.log"
+          python3 -B -m unittest discover -s tools/ci -p test_verify_kafka_native.py
+          python3 -B tools/ci/verify_kafka_native.py \
+            packages/messaging-kafka/node_modules/@confluentinc/kafka-javascript/build/Release/confluent-kafka-javascript.node \
+            > "$ARKENIVA_TEST_REPORT_DIRECTORY/native-zlib-isolation.json"
       - name: Compile public Kafka consumers and their declared dependencies
         run: pnpm --filter '@arkenivajs/example-kafka...' --filter '@arkenivajs/messaging-kafka...' build
       - name: Prepare private owned TLS certificates and SASL identities

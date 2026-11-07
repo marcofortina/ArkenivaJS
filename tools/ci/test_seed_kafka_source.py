@@ -3,6 +3,7 @@
 
 """Exercise source-cache refusals without downloading or running native code."""
 
+import hashlib
 import io
 import json
 import os
@@ -58,6 +59,23 @@ class SeedTests(unittest.TestCase):
             target = self.sdk / relative
             target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             target.write_bytes((installed / relative).read_bytes())
+        # A clean source checkout may still have the prior declared patch installed.
+        # Apply only this reviewed installer hunk inside the owned fixture, never the SDK cache.
+        installer = self.sdk / "deps/librdkafka/mklove/modules/configure.zlib"
+        if hashlib.sha256(installer.read_bytes()).hexdigest() != seed.VENDOR_GUARDS[
+                "deps/librdkafka/mklove/modules/configure.zlib"]:
+            self.assertEqual(hashlib.sha256(installer.read_bytes()).hexdigest(),
+                             "769d70e192903aa3b720fd45387eb7fc35ff6469cca9eec8f795299179aea28c")
+            reviewed = (Path(__file__).resolve().parents[2] / (
+                "packages/messaging-kafka/compat/confluent-exact-offsets-and-build.diff"
+            )).read_text()
+            section = next(part for part in reviewed.split("diff --git ")
+                           if part.startswith("a/deps/librdkafka/mklove/modules/configure.zlib "))
+            seed.subprocess.run(
+                ["patch", "--batch", "--fuzz=0", "-p1"], input="diff --git " + section,
+                cwd=self.sdk, text=True, stdout=seed.subprocess.PIPE,
+                stderr=seed.subprocess.STDOUT, timeout=5, check=True,
+            )
         self.alias = self.workspace / (
             "packages/messaging-kafka/node_modules/@confluentinc/kafka-javascript"
         )
@@ -148,16 +166,80 @@ class SeedTests(unittest.TestCase):
         path.symlink_to(copy)
         self.assert_no_native_effects()
 
+    def test_old_unprefixed_version_and_weakened_static_configuration_fail_before_network(self):
+        installer = self.sdk / "deps/librdkafka/mklove/modules/configure.zlib"
+        reviewed = installer.read_text()
+        for changed in [
+            reviewed.replace("local ver=1.4", "local ver=1.3.2"),
+            reviewed.replace(" --zprefix", ""),
+            reviewed.replace(" -fvisibility=hidden", ""),
+            reviewed.replace("make test || return 1", "make test"),
+        ]:
+            with self.subTest(configuration=changed):
+                self.assertNotEqual(changed, reviewed)
+                installer.write_text(changed)
+                self.assert_no_native_effects()
+        installer.write_text(reviewed)
+        seed.guard_vendor(self.sdk)
+
+    def test_native_installer_propagates_each_build_or_test_failure_without_later_steps(self):
+        seed.guard_vendor(self.sdk)
+        work = self.reports / "installer-work"
+        tools = self.reports / "installer-tools"
+        work.mkdir(mode=0o700)
+        tools.mkdir(mode=0o700)
+        (work / "Makefile").write_text("owned already-configured fixture")
+        configure = work / "configure"
+        configure.write_text(
+            '#!/bin/sh\nprintf "configure|%s|%s\\n" "$CFLAGS" "$*" >> "$TRACE"\n'
+            '[ "$FAILED_STAGE" != configure ]\n'
+        )
+        make = tools / "make"
+        make.write_text(
+            '#!/bin/sh\ncase "$*" in test) stage=test ;; DESTDIR=*) stage=install ;; '
+            '*) stage=build ;; esac\nprintf "%s\\n" "$stage" >> "$TRACE"\n'
+            '[ "$FAILED_STAGE" != "$stage" ]\n'
+        )
+        configure.chmod(0o700)
+        make.chmod(0o700)
+        installer = self.sdk / "deps/librdkafka/mklove/modules/configure.zlib"
+        for failure, expected in [
+            ("configure", 1), ("build", 2), ("test", 3), ("install", 4), ("none", 4),
+        ]:
+            with self.subTest(failure=failure):
+                trace = self.reports / (failure + ".steps")
+                result = seed.subprocess.run(
+                    ["/bin/bash", "-c",
+                     'mkl_toggle_option() { :; }; source "$1"; install_source zlib "$2"',
+                     "owned-installer-fixture", str(installer), str(work / "dest")],
+                    cwd=work, env={"PATH": str(tools) + ":/usr/bin:/bin",
+                                   "LANG": "C.UTF-8", "FAILED_STAGE": failure,
+                                   "TRACE": str(trace)},
+                    stdin=seed.subprocess.DEVNULL, stdout=seed.subprocess.PIPE,
+                    stderr=seed.subprocess.STDOUT, timeout=5, check=False,
+                )
+                self.assertEqual(result.returncode, 0 if failure == "none" else 1)
+                steps = trace.read_text().splitlines()
+                self.assertEqual(len(steps), expected)
+                self.assertEqual(steps[0],
+                                 "configure|-fPIC -fvisibility=hidden|--static --zprefix --prefix=/usr")
+                self.assertEqual(steps[1:], ["build", "test", "install"][:expected - 1])
+
+    def test_legacy_source_archive_cannot_seed_the_new_cache(self):
+        with self.assertRaises(ValueError):
+            seed.extract_archive(archive([("zlib-1.3.2/fixture", tarfile.REGTYPE)]), self.reports)
+        self.assertEqual(list(self.reports.iterdir()), [])
+
     def test_archive_escape_links_special_entries_and_duplicates_write_nothing(self):
         cases = [
-            [("zlib-1.3.2/../../escape", tarfile.REGTYPE)],
-            [("/zlib-1.3.2/escape", tarfile.REGTYPE)],
+            [("zlib-1.4/../../escape", tarfile.REGTYPE)],
+            [("/zlib-1.4/escape", tarfile.REGTYPE)],
             [("foreign/file", tarfile.REGTYPE)],
-            [("zlib-1.3.2/link", tarfile.SYMTYPE)],
-            [("zlib-1.3.2/link", tarfile.LNKTYPE)],
-            [("zlib-1.3.2/pipe", tarfile.FIFOTYPE)],
-            [("zlib-1.3.2/a", tarfile.REGTYPE)] * 2,
-            [("zlib-1.3.2/file" + str(i), tarfile.REGTYPE) for i in range(513)],
+            [("zlib-1.4/link", tarfile.SYMTYPE)],
+            [("zlib-1.4/link", tarfile.LNKTYPE)],
+            [("zlib-1.4/pipe", tarfile.FIFOTYPE)],
+            [("zlib-1.4/a", tarfile.REGTYPE)] * 2,
+            [("zlib-1.4/file" + str(i), tarfile.REGTYPE) for i in range(513)],
         ]
         for entries in cases:
             with self.subTest(entries=entries[:1]):
@@ -167,7 +249,7 @@ class SeedTests(unittest.TestCase):
 
     def test_regular_source_extracts_and_exclusive_publication_preserves_old_cache(self):
         source = seed.extract_archive(archive([
-            ("zlib-1.3.2/fixture", tarfile.REGTYPE),
+            ("zlib-1.4/fixture", tarfile.REGTYPE),
         ]), self.reports)
         seed.publish_cache(source, self.target)
         self.assertEqual((self.target / "fixture").read_bytes(), b"safe")
@@ -195,17 +277,17 @@ class SeedTests(unittest.TestCase):
         def configure(arguments, **options):
             source = options["cwd"]
             self.assertTrue(source.is_relative_to(self.reports))
-            self.assertEqual(arguments, [str(source / "configure"), "--static", "--prefix=/usr"])
+            self.assertEqual(arguments, [str(source / "configure"), "--static", "--zprefix", "--prefix=/usr"])
             self.assertEqual(options["env"], {
                 "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8",
-                "CFLAGS": "-fPIC", "libdir": "/usr/lib",
+                "CFLAGS": "-fPIC -fvisibility=hidden", "libdir": "/usr/lib",
             })
             self.assertTrue(options["check"])
             self.assertEqual(options["timeout"], 60)
             self.assertEqual(options["stdin"], seed.subprocess.DEVNULL)
             (source / "Makefile").write_text("owned configured fixture")
 
-        data = archive([("zlib-1.3.2/configure", tarfile.REGTYPE)])
+        data = archive([("zlib-1.4/configure", tarfile.REGTYPE)])
         with patch.object(seed, "download_archive", return_value=data), \
                 patch.object(seed.subprocess, "run", side_effect=configure) as execute, \
                 patch.dict(os.environ, {"CC": "untrusted", "BASH_ENV": "untrusted"}):

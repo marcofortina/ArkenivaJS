@@ -18,17 +18,17 @@ import urllib.request
 from urllib.parse import urlsplit
 
 
-VERSION = "1.3.2"
+VERSION = "1.4"
 ARCHIVE_URL = (
-    "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz"
+    "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz"
 )
-ARCHIVE_BYTES = 1502830
-ARCHIVE_SHA256 = "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
+ARCHIVE_BYTES = 1507140
+ARCHIVE_SHA256 = "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584"
 VENDOR_GUARDS = {
     "util/configure.js":
         "3d6fc1a5024a08c5736f2b18da6a68dfef13732c0bc72a9f0ecf25a51225e508",
     "deps/librdkafka/mklove/modules/configure.zlib":
-        "769d70e192903aa3b720fd45387eb7fc35ff6469cca9eec8f795299179aea28c",
+        "f58faf9804dcce7eeaf7db30f902cb6d107e24d3b9f54bc7cb760914e2ff7ccf",
 }
 
 
@@ -210,9 +210,9 @@ def seed(workspace, reports):
             raise ValueError("The verified native source configure script is missing")
         with (reports / "zlib-source-configure.log").open("xb") as output:
             subprocess.run(
-                [str(configure), "--static", "--prefix=/usr"], cwd=source,
+                [str(configure), "--static", "--zprefix", "--prefix=/usr"], cwd=source,
                 env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8",
-                     "CFLAGS": "-fPIC", "libdir": "/usr/lib"},
+                     "CFLAGS": "-fPIC -fvisibility=hidden", "libdir": "/usr/lib"},
                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
                 timeout=60, check=True,
             )

@@ -72,11 +72,19 @@ export class Connection {
       library = require('@confluentinc/kafka-javascript') as typeof library;
       const local = createRequire(require.resolve('@confluentinc/kafka-javascript/package.json'));
       const binding: unknown = local('./librdkafka.js');
+      if (!binding || typeof binding !== 'object') throw failure('EK_KAFKA_CONFIG');
+      const compatibility = Object.getOwnPropertyDescriptor(
+          binding,
+          'arkenivajsNativeCompatibilityVersion',
+        ),
+        zlib = Object.getOwnPropertyDescriptor(binding, 'arkenivajsNativeZlibVersion');
       if (
-        !binding ||
-        typeof binding !== 'object' ||
-        Object.getOwnPropertyDescriptor(binding, 'arkenivajsNativeCompatibilityVersion')?.value !==
-          2
+        !compatibility ||
+        !Object.hasOwn(compatibility, 'value') ||
+        compatibility.value !== 3 ||
+        !zlib ||
+        !Object.hasOwn(zlib, 'value') ||
+        zlib.value !== '1.4'
       )
         throw failure('EK_KAFKA_CONFIG');
     } catch {

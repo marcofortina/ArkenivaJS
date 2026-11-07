@@ -43,6 +43,26 @@ diff --git a/deps/librdkafka/mklove/Makefile.base b/deps/librdkafka/mklove/Makef
  else
  	for _f in $(LIBNAME).a $(MKL_STATIC_LIBS) ; do \
  		ar -r $@ $$_f ; \
+diff --git a/deps/librdkafka/mklove/modules/configure.zlib b/deps/librdkafka/mklove/modules/configure.zlib
+--- a/deps/librdkafka/mklove/modules/configure.zlib
++++ b/deps/librdkafka/mklove/modules/configure.zlib
+@@ -45,2 +45,2 @@
+-    local ver=1.3.2
+-    local checksum="bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
++    local ver=1.4
++    local checksum="02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584"
+@@ -51 +51 @@
+-            "https://zlib.net/fossils/zlib-${ver}.tar.gz" \
++            "https://github.com/madler/zlib/releases/download/v${ver}/zlib-${ver}.tar.gz" \
+@@ -56,4 +56,4 @@
+-    CFLAGS=-fPIC ./configure --static --prefix=/usr
+-    make -j
+-    make test
+-    make DESTDIR="${destdir}" install
++    CFLAGS="-fPIC -fvisibility=hidden" ./configure --static --zprefix --prefix=/usr || return 1
++    make -j || return 1
++    make test || return 1
++    make DESTDIR="${destdir}" install || return 1
 diff --git a/lib/kafkajs/_admin.js b/lib/kafkajs/_admin.js
 --- a/lib/kafkajs/_admin.js
 +++ b/lib/kafkajs/_admin.js
@@ -451,14 +471,13 @@ diff --git a/package.json b/package.json
 diff --git a/src/binding.cc b/src/binding.cc
 --- a/src/binding.cc
 +++ b/src/binding.cc
-@@ -68,6 +68,7 @@
-   AdminClient::Init(exports);
-   Topic::Init(exports);
-   ConstantsInit(exports);
-+  Nan::Set(exports, Nan::New("arkenivajsNativeCompatibilityVersion").ToLocalChecked(), Nan::New(2));
- 
-   Nan::Set(exports, Nan::New("librdkafkaVersion").ToLocalChecked(),
-       Nan::New(RdKafka::version_str().c_str()).ToLocalChecked());
+@@ -13,0 +14,2 @@
++
++extern "C" const char *z_zlibVersion(void) __attribute__((visibility("hidden")));
+@@ -70,0 +73,3 @@
++  Nan::Set(exports, Nan::New("arkenivajsNativeCompatibilityVersion").ToLocalChecked(), Nan::New(3));
++  Nan::Set(exports, Nan::New("arkenivajsNativeZlibVersion").ToLocalChecked(),
++    Nan::New(z_zlibVersion()).ToLocalChecked());
 diff --git a/src/callbacks.cc b/src/callbacks.cc
 --- a/src/callbacks.cc
 +++ b/src/callbacks.cc

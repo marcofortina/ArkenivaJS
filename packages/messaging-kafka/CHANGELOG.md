@@ -1,6 +1,13 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it> -->
+
 # Changelog
 
 ## 0.1.0
+
+- Require native compatibility format 3 and an actual private zlib 1.4 version before secret, certificate or network access.
+- Isolate the private gzip implementation with upstream symbol prefixing and hidden visibility; reject older or accessor-based metadata.
+- Add native gzip record/header/commit conformance coverage without changing framework configuration or the ordinary uncompressed benchmark workload.
 
 - Preserve nullable native group descriptions without crashing or hiding broker authorization errors.
 

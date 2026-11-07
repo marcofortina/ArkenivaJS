@@ -15,11 +15,15 @@ test('Actual native offset conversions preserve signed 64-bit integers before pr
   const sdk = dirname(manifest),
     local = createRequire(manifest);
   require('@confluentinc/kafka-javascript');
-  assert.equal(
-    (local('./librdkafka.js') as { arkenivajsNativeCompatibilityVersion?: number })
-      .arkenivajsNativeCompatibilityVersion,
-    2,
-  );
+  const binding = local('./librdkafka.js') as Record<string, unknown>;
+  for (const [name, expected] of [
+    ['arkenivajsNativeCompatibilityVersion', 3],
+    ['arkenivajsNativeZlibVersion', '1.4'],
+  ] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(binding, name);
+    assert.ok(descriptor && Object.hasOwn(descriptor, 'value'));
+    assert.equal(descriptor.value, expected);
+  }
   const directory = await mkdtemp(join(tmpdir(), 'owned-kafka-offset-'));
   try {
     const binary = join(sdk, 'build/Release/confluent-kafka-javascript.node');
