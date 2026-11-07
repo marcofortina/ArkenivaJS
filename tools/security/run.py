@@ -14,8 +14,8 @@ import time
 import re
 
 IMAGE = "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
-REVIEWED_VECTOR = "fc0a86f0f54e0fdecb8951944c7065fd454f4245:packages/security-totp/test/unit/service.unit.test.ts:generic-api-key:229"
-REVIEWED_VERSION_COMMIT = "f4f63b387e16e531188a70ddddbd8119f61f6a66"
+REVIEWED_VECTOR = "f20f928f38131824fcce2c5bcd35c84b9e4d6a66:packages/security-totp/test/unit/service.unit.test.ts:generic-api-key:229"
+REVIEWED_VERSION_COMMIT = "a3c58d90ffb4d281da5012e21f080bab13bf75a0"
 REVIEWED_VERSIONS = (
     ("examples/cryptography/src/secret-fixture.ts", 83, "fixture-encryption-v1"),
     ("examples/cryptography/src/secret-fixture.ts", 88, "fixture-signing-v1"),
