@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Preserve full-width offline asset identities and nanosecond stability without numeric truncation.
 - Capture the original secret-provider callback and receiver without executing custom binding metadata or proxy prototype traps.
 
 - Register the explicit SOAP capability with immutable offline catalogs,

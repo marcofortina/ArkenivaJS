@@ -33,23 +33,23 @@ export function importedPath(source: string, reference: string, root: string): s
 }
 async function readAsset(path: string, signal: AbortSignal): Promise<string> {
   if (signal.aborted) throw failure('EK_ABORTED');
-  const before = await lstat(path);
+  const before = await lstat(path, { bigint: true });
   if (!before.isFile() || before.isSymbolicLink() || (await realpath(path)) !== path)
     throw failure();
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const stat = await file.stat();
+    const stat = await file.stat({ bigint: true });
     if (
       !stat.isFile() ||
-      stat.size < 1 ||
-      stat.size > 1048576 ||
-      stat.mode & 0o022 ||
-      (stat.uid !== 0 && stat.uid !== process.getuid?.()) ||
+      stat.size < 1n ||
+      stat.size > 1048576n ||
+      stat.mode & 0o022n ||
+      (stat.uid !== 0n && stat.uid !== BigInt(process.getuid?.() ?? -1)) ||
       stat.dev !== before.dev ||
       stat.ino !== before.ino
     )
       throw failure();
-    const data = Buffer.alloc(stat.size);
+    const data = Buffer.alloc(Number(stat.size));
     try {
       let position = 0;
       while (position < data.length) {
@@ -58,11 +58,11 @@ async function readAsset(path: string, signal: AbortSignal): Promise<string> {
         if (!bytesRead) throw failure();
         position += bytesRead;
       }
-      const after = await file.stat();
+      const after = await file.stat({ bigint: true });
       if (
         after.size !== stat.size ||
-        after.mtimeMs !== stat.mtimeMs ||
-        after.ctimeMs !== stat.ctimeMs ||
+        after.mtimeNs !== stat.mtimeNs ||
+        after.ctimeNs !== stat.ctimeNs ||
         signal.aborted
       )
         throw failure();
