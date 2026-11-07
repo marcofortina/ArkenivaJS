@@ -2561,6 +2561,15 @@ importers:
       '@confluentinc/kafka-javascript':
         specifier: 1.11.0
         version: 1.11.0(patch_hash=5a1f7dd5b5a77f19f5815996e94efede03c6ad054394a4447d5dc7310856302e)
+      '@fastify/cookie':
+        specifier: 11.1.3
+        version: 11.1.3
+      '@fastify/csrf':
+        specifier: 8.1.1
+        version: 8.1.1
+      '@fastify/csrf-protection':
+        specifier: 8.0.2
+        version: 8.0.2
       '@fastify/helmet':
         specifier: 13.2.0
         version: 13.2.0
