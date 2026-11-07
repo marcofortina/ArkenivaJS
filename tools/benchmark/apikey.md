@@ -76,8 +76,10 @@ Child CPU/RSS/heap/GC/event-loop measurements include setup, warmup, paced waits
 SDK background work and flush. Memory uses 10 ms samples plus explicit
 boundaries, not an exact allocation maximum. Parent CPU separately includes
 native HMAC, SQL-provider/authority work, IPC validation and OTLP capture over
-each worker's whole lifetime; parent RSS uses boundaries only. Do not add those
-windows as precise per-request CPU or tenant allocation.
+the window starting before the independent attempt-counter query and ending after
+worker exit and the existing SQL/provider/conformance/OTLP checks. Parent RSS
+uses boundaries only. Do not add those windows as precise per-request CPU or
+tenant allocation.
 
 The bounded loopback OTLP receiver permits eight active requests, 1 MiB per body
 and 32 MiB total. It inspects actual JSON exports for credentials, keyed
@@ -88,9 +90,21 @@ do not mask real whole-value or embedded secret leaks. Exporter drops/failures
 must be zero. Repeated body counts are observed; an exact exporter retry counter
 is unavailable and remains `null`.
 
+Each completed worker result is also retained in a fresh
+`<mode>-observations.json` file, including when strict validation rejects that
+profile or a later profile fails. These files always say `validation: UNVERIFIED`
+and `releaseGate: false`; they retain raw child samples, observed provider-call
+counts and Git/source identities, and do not replace an accepted final report.
+The checkpoint runs in the validation block's `finally`: accepted parent resource
+snapshots are taken before checkpoint privacy checks, Git metadata reads,
+serialization and file I/O. Child latency/resource windows are unchanged. Files
+use mode `0600` and exclusive creation; a privacy or persistence failure stops the
+run. The strict load, exporter, 387-call and 55-counter gates remain mandatory.
+`report.json` is written only after all four profiles and final source checks pass.
+
 No raw corpus, OTLP bodies or sensitive comparison fingerprints are persisted in
-the report. Worker diagnostics are never forwarded. Shutdown aborts outstanding
-provider work and closes owned listeners, applications and schemas. The parent
+reports or checkpoints. Worker diagnostics are never forwarded. Shutdown aborts
+outstanding provider work and closes owned listeners, applications and schemas. The parent
 has a 60-second worker watchdog. Providers are test-only native fixtures, not
 production key-management certification.
 

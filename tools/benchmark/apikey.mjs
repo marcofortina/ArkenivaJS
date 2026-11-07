@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { apiKeyFixture } from '../../examples/postgres/dist-test/integration/api-key-fixture.js';
 import { countSensitiveValues, fingerprint } from './mfa-privacy.mjs';
 import { runOrder } from './http-analysis.mjs';
+import { writeApiKeyObservation } from './apikey-observations.mjs';
 
 const args = process.argv.slice(2);
 assert.ok(
@@ -38,6 +39,7 @@ const sourceFiles = [
   'pnpm-lock.yaml',
   'tools/benchmark/package.json',
   'tools/benchmark/apikey.mjs',
+  'tools/benchmark/apikey-observations.mjs',
   'tools/benchmark/apikey-worker.mjs',
   'tools/benchmark/apikey-native.mjs',
   'tools/benchmark/http-analysis.mjs',
@@ -287,86 +289,106 @@ try {
         else resolve(result);
       });
     });
-    assert.equal(result.report.mode, mode);
-    if (
-      result.report.record.completedOperations !== 50 ||
-      result.report.record.errors +
-        result.report.record.saturationDrops +
-        result.report.record.schedulingDrops
-    ) {
-      await writeFile(
-        resolve(directory, 'failure.json'),
-        JSON.stringify(
-          { status: 'FAIL', mode, record: result.report.record, providerCalls: calls },
-          null,
-          2,
-        ) + '\n',
-        { mode: 0o600, flag: 'wx' },
-      );
-      throw new Error(
-        'Credential smoke incomplete: errors=' +
-          result.report.record.errors +
-          ', saturated=' +
+    try {
+      assert.equal(result.report.mode, mode);
+      if (
+        result.report.record.completedOperations !== 50 ||
+        result.report.record.errors +
           result.report.record.saturationDrops +
-          ', late=' +
+          result.report.record.schedulingDrops
+      ) {
+        await writeFile(
+          resolve(directory, 'failure.json'),
+          JSON.stringify(
+            { status: 'FAIL', mode, record: result.report.record, providerCalls: calls },
+            null,
+            2,
+          ) + '\n',
+          { mode: 0o600, flag: 'wx' },
+        );
+        throw new Error(
+          'Credential smoke incomplete: errors=' +
+            result.report.record.errors +
+            ', saturated=' +
+            result.report.record.saturationDrops +
+            ', late=' +
+            result.report.record.schedulingDrops,
+        );
+      }
+      assert.equal(result.report.record.completedOperations, 50);
+      assert.equal(
+        result.report.record.errors +
+          result.report.record.saturationDrops +
           result.report.record.schedulingDrops,
-      );
-    }
-    assert.equal(result.report.record.completedOperations, 50);
-    assert.equal(
-      result.report.record.errors +
-        result.report.record.saturationDrops +
-        result.report.record.schedulingDrops,
-      0,
-    );
-    assert.deepEqual(calls, {
-      'hmac.digest': 57,
-      'store.read': 165,
-      'store.compareAndSet': 55,
-      'hmac.verify': 55,
-      'authority.require': 55,
-    });
-    assert.equal(result.report.providerCalls, 387);
-    assert.equal((await totalAttempts()) - before, 55);
-    assert.equal(tasks.size, 0);
-    const privateValues = new Set(result.fingerprints),
-      findings = capture.bodies.reduce(
-        (sum, body) => sum + countSensitiveValues(body, privateValues),
         0,
       );
-    assert.equal(
-      findings,
-      0,
-      'Credential diagnostics must contain no secret, keyed verifier or account binding',
-    );
-    assert.equal(
-      result.report.telemetry.droppedSpans +
-        result.report.telemetry.droppedMetrics +
-        result.report.telemetry.exportFailures,
-      0,
-    );
-    if (['STANDARD', 'DETAILED'].includes(mode)) {
-      assert.ok(capture.requests > 0);
-      assert.ok(capture.bodies.some((body) => body.resourceSpans));
-      assert.ok(capture.bodies.some((body) => body.resourceMetrics));
-    } else assert.equal(capture.requests, 0);
-    reports.push({
-      ...result.report,
-      parentProcessResources: {
-        elapsedMs: performance.now() - parentStart,
-        cpuDeltaMicros: process.cpuUsage(parentCpu),
-        observedBoundaryRssMaximumBytes: Math.max(parentRss, process.memoryUsage().rss),
-        providerCalls: calls,
-        durableAttemptIncrements: 55,
-      },
-      diagnosticCapture: {
-        requests: capture.requests,
-        observedOtlpBodyBytes: capture.bytes,
-        repeatedBodyCount: capture.repeatedBodies,
-        exportRetries: null,
-        sensitiveValueFindings: findings,
-      },
-    });
+      assert.deepEqual(calls, {
+        'hmac.digest': 57,
+        'store.read': 165,
+        'store.compareAndSet': 55,
+        'hmac.verify': 55,
+        'authority.require': 55,
+      });
+      assert.equal(result.report.providerCalls, 387);
+      assert.equal((await totalAttempts()) - before, 55);
+      assert.equal(tasks.size, 0);
+      const privateValues = new Set(result.fingerprints),
+        findings = capture.bodies.reduce(
+          (sum, body) => sum + countSensitiveValues(body, privateValues),
+          0,
+        );
+      assert.equal(
+        findings,
+        0,
+        'Credential diagnostics must contain no secret, keyed verifier or account binding',
+      );
+      assert.equal(
+        result.report.telemetry.droppedSpans +
+          result.report.telemetry.droppedMetrics +
+          result.report.telemetry.exportFailures,
+        0,
+      );
+      if (['STANDARD', 'DETAILED'].includes(mode)) {
+        assert.ok(capture.requests > 0);
+        assert.ok(capture.bodies.some((body) => body.resourceSpans));
+        assert.ok(capture.bodies.some((body) => body.resourceMetrics));
+      } else assert.equal(capture.requests, 0);
+      reports.push({
+        ...result.report,
+        parentProcessResources: {
+          elapsedMs: performance.now() - parentStart,
+          cpuDeltaMicros: process.cpuUsage(parentCpu),
+          observedBoundaryRssMaximumBytes: Math.max(parentRss, process.memoryUsage().rss),
+          providerCalls: calls,
+          durableAttemptIncrements: 55,
+        },
+        diagnosticCapture: {
+          requests: capture.requests,
+          observedOtlpBodyBytes: capture.bytes,
+          repeatedBodyCount: capture.repeatedBodies,
+          exportRetries: null,
+          sensitiveValueFindings: findings,
+        },
+      });
+    } finally {
+      await writeApiKeyObservation(
+        directory,
+        {
+          mode,
+          sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: root,
+            encoding: 'utf8',
+          }).trim(),
+          workingTreeDirty:
+            execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()
+              .length > 0,
+          sourceFilesSha256: measuredSources,
+          report: result.report,
+          providerCalls: calls,
+        },
+        result.fingerprints,
+      );
+    }
     capture.bodies.length = 0;
     capture.digests.clear();
     console.log('Credential verification smoke profile passed: ' + mode);
