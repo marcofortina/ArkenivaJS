@@ -26,6 +26,7 @@ PATCHES = (
     "packages/messaging-kafka/compat/confluent-exact-offsets-and-build.diff",
     "packages/realtime/compat/fastify-sse-bounded-output.diff",
     "packages/security-scim/compat/scimmy-replacement-and-empty-page.diff",
+    "packages/graphql/compat/minimatch-bounded-globparts.diff",
 )
 HUNK = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -56,37 +57,70 @@ def project_preimages(text):
         for index, line in enumerate(lines):
             match = HUNK.match(line)
             if match:
-                hunks.append((index, int(match[1]), int(match[2] or "1")))
+                hunks.append((index, int(match[1]), int(match[2] or "1"),
+                              int(match[4] or "1")))
         if not hunks:
             raise ValueError("Fixture patch sections require inspectable text hunks")
         selected.append(block)
         targets.update(x for x in (old, new) if x is not None)
         if old is None:
             continue
-        end = max(start - 1 + count for _, start, count in hunks)
+        end = max((start - 1 if count else start) + count
+                  for _, start, count, _ in hunks)
         if not 0 <= end <= 100000:
             raise ValueError("Compatibility preimage exceeds its line bound")
         values = ["// Inert preimage gap " + str(i) + "\n" for i in range(end + 2)]
-        assigned = {}
-        for number, (begin, start, count) in enumerate(hunks):
+        assigned, eof = {}, None
+        for number, (begin, start, count, new_count) in enumerate(hunks):
             stop = hunks[number + 1][0] if number + 1 < len(hunks) else len(lines)
-            source = []
+            source, new_lines = [], 0
+            previous, old_eof, new_eof = None, False, False
             for line in lines[begin + 1:stop]:
-                if line.startswith("\\ No newline"):
-                    raise ValueError("The fixture requires explicit final-newline handling")
+                if line.rstrip("\n") == "\\ No newline at end of file":
+                    if previous is None:
+                        raise ValueError("A final-newline marker must follow hunk data")
+                    if previous in {" ", "-"}:
+                        if not source[-1].endswith("\n"):
+                            raise ValueError("A preimage line cannot lose its newline twice")
+                        source[-1] = source[-1][:-1]
+                        old_eof = True
+                    if previous in {" ", "+"}:
+                        new_eof = True
+                    previous = None
+                    continue
                 if line.startswith((" ", "-")):
+                    if old_eof:
+                        raise ValueError("Preimage data cannot follow its known EOF")
                     source.append(line[1:])
                 elif line == "\n":
+                    if old_eof:
+                        raise ValueError("Preimage data cannot follow its known EOF")
                     source.append(line)
                 elif not line.startswith("+"):
                     raise ValueError("Unexpected compatibility hunk data")
-            if len(source) != count:
-                raise ValueError("Compatibility hunk preimage count is inconsistent")
-            for offset, value in enumerate(source, start - 1):
+                previous = " " if line == "\n" else line[0]
+                if previous in {" ", "+"}:
+                    if new_eof:
+                        raise ValueError("Patched data cannot follow its known EOF")
+                    new_lines += 1
+            if len(source) != count or new_lines != new_count:
+                raise ValueError("Compatibility hunk line count is inconsistent")
+            position = start - 1 if count else start
+            if old_eof or new_eof:
+                # Either side's explicit EOF establishes that no unchanged tail exists.
+                current_eof = position + count
+                if eof is not None and eof != current_eof:
+                    raise ValueError("Compatibility hunks disagree about their known EOF")
+                eof = current_eof
+            for offset, value in enumerate(source, position):
                 if offset in assigned and assigned[offset] != value:
                     raise ValueError("Overlapping hunks disagree about their preimage")
                 values[offset] = value
                 assigned[offset] = value
+        if eof is not None:
+            if eof != end:
+                raise ValueError("Compatibility hunks extend beyond their known EOF")
+            values = values[:eof]
         preimages[old] = "".join(values).encode()
     if not selected or sum(map(len, preimages.values())) > 8 * 1024 * 1024:
         raise ValueError("Compatibility fixtures must be nonempty and bounded")
@@ -181,6 +215,59 @@ def run_case(base, pnpm, manager, label, preimages, targets, patch, negative=Fal
     return {"case": label, "patchedFiles": len(first), "rebuilds": 2, "payloadUnchanged": True}
 
 
+class ProjectPreimagesTests(unittest.TestCase):
+    def test_known_eof_preserves_each_old_final_newline(self):
+        for old_newline, new_newline in [(False, False), (False, True), (True, False)]:
+            with self.subTest(old=old_newline, new=new_newline):
+                marker = "\\ No newline at end of file\n"
+                patch = ("diff --git a/index.js.map b/index.js.map\n"
+                         "--- a/index.js.map\n+++ b/index.js.map\n@@ -1 +1 @@\n"
+                         '-{"old":true}\n' + ("" if old_newline else marker) +
+                         '+{"new":true}\n' + ("" if new_newline else marker))
+                preimages, targets, selected = project_preimages(patch)
+                self.assertEqual(preimages, {"index.js.map": b'{"old":true}' +
+                                             (b"\n" if old_newline else b"")})
+                self.assertEqual(targets, ["index.js.map"])
+                self.assertEqual(selected, patch)
+
+    def test_unknown_eof_retains_inert_tail(self):
+        patch = ("diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n"
+                 "@@ -1 +1 @@\n-old\n+new\n")
+        preimages, _, _ = project_preimages(patch)
+        self.assertEqual(preimages["index.js"],
+                         b"old\n// Inert preimage gap 1\n// Inert preimage gap 2\n")
+
+    def test_context_eof_preserves_unterminated_last_line(self):
+        patch = ("diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n"
+                 "@@ -1,2 +1,2 @@\n-old\n+new\n last\n"
+                 "\\ No newline at end of file\n")
+        preimages, _, selected = project_preimages(patch)
+        self.assertEqual(preimages["index.js"], b"old\nlast")
+        self.assertEqual(selected, patch)
+
+    def test_malformed_eof_markers_reject(self):
+        header = "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n"
+        marker = "\\ No newline at end of file\n"
+        for hunk in [
+            "@@ -1 +1 @@\n" + marker + "-old\n+new\n",
+            "@@ -1 +1 @@\n-old\n" + marker + marker + "+new\n",
+            "@@ -1,2 +1 @@\n-old\n" + marker + "-later\n+new\n",
+            "@@ -1 +1,2 @@\n-old\n+new\n" + marker + "+later\n",
+            "@@ -1 +1 @@\n-old\n" + marker + "+new\n" + marker +
+            "@@ -3 +3 @@\n-later\n+changed\n",
+            "@@ -1 +1 @@\n-old\n\\ No newline unknown\n+new\n",
+        ]:
+            with self.subTest(hunk=hunk), self.assertRaises(ValueError):
+                project_preimages(header + hunk)
+
+    def test_known_eof_does_not_relax_preimage_line_bound(self):
+        patch = ("diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n"
+                 "@@ -100001 +100001 @@\n-old\n\\ No newline at end of file\n"
+                 "+new\n\\ No newline at end of file\n")
+        with self.assertRaisesRegex(ValueError, "line bound"):
+            project_preimages(patch)
+
+
 class DependencyPatchRebuildTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -204,6 +291,9 @@ class DependencyPatchRebuildTests(unittest.TestCase):
                               preimages, targets, patch)
         result["actualPatch"] = relative
         result["patchSha256"] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
+        if index == 3:
+            self.assertEqual(result["patchedFiles"], len(targets),
+                             "Every Minimatch artifact must participate in rebuild snapshots")
         print(json.dumps(result))
 
     def test_zero_context_control_exposes_duplicate(self):
@@ -222,6 +312,22 @@ class DependencyPatchRebuildTests(unittest.TestCase):
 
     def test_scim_patch_payload_survives_rebuild(self):
         self.check_patch(2)
+
+    def test_minimatch_patch_payload_survives_rebuild(self):
+        text = (ROOT / PATCHES[3]).read_text()
+        preimages, targets, selected = project_preimages(text)
+        expected = {"dist/" + module + "/" + artifact
+                    for module in ("commonjs", "esm")
+                    for artifact in ("index.js", "index.js.map", "index.d.ts.map")}
+        self.assertEqual(set(targets), expected)
+        self.assertEqual(set(preimages), expected)
+        self.assertEqual(selected, text, "Every real Minimatch hunk must be retained")
+        for name in expected:
+            if name.endswith(".map"):
+                self.assertFalse(preimages[name].endswith(b"\n"), name)
+                self.assertEqual(len(preimages[name].splitlines()), 1, name)
+                self.assertIsInstance(json.loads(preimages[name]), dict)
+        self.check_patch(3)
 
 
 if __name__ == "__main__":

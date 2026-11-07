@@ -34,6 +34,15 @@ IDE startup reads only its fixed local build directory. The manifest is limited 
 
 The declaration-only Monaco compatibility correction uses its public `KeyCode`, `KeyMod`, `Uri` and `Range` types while preserving the upstream SSR-safe JavaScript imports. The selected stable React compiler runtime has a byte-identical JavaScript artifact to the replaced prerelease helper. Core and REST imports never initialize React or the IDE.
 
+The workspace carries a narrow security backport for transitive minimatch 10.2.6
+consumers that still require its existing APIs. It applies the upstream
+preprocessing bounds from the 11.0.1 security fix to both CommonJS and ESM artifacts,
+without adopting the version 11 matcher or changing public declarations. See the
+[upstream attribution and license](compat/licenses/minimatch-bounded-globparts.md).
+This local backport is not a published fixed 10.x release. Version-based
+Dependabot findings may remain open and require the recorded patch verification;
+the patch does not suppress an advisory or establish a general performance limit.
+
 When a telemetry provider is installed, the adapter exports `arkenivajs.graphql.requests`, `operation.duration`, `operation.complexity`, `loader.batch_size` and `denied` under the same prefix. Duration is in seconds; complexity is the derived policy work estimate. Request counts include parser and authorization failures. Resolver errors and timeouts remain distinct from policy denials. Field durations are enabled only in `detailed` telemetry mode, grouped into business or metadata fields.
 
 Metric labels use fixed operation kinds, outcomes and rejection categories. Documents, client-selected operation names, variables, arguments, tenant identifiers and tokens never become labels. Loader observations count actual scheduled batch items. Existing HTTP duration and body-byte observations stay in the API adapter; GraphQL does not repeat network bytes or treat overlapping durations as CPU consumption. Diagnostic failures never repeat application work or grant access.

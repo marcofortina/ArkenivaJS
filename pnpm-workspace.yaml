@@ -28,6 +28,7 @@ patchedDependencies:
   '@confluentinc/kafka-javascript@1.11.0': packages/messaging-kafka/compat/confluent-exact-offsets-and-build.diff
   scimmy@1.3.5: packages/security-scim/compat/scimmy-replacement-and-empty-page.diff
   '@fastify/sse@0.6.1': packages/realtime/compat/fastify-sse-bounded-output.diff
+  minimatch@10.2.6: packages/graphql/compat/minimatch-bounded-globparts.diff
   soap@1.14.0: packages/soap/compat/soap-native-scalar-text.diff
   dev-null@0.1.1: packages/soap/compat/dev-null-license-metadata.diff
   fast-deep-equal@3.1.3: packages/data-json/compat/fast-deep-equal-json-members.diff
