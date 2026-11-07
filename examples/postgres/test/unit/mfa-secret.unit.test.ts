@@ -112,76 +112,120 @@ test('Key rotation preserves old decryptability and missing/invalid keys fail cl
     }
   }));
 
-test('Secret operations honor cancellation/deadline and snapshot mutable inputs before key retrieval', () =>
-  disposable(async () => {
-    const key = randomBytes(32),
-      plain = new Uint8Array([1, 2, 3, 4]),
-      owner = { ...binding };
-    let start!: () => void, release!: () => void;
-    const started = new Promise<void>((resolve) => {
-        start = resolve;
-      }),
-      wait = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-    const pending = createDisposableMfaSecretProtector('first', async () => {
-      start();
-      await wait;
-      return key;
-    });
-    try {
-      const result = pending.seal(plain, owner);
-      await started;
-      plain.fill(0);
-      owner.subject = 'other-account';
-      release();
-      const envelope = await result;
-      assert.deepEqual(await pending.open(envelope, binding), new Uint8Array([1, 2, 3, 4]));
-      let calls = 0;
-      const unavailable = createDisposableMfaSecretProtector('first', async () => {
-        calls++;
-        return new Promise<Uint8Array>(() => {});
-      });
-      await assert.rejects(
-        unavailable.seal(plain, binding, { signal: AbortSignal.abort() }),
-        hasCode('EK_ABORTED'),
-      );
-      assert.equal(calls, 0);
-      await assert.rejects(
-        unavailable.seal(plain, binding, { timeoutMs: 5 }),
-        hasCode('EK_TIMEOUT'),
-      );
-      assert.equal(calls, 1);
-      const controller = new AbortController(),
-        cancelled = unavailable.open(envelope, binding, { signal: controller.signal });
-      controller.abort();
-      await assert.rejects(cancelled, hasCode('EK_ABORTED'));
-
-      let finish!: (value: Uint8Array) => void;
-      const late = createDisposableMfaSecretProtector(
-        'first',
-        () =>
-          new Promise<Uint8Array>((resolve) => {
-            finish = resolve;
-          }),
-      );
-      await assert.rejects(late.open(envelope, binding, { timeoutMs: 5 }), hasCode('EK_TIMEOUT'));
-      let accesses = 0;
-      finish(
-        new Proxy(key, {
-          get(target, property) {
-            if (property === 'byteLength') accesses++;
-            return Reflect.get(target, property, target) as unknown;
-          },
+test(
+  'Secret operations honor cancellation/deadline and snapshot mutable inputs before key retrieval',
+  { timeout: 5000 },
+  (t) =>
+    disposable(async () => {
+      let now = performance.now();
+      t.mock.method(performance, 'now', () => now);
+      const key = randomBytes(32),
+        plain = new Uint8Array([1, 2, 3, 4]),
+        owner = { ...binding };
+      let start!: () => void, release!: () => void;
+      const started = new Promise<void>((resolve) => {
+          start = resolve;
         }),
-      );
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      assert.equal(accesses, 0, 'Late key material must not be used after the caller deadline');
-    } finally {
-      release();
-      key.fill(0);
-    }
-  }));
+        wait = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      const pending = createDisposableMfaSecretProtector('first', async () => {
+        start();
+        await wait;
+        return key;
+      });
+      try {
+        const result = pending.seal(plain, owner);
+        await started;
+        plain.fill(0);
+        owner.subject = 'other-account';
+        release();
+        const envelope = await result;
+        assert.deepEqual(await pending.open(envelope, binding), new Uint8Array([1, 2, 3, 4]));
+        let calls = 0,
+          enter!: () => void;
+        const entered = new Promise<void>((resolve) => {
+          enter = resolve;
+        });
+        const unavailable = createDisposableMfaSecretProtector('first', async () => {
+          calls++;
+          enter();
+          return new Promise<Uint8Array>(() => {});
+        });
+        await assert.rejects(
+          unavailable.seal(plain, binding, { signal: AbortSignal.abort() }),
+          hasCode('EK_ABORTED'),
+        );
+        assert.equal(calls, 0);
+        const timedOut = assert.rejects(
+          unavailable.seal(plain, binding, { timeoutMs: 5 }),
+          hasCode('EK_TIMEOUT'),
+        );
+        await entered;
+        now += 6;
+        await timedOut;
+        assert.equal(calls, 1);
+        const controller = new AbortController(),
+          cancelled = unavailable.open(envelope, binding, { signal: controller.signal });
+        controller.abort();
+        await assert.rejects(cancelled, hasCode('EK_ABORTED'));
+
+        let finish!: (value: Uint8Array) => void, enterLate!: () => void;
+        const lateEntered = new Promise<void>((resolve) => {
+          enterLate = resolve;
+        });
+        const late = createDisposableMfaSecretProtector(
+          'first',
+          () =>
+            new Promise<Uint8Array>((resolve) => {
+              finish = resolve;
+              enterLate();
+            }),
+        );
+        const lateTimeout = assert.rejects(
+          late.open(envelope, binding, { timeoutMs: 5 }),
+          hasCode('EK_TIMEOUT'),
+        );
+        await lateEntered;
+        now += 6;
+        await lateTimeout;
+        let accesses = 0;
+        finish(
+          new Proxy(key, {
+            get(target, property) {
+              if (property === 'byteLength') accesses++;
+              return Reflect.get(target, property, target) as unknown;
+            },
+          }),
+        );
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        assert.equal(accesses, 0, 'Late key material must not be used after the caller deadline');
+      } finally {
+        release();
+        key.fill(0);
+      }
+    }),
+);
+
+test('An expired queued secret operation never admits its key provider', { timeout: 5000 }, (t) =>
+  disposable(async () => {
+    let now = performance.now(),
+      calls = 0;
+    t.mock.method(performance, 'now', () => now);
+    const unavailable = createDisposableMfaSecretProtector('first', async () => {
+      calls++;
+      return new Promise<Uint8Array>(() => {});
+    });
+    const rejected = assert.rejects(
+      unavailable.seal(new Uint8Array([1, 2, 3, 4]), binding, { timeoutMs: 5 }),
+      hasCode('EK_TIMEOUT'),
+    );
+    // Exhaust the clock before the queued provider-admission microtask runs.
+    now += 6;
+    await rejected;
+    assert.equal(calls, 0);
+  }),
+);
 
 test('Disposable marker, envelope bounds and accessor rejection prevent unsafe secret configuration', async () => {
   const original = process.env.ARKENIVA_POSTGRES_DISPOSABLE;
