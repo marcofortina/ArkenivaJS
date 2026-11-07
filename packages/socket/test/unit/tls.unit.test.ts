@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, chmod, readFile, rm } from 'node:fs/promises';
+import { X509Certificate, createPrivateKey } from 'node:crypto';
+import { mkdtemp, chmod, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import net from 'node:net';
@@ -57,20 +58,56 @@ before(async () => {
     );
     await chmod(join(directory, name + '.key'), 0o600);
   }
+  await Promise.all([
+    writeFile(join(directory, 'expired.index'), '', { mode: 0o600 }),
+    writeFile(join(directory, 'expired.serial'), '01\n', { mode: 0o600 }),
+    writeFile(
+      join(directory, 'expired.cnf'),
+      '[ca]\ndefault_ca=fixture\n[fixture]\ndatabase=expired.index\n' +
+        'new_certs_dir=.\nserial=expired.serial\ncertificate=server.pem\n' +
+        'private_key=server.key\ndefault_md=sha256\npolicy=subject\n' +
+        'x509_extensions=leaf\n[subject]\ncommonName=supplied\n[leaf]\n' +
+        'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n' +
+        'extendedKeyUsage=serverAuth,clientAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1\n',
+      { mode: 0o600 },
+    ),
+  ]);
+  const options = { cwd: directory, timeout: 10000 };
+  await execute(
+    'openssl',
+    ['req', '-new', '-key', 'server.key', '-subj', '/CN=localhost', '-out', 'expired.csr'],
+    options,
+  );
   await execute(
     'openssl',
     [
-      'x509',
+      'ca',
+      '-batch',
+      '-selfsign',
+      '-notext',
+      '-config',
+      'expired.cnf',
       '-in',
-      files().certificateFile,
-      '-signkey',
-      files().privateKeyFile,
-      '-days',
-      '-1',
+      'expired.csr',
+      '-startdate',
+      '20200101000000Z',
+      '-enddate',
+      '20200102000000Z',
       '-out',
-      join(directory, 'expired.pem'),
+      'expired.pem',
     ],
-    { timeout: 10000 },
+    options,
+  );
+  const expired = new X509Certificate(await readFile(join(directory, 'expired.pem')));
+  assert.equal(Date.parse(expired.validFrom), Date.UTC(2020, 0, 1));
+  assert.equal(Date.parse(expired.validTo), Date.UTC(2020, 0, 2));
+  assert.ok(Date.parse(expired.validFrom) < Date.parse(expired.validTo));
+  assert.ok(Date.parse(expired.validTo) < Date.now());
+  assert.equal(expired.checkHost('localhost'), 'localhost');
+  assert.equal(expired.checkIP('127.0.0.1'), '127.0.0.1');
+  assert.equal(
+    expired.checkPrivateKey(createPrivateKey(await readFile(files().privateKeyFile))),
+    true,
   );
 });
 after(async () => {

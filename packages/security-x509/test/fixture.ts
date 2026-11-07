@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
 import { execFileSync } from 'node:child_process';
-import { X509Certificate } from 'node:crypto';
+import assert from 'node:assert/strict';
+import { X509Certificate, createPrivateKey } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -113,16 +114,41 @@ export async function fixture() {
     }
     for (const name of ['root', 'intermediate'])
       openssl('ca', '-config', name + '.ini', '-gencrl', '-out', name + '.crl');
+    await writeFile(
+      path('root.ini'),
+      '\n[expired_root_extensions]\nbasicConstraints=critical,CA:TRUE,pathlen:1\n' +
+        'keyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n' +
+        'authorityKeyIdentifier=keyid:always\n',
+      { flag: 'a' },
+    );
+    openssl('req', '-new', '-key', 'root.key', '-subj', '/CN=root', '-out', 'expired-root.csr');
     openssl(
-      'x509',
+      'ca',
+      '-batch',
+      '-selfsign',
+      '-config',
+      'root.ini',
+      '-extensions',
+      'expired_root_extensions',
       '-in',
-      'root.pem',
-      '-signkey',
-      'root.key',
-      '-days',
-      '-1',
+      'expired-root.csr',
+      '-startdate',
+      '20200101000000Z',
+      '-enddate',
+      '20200102000000Z',
       '-out',
       'expired-root.pem',
+      '-notext',
+    );
+    const expiredRoot = new X509Certificate(await readFile(path('expired-root.pem')));
+    assert.equal(Date.parse(expiredRoot.validFrom), Date.UTC(2020, 0, 1));
+    assert.equal(Date.parse(expiredRoot.validTo), Date.UTC(2020, 0, 2));
+    assert.ok(Date.parse(expiredRoot.validFrom) < Date.parse(expiredRoot.validTo));
+    assert.ok(Date.parse(expiredRoot.validTo) < Date.now());
+    assert.equal(expiredRoot.ca, true);
+    assert.equal(
+      expiredRoot.checkPrivateKey(createPrivateKey(await readFile(path('root.key')))),
+      true,
     );
     const pem = await readFile(path('leaf.pem')),
       intermediate = await readFile(path('intermediate.pem')),
