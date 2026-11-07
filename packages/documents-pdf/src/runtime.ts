@@ -145,6 +145,7 @@ export class Request {
         try {
           const before = await file.stat();
           this.check();
+          if (before.dev !== entry.dev || before.ino !== entry.ino) throw failure();
           if (
             !before.isFile() ||
             before.size < 1 ||
