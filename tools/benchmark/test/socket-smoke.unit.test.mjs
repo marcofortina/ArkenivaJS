@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, access, rm } from 'node:fs/promises';
+import { mkdtemp, access, rm, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
@@ -22,22 +22,63 @@ test('Socket sampling refuses unmarked execution before PKI or report allocation
     env = { ...process.env };
   delete env.ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE;
   try {
-    await assert.rejects(
-      promisify(execFile)(
-        process.execPath,
-        [fileURLToPath(new URL('../socket.mjs', import.meta.url)), '--smoke', output],
-        { env, timeout: 5000 },
-      ),
-      (cause) => {
-        assert.match(cause.stderr, /Socket smoke requires an explicitly disposable/);
-        return true;
-      },
-    );
-    await assert.rejects(access(output));
+    for (const mode of ['--smoke', '--smoke-unix']) {
+      await assert.rejects(
+        promisify(execFile)(
+          process.execPath,
+          [fileURLToPath(new URL('../socket.mjs', import.meta.url)), mode, output],
+          { env, timeout: 5000 },
+        ),
+        (cause) => {
+          assert.match(cause.stderr, /Socket smoke requires an explicitly disposable/);
+          return true;
+        },
+      );
+      await assert.rejects(access(output));
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test(
+  'Sampled Unix echo retains an owned mode0600 socket and retires it after incomplete evidence',
+  { skip: process.platform !== 'linux' },
+  async () => {
+    const directory = await mkdtemp('/tmp/arkenivajs-socket-comparison-'),
+      path = join(directory, 'sampled-unix4096.sock'),
+      service = nativeSocket();
+    try {
+      await prepareSocketEcho(service, {
+        directory,
+        marker: 'owned-unix-sample-control',
+        sampleUnixEcho: true,
+      });
+      const before = await lstat(path, { bigint: true });
+      assert.equal(before.isSocket(), true);
+      assert.equal(before.uid, BigInt(process.getuid()));
+      assert.equal(before.mode & 0o777n, 0o600n);
+      const callback = socketEchoWorkload(service).unix4096IndependentClient,
+        running = callback();
+      await assert.rejects(callback());
+      const result = await running;
+      assert.equal(result.receivedBytes, 4096);
+      assert.equal(result.byteIdentityVerified, true);
+      assert.ok(result.firstByteMs >= 0);
+      assert.ok(result.exchangeElapsedMs >= result.firstByteMs);
+      const current = await lstat(path, { bigint: true });
+      assert.equal(current.dev, before.dev);
+      assert.equal(current.ino, before.ino);
+      await assert.rejects(completeSocketEcho(service, { measure: true, records: [] }));
+      await assert.rejects(lstat(path), { code: 'ENOENT' });
+      await assert.rejects(callback());
+      assert.throws(() => socketEchoWorkload(service));
+    } finally {
+      await service.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test('Sampled TCP echo awaits an actual independent client and rejects incomplete sample evidence', async () => {
   const service = nativeSocket();

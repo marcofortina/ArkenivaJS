@@ -11,20 +11,24 @@ import { runPureComparison } from './pure-comparison.mjs';
 
 const args = process.argv.slice(2);
 assert.ok(
-  args.length === 2 && ['--verify', '--smoke'].includes(args[0]),
-  'Use --verify or --smoke with a fresh absolute external report directory',
+  args.length === 2 && ['--verify', '--smoke', '--smoke-unix'].includes(args[0]),
+  'Use --verify, --smoke or --smoke-unix with a fresh absolute external report directory',
 );
+const measure = args[0] !== '--verify',
+  unix = args[0] === '--smoke-unix';
 assert.ok(
-  args[0] !== '--smoke' || process.env.ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE === '1',
+  !measure || process.env.ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE === '1',
   'Socket smoke requires an explicitly disposable measurement environment',
 );
+assert.ok(!unix || process.platform === 'linux', 'Unix socket sampling requires Linux');
 const directory = await mkdtemp('/tmp/arkenivajs-socket-comparison-');
 const fixture = {
   directory,
   certificateFile: join(directory, 'server.pem'),
   privateKeyFile: join(directory, 'server.key'),
   marker: randomBytes(24).toString('hex'),
-  sampleEcho: args[0] === '--smoke',
+  sampleEcho: measure,
+  sampleUnixEcho: unix,
 };
 try {
   await chmod(directory, 0o700);
@@ -54,7 +58,9 @@ try {
   await chmod(fixture.privateKeyFile, 0o600);
   await runPureComparison(
     {
-      scenarioId: 'socket-native-independent-client-verification',
+      scenarioId: unix
+        ? 'socket-unix-independent-client-lifecycle'
+        : 'socket-native-independent-client-verification',
       fixture,
       privacyValues: [
         ...Object.values(fixture).filter((value) => typeof value === 'string'),
@@ -71,16 +77,27 @@ try {
         concurrency: 1,
         testCertificateKey: 'EC P-256',
         samplingSupported: true,
-        measuredScenario: 'TCP64 independent client process lifecycle and echo',
-        samplesPerProfile: args[0] === '--smoke' ? 100 : 0,
-        warmupEchoesPerProfile: args[0] === '--smoke' ? 20 : 0,
+        measuredScenario: unix
+          ? 'Unix4096 independent client process lifecycle and echo'
+          : 'TCP64 independent client process lifecycle and echo',
+        ...(unix ? { sampledTransport: 'unix', sampledPayloadBytes: 4096 } : {}),
+        samplesPerProfile: measure ? 100 : 0,
+        warmupEchoesPerProfile: measure ? 20 : 0,
       },
       observationCoverage:
-        'Actual independent-process native clients verify byte identity over five transport scenarios in four isolated server profiles; real listener counters, TLS hostname rejection, closed handles and Unix path retirement are checked. Optional TCP64 smoke awaits120 distinct client process lifecycles, verifies every exact echo and reconciles independent listener byte/connection counters before physical closure. Supervision includes server worker and actual descendant clients. SDK exports exclude payloads and endpoints.',
+        'Actual independent-process native clients verify byte identity over five transport scenarios in four isolated server profiles; real listener counters, TLS hostname rejection, closed handles and Unix path retirement are checked. Optional ' +
+        (unix ? 'Unix4096' : 'TCP64') +
+        ' smoke awaits120 distinct client process lifecycles, verifies every exact echo and reconciles independent listener byte/connection counters before physical closure. ' +
+        (unix
+          ? 'The sampled Unix socket has owned mode0600 and a stable device/inode before close; its path must be absent afterward. '
+          : '') +
+        'Supervision includes server worker and actual descendant clients. SDK exports exclude payloads and endpoints.',
       limitations:
-        'The bounded TCP64 scenario includes child process startup, IPC, connection, echo and physical client exit in each Tinybench callback; it is not steady-connection echo latency. Client first-byte and exchange observations start after native socket construction and exclude process startup/IPC. Other transport scenarios remain verification only. Raw stream chunks are never treated as framed messages. Native Node baseline omits framework admission, bounded queues, cancellation and lifecycle checks. UDP proves only observed local request/reply, with no reliability or OS-loss claim. Sampled summed RSS is not exact peak/PSS; opaque kernel buffers remain unknown. No handshake-rate, backpressure campaign, calibrated policy-equivalent overhead, dedicated-runner budgets, five repetitions, one-hour soak or release acceptance.',
+        'The bounded ' +
+        (unix ? 'Unix4096' : 'TCP64') +
+        ' scenario includes child process startup, IPC, connection, echo and physical client exit in each Tinybench callback; it is not steady-connection echo latency. Client first-byte and exchange observations start after native socket construction and exclude process startup/IPC. Other transport scenarios remain verification only. Raw stream chunks are never treated as framed messages. Native Node baseline omits framework admission, bounded queues, cancellation and lifecycle checks. UDP proves only observed local request/reply, with no reliability or OS-loss claim. Sampled summed RSS is not exact peak/PSS; opaque kernel buffers remain unknown. No handshake-rate, backpressure campaign, calibrated policy-equivalent overhead, dedicated-runner budgets, five repetitions, one-hour soak or release acceptance.',
     },
-    args,
+    unix ? ['--smoke', args[1]] : args,
   );
 } finally {
   await rm(directory, { recursive: true, force: true });

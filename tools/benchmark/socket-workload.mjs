@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { createServer as createTlsServer } from 'node:tls';
 import { createSocket } from 'node:dgram';
 import { fork } from 'node:child_process';
-import { readFile, lstat } from 'node:fs/promises';
+import { readFile, lstat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const sampledEchoes = new WeakMap();
@@ -14,8 +14,13 @@ const sampledEchoes = new WeakMap();
 /** A distinct listener isolates sampled byte counters from the transport verification corpus. */
 export async function prepareSocketEcho(service, fixture) {
   assert.equal(sampledEchoes.has(service), false);
-  const handle = service.createTcpServer(
-    { name: 'sampled-tcp64', host: '127.0.0.1', port: 0 },
+  const unix = fixture.sampleUnixEcho === true,
+    path = unix ? join(fixture.directory, 'sampled-unix4096.sock') : undefined;
+  if (unix) await assert.rejects(lstat(path), { code: 'ENOENT' });
+  const handle = service[unix ? 'createUnixServer' : 'createTcpServer'](
+    unix
+      ? { name: 'sampled-unix4096', path, mode: 0o600 }
+      : { name: 'sampled-tcp64', host: '127.0.0.1', port: 0 },
     async (peer) => {
       for await (const bytes of peer.chunks()) await peer.send(bytes);
       await peer.end();
@@ -23,9 +28,25 @@ export async function prepareSocketEcho(service, fixture) {
   );
   try {
     const binding = await handle.start();
+    let identity;
+    if (unix) {
+      identity = await lstat(path, { bigint: true });
+      assert.equal(identity.isSocket(), true);
+      assert.equal(identity.isSymbolicLink(), false);
+      assert.equal(identity.uid, BigInt(process.getuid()));
+      assert.equal(identity.mode & 0o777n, 0o600n);
+    }
     sampledEchoes.set(service, {
       handle,
-      input: { kind: 'tcp', size: 64, binding, marker: fixture.marker },
+      input: {
+        kind: unix ? 'unix' : 'tcp',
+        size: unix ? 4096 : 64,
+        binding,
+        marker: fixture.marker,
+      },
+      operation: unix ? 'unix4096IndependentClient' : 'tcp64IndependentClient',
+      path,
+      identity,
       results: [],
       active: false,
       closed: false,
@@ -40,7 +61,7 @@ export function socketEchoWorkload(service) {
   const state = sampledEchoes.get(service);
   assert.ok(state);
   return {
-    async tcp64IndependentClient() {
+    async [state.operation]() {
       assert.equal(state.closed, false);
       assert.equal(state.active, false);
       assert.ok(state.results.length < 120);
@@ -68,26 +89,36 @@ export async function completeSocketEcho(service, { measure, records }) {
     assert.equal(state.active, false);
     assert.equal(records.length, 1);
     const record = records[0];
-    assert.equal(record.operation, 'tcp64IndependentClient');
+    assert.equal(record.operation, state.operation);
     assert.equal(record.sampleCount, 100);
     assert.equal(record.warmupIterations, 20);
     assert.equal(record.rawLatency.unit, 'milliseconds');
     assert.equal(record.rawLatency.values.length, 100);
     assert.equal(state.results.length, 120);
     for (const result of state.results) {
-      assert.equal(result.receivedBytes, 64);
+      assert.equal(result.receivedBytes, state.input.size);
       assert.equal(result.byteIdentityVerified, true);
       assert.ok(Number.isFinite(result.firstByteMs) && result.firstByteMs >= 0);
       assert.ok(
         Number.isFinite(result.exchangeElapsedMs) && result.exchangeElapsedMs >= result.firstByteMs,
       );
     }
+    if (state.identity) {
+      const current = await lstat(state.path, { bigint: true });
+      assert.equal(current.isSocket(), true);
+      assert.equal(current.isSymbolicLink(), false);
+      assert.equal(current.dev, state.identity.dev);
+      assert.equal(current.ino, state.identity.ino);
+      assert.equal(current.uid, state.identity.uid);
+      assert.equal(current.mode & 0o777n, 0o600n);
+    }
     await state.handle.stop();
+    if (state.identity) await assert.rejects(lstat(state.path), { code: 'ENOENT' });
     const stats = state.handle.stats();
     assert.equal(stats.state, 'CLOSED');
     assert.equal(stats.acceptedConnections, 120);
-    assert.equal(stats.receivedApplicationBytes, 7680);
-    assert.equal(stats.sentApplicationBytes, 7680);
+    assert.equal(stats.receivedApplicationBytes, 120 * state.input.size);
+    assert.equal(stats.sentApplicationBytes, 120 * state.input.size);
     return {
       sampledEchoes: 100,
       warmupEchoes: 20,
@@ -99,6 +130,16 @@ export async function completeSocketEcho(service, { measure, records }) {
       measurements: [...state.results],
       maximumRetainedResults: 128,
       listenerClosed: true,
+      ...(state.identity
+        ? {
+            sampledTransport: 'unix',
+            sampledPayloadBytes: state.input.size,
+            unixSocketOwned: true,
+            unixSocketInodeStable: true,
+            unixSocketMode: 0o600,
+            unixPathRemoved: true,
+          }
+        : {}),
       opaqueKernelBufferBytes: null,
     };
   } finally {
@@ -238,6 +279,7 @@ export function nativeSocket() {
           if (kind === 'udp') server.bind({ address: '127.0.0.1', port: 0 }, done);
           else server.listen(target, done);
         });
+        if (kind === 'unix' && options.mode !== undefined) await chmod(options.path, options.mode);
         state = 'LISTENING';
         const address = server.address();
         binding = kind === 'unix' ? { kind, path: address } : { kind, network: address };
@@ -278,6 +320,10 @@ export function nativeSocket() {
 
 export async function verifySocket(service, fixture) {
   const results = [];
+  let clientProcessesWaited = 0,
+    acceptedConnections = 0,
+    receivedApplicationBytes = 0,
+    sentApplicationBytes = 0;
   for (const [kind, size] of socketCases) {
     const options = {
       name: kind + '-' + size,
@@ -319,13 +365,20 @@ export async function verifySocket(service, fixture) {
         caFile: fixture.certificateFile,
       };
       const observed = await socketClient(input);
-      if (kind === 'tls') await assert.rejects(socketClient({ ...input, wrongName: true }));
+      clientProcessesWaited++;
+      if (kind === 'tls') {
+        await assert.rejects(socketClient({ ...input, wrongName: true }));
+        clientProcessesWaited++;
+      }
       await handle.stop();
       const stats = handle.stats();
       assert.equal(stats.state, 'CLOSED');
       assert.equal(stats.receivedApplicationBytes, size);
       assert.equal(stats.sentApplicationBytes, size);
       if (kind !== 'udp') assert.equal(stats.acceptedConnections, kind === 'tls' ? 2 : 1);
+      acceptedConnections += stats.acceptedConnections;
+      receivedApplicationBytes += stats.receivedApplicationBytes;
+      sentApplicationBytes += stats.sentApplicationBytes;
       if (kind === 'unix') await assert.rejects(lstat(options.path), { code: 'ENOENT' });
       results.push({
         kind,
@@ -343,5 +396,13 @@ export async function verifySocket(service, fixture) {
     scenarios: results,
     tlsWrongNameRejected: true,
     unixPathRemoved: true,
+    ...(fixture.sampleUnixEcho
+      ? {
+          independentClientProcessesWaited: clientProcessesWaited,
+          acceptedConnections,
+          receivedApplicationBytes,
+          sentApplicationBytes,
+        }
+      : {}),
   };
 }

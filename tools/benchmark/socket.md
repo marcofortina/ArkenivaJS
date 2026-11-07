@@ -9,6 +9,7 @@ report directory:
 ```sh
 pnpm --filter @arkenivajs/benchmark-foundation socket --verify /private/socket-verification
 ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation socket --smoke /private/socket-smoke
+ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation socket --smoke-unix /private/socket-unix-smoke
 ```
 
 Four isolated server profiles compare native Node `net`, `tls` and `dgram` with
@@ -57,7 +58,49 @@ and cleanup. Every owned process must be waited, with no remaining descendants
 and no inaccessible or truncated resource observations. CPU is aggregate for
 that lifecycle. Sampled summed RSS can count shared pages repeatedly and miss
 brief peaks; it is neither exact peak memory nor PSS. Kernel socket buffer bytes
-remain unknown. This is local TCP only: TLS, UDP and Unix transport remain
-functional verification, and no handshake-rate or backpressure campaign is
-claimed. Dedicated-runner budgets, calibrated policy-equivalent overhead, five
+remain unknown. TLS and UDP remain functional verification, and no handshake-rate
+or backpressure campaign is claimed. Dedicated-runner budgets, calibrated policy-equivalent overhead, five
 paired repetitions and one-hour soak acceptance remain separate work.
+
+`--smoke-unix` selects a separate Linux Unix-stream **4 KiB** lifecycle scope,
+matching the R6 workload. The existing `--smoke` remains TCP **64 bytes**; neither
+number denotes a concurrent client count. Both modes retain the same five
+untimed verification scenarios and use concurrency one. Unix sampling creates a
+distinct listener and starts 120 independent client processes: 20 warmups and
+100 measured lifecycles. Each client verifies all 4096 echoed bytes, and the
+listener independently reports 120 accepted connections and exactly **491,520
+application bytes in each direction**. The 100 measured callbacks account for
+409,600 bytes per direction and the 20 warmups for 81,920 bytes; these portions
+are derived from the fixed payload and checked callback counts. Listener totals
+and each independent client's completed echo are observed directly.
+
+Unix verification is kept separate from sampling: the five original scenarios
+use six waited client processes, including the deliberately rejected TLS
+hostname. Their listeners independently report five accepted stream connections
+and 70,016 application bytes in each direction; UDP contributes one observed
+request/reply rather than a stream connection. These totals never enter the
+sampled Unix listener's counters. Four profiles therefore retain 400 raw Unix
+samples and verify 480 sampled client lifecycles, with 1,966,080 observed bytes
+per direction on sampled listeners; the 24 additional verification client
+lifecycles and their 280,064 bytes per direction remain separately identified.
+
+The sampled Unix socket is created only under the owned private fixture
+directory. Both native and framework listeners use mode **0600**. Its socket
+type, owner, device and inode are checked after bind and again immediately
+before close; the path must be absent after close. Only boolean ownership and
+retirement evidence and the configured mode enter reports. No path, device,
+inode, payload or credential data is retained, and no custom unlink operation is
+introduced. The parent removes its own temporary fixture directory after every
+profile's processes have exited.
+
+Two resource windows remain distinct. `resource` samples the server worker
+during warmup and measured callbacks, including Tinybench import, and excludes
+the earlier protocol verification and later completion/closure. Client process
+startup, IPC and exit are part of callback elapsed time, but client CPU and RSS
+are not part of this server-only process sample. `processTreeResource` covers the
+entire supervised worker lifecycle, including server startup, all verification
+and sampled client descendants, telemetry export and cleanup. The comparison
+parent, its diagnostic collector, certificate creation and the Python observer
+are excluded. The broader window cannot be interpreted as CPU spent only on
+the 100 measured Unix echoes. Neither window measures filesystem/kernel buffer
+memory or calibrates a production overhead budget.
