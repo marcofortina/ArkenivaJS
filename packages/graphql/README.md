@@ -34,14 +34,15 @@ IDE startup reads only its fixed local build directory. The manifest is limited 
 
 The declaration-only Monaco compatibility correction uses its public `KeyCode`, `KeyMod`, `Uri` and `Range` types while preserving the upstream SSR-safe JavaScript imports. The selected stable React compiler runtime has a byte-identical JavaScript artifact to the replaced prerelease helper. Core and REST imports never initialize React or the IDE.
 
-The workspace carries a narrow security backport for transitive minimatch 10.2.6
-consumers that still require its existing APIs. It applies the upstream
-preprocessing bounds from the 11.0.1 security fix to both CommonJS and ESM artifacts,
-without adopting the version 11 matcher or changing public declarations. See the
-[upstream attribution and license](compat/licenses/minimatch-bounded-globparts.md).
-This local backport is not a published fixed 10.x release. Version-based
-Dependabot findings may remain open and require the recorded patch verification;
-the patch does not suppress an advisory or establish a general performance limit.
+The workspace uses the official fixed minimatch 11.0.5 release for the five
+transitive development-tool consumers and retires its local 10.2.6 backport.
+A narrow TypeDoc 0.28.20 compatibility correction uses the public version 11
+`match` method for partial directory matching, preserving exclusion, negation
+and dot-path rules without restoring the removed internal matcher APIs. See the
+[TypeDoc compatibility notice](compat/licenses/typedoc-minimatch-partial.md).
+Both module formats and the actual consumer graph have dedicated security and
+compatibility regressions; this dependency update does not change framework
+public contracts or establish a general performance limit.
 
 When a telemetry provider is installed, the adapter exports `arkenivajs.graphql.requests`, `operation.duration`, `operation.complexity`, `loader.batch_size` and `denied` under the same prefix. Duration is in seconds; complexity is the derived policy work estimate. Request counts include parser and authorization failures. Resolver errors and timeouts remain distinct from policy denials. Field durations are enabled only in `detailed` telemetry mode, grouped into business or metadata fields.
 

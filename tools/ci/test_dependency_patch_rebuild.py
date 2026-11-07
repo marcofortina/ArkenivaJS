@@ -26,7 +26,7 @@ PATCHES = (
     "packages/messaging-kafka/compat/confluent-exact-offsets-and-build.diff",
     "packages/realtime/compat/fastify-sse-bounded-output.diff",
     "packages/security-scim/compat/scimmy-replacement-and-empty-page.diff",
-    "packages/graphql/compat/minimatch-bounded-globparts.diff",
+    "packages/graphql/compat/typedoc-minimatch-partial.diff",
 )
 HUNK = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -293,7 +293,7 @@ class DependencyPatchRebuildTests(unittest.TestCase):
         result["patchSha256"] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
         if index == 3:
             self.assertEqual(result["patchedFiles"], len(targets),
-                             "Every Minimatch artifact must participate in rebuild snapshots")
+                             "Every TypeDoc artifact must participate in rebuild snapshots")
         print(json.dumps(result))
 
     def test_zero_context_control_exposes_duplicate(self):
@@ -313,20 +313,13 @@ class DependencyPatchRebuildTests(unittest.TestCase):
     def test_scim_patch_payload_survives_rebuild(self):
         self.check_patch(2)
 
-    def test_minimatch_patch_payload_survives_rebuild(self):
+    def test_typedoc_patch_payload_survives_rebuild(self):
         text = (ROOT / PATCHES[3]).read_text()
         preimages, targets, selected = project_preimages(text)
-        expected = {"dist/" + module + "/" + artifact
-                    for module in ("commonjs", "esm")
-                    for artifact in ("index.js", "index.js.map", "index.d.ts.map")}
+        expected = {"dist/node-utils.js"}
         self.assertEqual(set(targets), expected)
         self.assertEqual(set(preimages), expected)
-        self.assertEqual(selected, text, "Every real Minimatch hunk must be retained")
-        for name in expected:
-            if name.endswith(".map"):
-                self.assertFalse(preimages[name].endswith(b"\n"), name)
-                self.assertEqual(len(preimages[name].splitlines()), 1, name)
-                self.assertIsInstance(json.loads(preimages[name]), dict)
+        self.assertEqual(selected, text, "Every real TypeDoc hunk must be retained")
         self.check_patch(3)
 
 

@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-- Backport the upstream bounded glob-parts fix for development-tool minimatch 10.2.6 while preserving its API, both module formats and accurate source maps.
+- Replace the local minimatch 10.2.6 security backport with official fixed 11.0.5 for five development-tool consumers, adapting TypeDoc partial directory matching to its public API.
 - Refresh Mercurius's optional static dependency closure to maintained releases that include the glob traversal cancellation fix.
 - Validate subscription iterator completion flags and report incomplete source retirement without claiming successful cleanup.
 - Capture explicit shared/production PubSub deployment classification without getters or proxy execution; permit authenticated HTTPS production subscriptions only with a declared shared production provider, and explicit development process providers.
