@@ -5,8 +5,8 @@ FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20b
 ENV DEBIAN_FRONTEND=noninteractive
 RUN rm /etc/apt/sources.list.d/debian.sources \
     && printf '%s\n' \
-      'deb http://snapshot.debian.org/archive/debian/20261026T000000Z trixie main' \
-      'deb http://snapshot.debian.org/archive/debian-security/20261026T000000Z trixie-security main' \
+      'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20261026T000000Z trixie main' \
+      'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20261026T000000Z trixie-security main' \
       > /etc/apt/sources.list \
     && printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
     && chmod 755 /usr/sbin/policy-rc.d \
