@@ -40,6 +40,9 @@ export function compareHttpMetric(baseline, candidate, policy, seed = 137) {
 export function parseHttpBenchmarkArguments(args) {
   assert.ok(Array.isArray(args) && (args.length === 1 || args.length === 2));
   assert.ok(typeof args[0] === 'string' && args[0].length > 0, 'An evidence directory is required');
-  if (args.length === 2) assert.ok(['--smoke', '--soak', '--pilot'].includes(args[1]));
+  if (args.length === 2)
+    assert.ok(['--smoke', '--soak', '--pilot', '--smoke-https'].includes(args[1]));
+  if (args[1] === '--smoke-https')
+    return { directory: args[0], policy: 'smoke', transport: 'https' };
   return { directory: args[0], policy: args[1]?.slice(2) ?? 'campaign' };
 }

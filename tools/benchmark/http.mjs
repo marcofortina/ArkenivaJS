@@ -16,6 +16,7 @@ import {
   compareHttpMetric,
   parseHttpBenchmarkArguments,
 } from './http-policy.mjs';
+import { createHttpTlsFixture, httpTlsLoadEnvironment, verifyHttpTlsServer } from './http-tls.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const modes = ['BASELINE', 'FRAMEWORK', 'STANDARD', 'DETAILED'];
@@ -152,7 +153,7 @@ async function worker(settings, cpu) {
     throw cause;
   }
 }
-async function load(configuration, directory, phase, executable, cpu, signal) {
+async function load(configuration, directory, phase, executable, cpu, signal, tlsFixture) {
   const configurationPath = join(directory, phase + '-configuration.json');
   const summaryPath = join(directory, phase + '-summary.json');
   await jsonFile(configurationPath, { ...configuration, summaryPath });
@@ -166,6 +167,10 @@ async function load(configuration, directory, phase, executable, cpu, signal) {
     'json=' + join(directory, phase + '-raw.json.gz'),
     fileURLToPath(new URL('http-load.mjs', import.meta.url)),
   ];
+  if (tlsFixture)
+    arguments_.splice(1, 0, '--config', tlsFixture.optionsFile, '--insecure-skip-tls-verify=false');
+  if (tlsFixture && ['untrusted', 'wrong-name'].includes(configuration.tlsControl))
+    arguments_.splice(1, 0, '--log-output=none');
   const command = cpu === undefined ? executable : 'taskset';
   const argumentsWithAffinity =
     cpu === undefined ? arguments_ : ['-c', cpu, executable, ...arguments_];
@@ -174,7 +179,9 @@ async function load(configuration, directory, phase, executable, cpu, signal) {
     stdio: ['ignore', log, log],
     signal,
     env: {
-      ...process.env,
+      ...(tlsFixture
+        ? httpTlsLoadEnvironment(process.env, tlsFixture, configuration.tlsControl === 'untrusted')
+        : process.env),
       ARKENIVA_LOAD_CONFIG: configurationPath,
       GOMAXPROCS: '1',
       GOMEMLIMIT: '512MiB',
@@ -200,7 +207,16 @@ async function load(configuration, directory, phase, executable, cpu, signal) {
     });
     const summary = JSON.parse(await readFile(summaryPath, 'utf8'));
     assert.equal(summary.metrics.response_failures.values.count, 0);
-    assert.equal(summary.metrics.http_req_failed.values.rate, 0);
+    assert.equal(
+      summary.metrics.http_req_failed.values.rate,
+      ['untrusted', 'wrong-name'].includes(configuration.tlsControl) ? 1 : 0,
+    );
+    if (configuration.tlsControl) {
+      assert.equal(summary.metrics.http_reqs.values.count, 1);
+      assert.equal(summary.metrics.completed_json.values.count, 1);
+      if (configuration.tlsControl !== 'trusted')
+        assert.equal(summary.metrics.expected_tls_rejections.values.count, 1);
+    }
     assert.equal(summary.metrics.dropped_iterations?.values.count ?? 0, 0);
     return { elapsedMs: performance.now() - started, summary };
   } finally {
@@ -212,7 +228,7 @@ async function load(configuration, directory, phase, executable, cpu, signal) {
     await unlink(configurationPath);
   }
 }
-function comparisons(runs, seed, policy) {
+function comparisons(runs, seed, policy, selectedRoutes = routes) {
   const result = [];
   const baseline = runs
     .filter((run) => run.mode === 'BASELINE')
@@ -223,7 +239,7 @@ function comparisons(runs, seed, policy) {
     for (const metric of [
       'cpuSecondsPer1000Requests',
       'rssMean',
-      ...routes.flatMap((route) => [route + '.p95Ms', route + '.requestsPerSecond']),
+      ...selectedRoutes.flatMap((route) => [route + '.p95Ms', route + '.requestsPerSecond']),
     ]) {
       const read = (run) =>
         metric === 'cpuSecondsPer1000Requests'
@@ -242,8 +258,19 @@ function comparisons(runs, seed, policy) {
 }
 
 /** Run matched workloads in owned processes and retain raw evidence outside the checkout. */
-export async function runHttpBenchmark(path, policy = 'campaign') {
+export async function runHttpBenchmark(path, policy = 'campaign', transport = 'http') {
   const plan = httpBenchmarkPolicy(policy);
+  assert.ok(['http', 'https'].includes(transport));
+  const https = transport === 'https',
+    selectedRoutes = https ? ['json'] : routes;
+  if (https) {
+    assert.equal(policy, 'smoke', 'Direct HTTPS currently supports only the bounded smoke policy');
+    assert.equal(
+      process.env.ARKENIVA_HTTP_TLS_BENCHMARK_DISPOSABLE,
+      '1',
+      'HTTPS smoke requires an explicitly disposable measurement environment',
+    );
+  }
   assert.equal(process.env.ARKENIVA_POSTGRES_DISPOSABLE, '1');
   assert.ok(process.env.ARKENIVAJS_OTLP_ENDPOINT);
   assert.ok(process.env.ARKENIVA_BENCHMARK_K6);
@@ -271,15 +298,27 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
   const interrupted = () => controller.abort(new Error('The benchmark was interrupted'));
   process.once('SIGINT', interrupted);
   process.once('SIGTERM', interrupted);
-  let issuer;
+  let issuer, tlsFixture;
   const runs = [],
     seed = 137,
     { warmupSeconds, measuredSeconds, order } = plan;
   try {
+    if (https) tlsFixture = await createHttpTlsFixture();
     const metadata = {
       measured: true,
       releaseGate: false,
       policy,
+      ...(https
+        ? {
+            scenarioId: 'direct-https-http11-json128',
+            transport: {
+              protocol: 'https',
+              httpVersion: '1.1',
+              minimumTlsVersion: 'TLSv1.3',
+              certificateKey: 'EC P-256',
+            },
+          }
+        : {}),
       ...(policy === 'pilot'
         ? {
             evidenceKind: 'single-sustained-pilot',
@@ -328,7 +367,7 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
         seed,
         order,
         ratePerRoute: 50,
-        routes,
+        routes: selectedRoutes,
         payloadBytes: 128,
         poolMaximum: 2,
         preallocatedVusPerRoute: 25,
@@ -342,9 +381,19 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
         'Virtualization and competing physical host activity can increase variance',
         'Warmup and steady phases use separate load processes; the server process remains warm',
         'Server CPU interval includes measured load-process startup and graceful completion',
-        'Process CPU/RSS are aggregate across three mixed route workloads, never exact per-request or tenant attribution',
+        https
+          ? 'Process CPU/RSS describe JSON128B server work with the existing idle security/PostgreSQL fixture machinery; never exact per-request or tenant attribution'
+          : 'Process CPU/RSS are aggregate across three mixed route workloads, never exact per-request or tenant attribution',
         'Raw load data includes observed client bytes, not billed traffic or database-server CPU',
         'Preliminary relative budgets remain unapproved; no release pass is inferred',
+        ...(https
+          ? [
+              'One connection-cold native Node control is not a handshake latency distribution; Node and Go observations remain separate',
+              'Measured Go connection pools start empty after separate-process warmup; only the server remains warm',
+              'Go request duration excludes TCP and TLS setup; its handshake trend includes zero observations from reused connections, not a handshake count',
+              'No HTTP2/fallback, sustained HTTPS pilot, handshake capacity, calibrated overhead, repeated acceptance or one-hour soak claim',
+            ]
+          : []),
       ],
     };
     await jsonFile(join(directory, 'environment.json'), metadata);
@@ -361,11 +410,52 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
           issuer: issuer.origin,
           audience: issuer.audience,
           otlpEndpoint: process.env.ARKENIVAJS_OTLP_ENDPOINT,
+          ...(https
+            ? {
+                transport: 'https',
+                tls: {
+                  certificateFile: tlsFixture.certificateFile,
+                  privateKeyFile: tlsFixture.privateKeyFile,
+                  minVersion: 'TLSv1.3',
+                },
+              }
+            : {}),
         },
         process.env.ARKENIVA_BENCHMARK_SERVER_CPU,
       );
       try {
-        const configuration = { origin: server.address, token, expectedBody, ratePerRoute: 50 };
+        const configuration = {
+          origin: server.address,
+          ...(https ? { https: true } : { token }),
+          expectedBody,
+          ratePerRoute: 50,
+        };
+        let tlsControls;
+        if (https) {
+          const native = await verifyHttpTlsServer({
+            origin: server.address,
+            certificateFile: tlsFixture.certificateFile,
+            expectedBody,
+          });
+          const go = [];
+          for (const [selection, expectedCode] of [
+            ['untrusted', 1310],
+            ['wrong-name', 1311],
+            ['trusted', 0],
+          ]) {
+            await load(
+              { ...configuration, tlsControl: selection, durationSeconds: 1 },
+              location,
+              'tls-control-' + selection,
+              process.env.ARKENIVA_BENCHMARK_K6,
+              process.env.ARKENIVA_BENCHMARK_LOAD_CPU,
+              controller.signal,
+              tlsFixture,
+            );
+            go.push({ selection, attempts: 1, expectedErrorCode: expectedCode, verified: true });
+          }
+          tlsControls = { native, go, excludedFromMeasuredInterval: true };
+        }
         await load(
           { ...configuration, durationSeconds: warmupSeconds },
           location,
@@ -373,6 +463,7 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
           process.env.ARKENIVA_BENCHMARK_K6,
           process.env.ARKENIVA_BENCHMARK_LOAD_CPU,
           controller.signal,
+          tlsFixture,
         );
         await server.begin();
         const measured = await load(
@@ -382,11 +473,60 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
           process.env.ARKENIVA_BENCHMARK_K6,
           process.env.ARKENIVA_BENCHMARK_LOAD_CPU,
           controller.signal,
+          tlsFixture,
         );
         const observation = (await server.finish()).observations;
         assert.equal(observation.counts.failed, 0);
         assert.equal(observation.counts.active, 0);
         assert.equal(observation.counts.completed, measured.summary.metrics.http_reqs.values.count);
+        let clientTls;
+        if (https) {
+          const values = measured.summary.metrics,
+            count = observation.counts.completed,
+            serverTls = observation.tls;
+          assert.ok(count > 0);
+          assert.equal(observation.counts.authenticationVerified, 0);
+          assert.equal(observation.counts.authenticationRejected, 0);
+          assert.equal(observation.counts.authorizedOperations, 0);
+          assert.equal(observation.counts.databaseQueries, 0);
+          assert.equal(serverTls.observerFailures, 0);
+          assert.equal(serverTls.handshakeErrors, 0);
+          assert.equal(serverTls.http11Requests, count);
+          assert.equal(serverTls.unexpectedHttpVersions, 0);
+          assert.ok(
+            serverTls.successfulHandshakes > 0 &&
+              serverTls.resumedHandshakes <= serverTls.successfulHandshakes,
+          );
+          assert.deepEqual(Object.keys(serverTls.tlsVersions), ['TLSv1.3']);
+          for (const counters of [serverTls.tlsVersions, serverTls.ciphers, serverTls.alpn])
+            assert.equal(
+              Object.values(counters).reduce((sum, value) => sum + value, 0),
+              serverTls.successfulHandshakes,
+            );
+          assert.equal(values.observed_http11_responses.values.count, count);
+          assert.equal(values.observed_tls13_responses.values.count, count);
+          const ciphers = Object.fromEntries(
+            ['TLS_AES_128_GCM_SHA256', 'TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256']
+              .map((name) => [name, values['cipher_' + name].values.count])
+              .filter(([, value]) => value > 0),
+          );
+          assert.equal(
+            Object.values(ciphers).reduce((sum, value) => sum + value, 0),
+            count,
+          );
+          assert.deepEqual(Object.keys(ciphers).sort(), Object.keys(serverTls.ciphers).sort());
+          clientTls = {
+            role: 'independent-Go-k6-load',
+            http11Responses: count,
+            tls13Responses: count,
+            ciphers,
+            handshakeDurationMs: values.observed_tls_handshake_ms.values,
+            tcpConnectDurationMs: values.observed_tcp_connect_ms.values,
+            positiveHandshakeDurationObservations:
+              values.positive_handshake_duration_observations.values.count,
+            requestDurationExcludesConnectAndHandshake: true,
+          };
+        }
         if (observation.api) assert.equal(observation.api.observerFailures, 0);
         if (observation.afterFlush.meter) {
           const meter = observation.afterFlush.meter;
@@ -412,8 +552,9 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
           clientWallMs: measured.elapsedMs,
           clientBytesReceived: measured.summary.metrics.data_received.values.count,
           clientBytesSent: measured.summary.metrics.data_sent.values.count,
+          ...(https ? { tlsControls, clientTls } : {}),
           routes: Object.fromEntries(
-            routes.map((route) => {
+            selectedRoutes.map((route) => {
               const latency = measured.summary.metrics['latency_' + route].values;
               return [
                 route,
@@ -453,7 +594,7 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
       finishedAt: new Date().toISOString(),
       status: 'MEASURED',
       runs,
-      comparisons: comparisons(runs, seed, policy),
+      comparisons: comparisons(runs, seed, policy, selectedRoutes),
     };
     await jsonFile(join(directory, 'report.json'), report);
     const rows = [
@@ -491,7 +632,11 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
     throw cause;
   } finally {
     try {
-      await issuer?.close();
+      try {
+        await issuer?.close();
+      } finally {
+        await tlsFixture?.close();
+      }
     } finally {
       process.off('SIGINT', interrupted);
       process.off('SIGTERM', interrupted);
@@ -501,8 +646,8 @@ export async function runHttpBenchmark(path, policy = 'campaign') {
 }
 if (process.argv[1] && import.meta.url === new URL('file://' + resolve(process.argv[1])).href) {
   try {
-    const { directory, policy } = parseHttpBenchmarkArguments(process.argv.slice(2));
-    console.log(JSON.stringify(await runHttpBenchmark(directory, policy)));
+    const { directory, policy, transport } = parseHttpBenchmarkArguments(process.argv.slice(2));
+    console.log(JSON.stringify(await runHttpBenchmark(directory, policy, transport)));
   } catch {
     console.error('The HTTP benchmark failed; inspect the protected external artifacts');
     process.exitCode = 1;

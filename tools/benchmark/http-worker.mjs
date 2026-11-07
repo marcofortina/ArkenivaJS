@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { createWriteStream } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { Session } from 'node:inspector';
 import { performance, monitorEventLoopDelay, PerformanceObserver } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
@@ -27,6 +27,7 @@ import { telemetryPlugin } from '@arkenivajs/telemetry';
 import { meteringPlugin } from '@arkenivajs/metering';
 import { postgresPlugin } from '@arkenivajs/database-postgres';
 import { logWriteBoundary, auditLogWindow } from './http-log-audit.mjs';
+import { observeHttpsServer } from './http-tls.mjs';
 
 const require = createRequire(import.meta.url);
 const response = { ok: true, value: 7, padding: 'x'.repeat(94) };
@@ -81,6 +82,9 @@ const rank = (values, quantile) => {
 /** An isolated server process owns its resources; the controller owns offered load and raw artifacts. */
 export async function startWorker(settings) {
   assert.ok(settings && modes.includes(settings.mode));
+  assert.ok(settings.transport === undefined || ['http', 'https'].includes(settings.transport));
+  const https = settings.transport === 'https';
+  if (https) assert.equal(settings.tls?.minVersion, 'TLSv1.3');
   assert.equal(process.env.ARKENIVA_POSTGRES_DISPOSABLE, '1');
   assert.ok(process.env.ARKENIVA_POSTGRES_URL);
   assert.match(settings.issuer, /^http:\/\/127\.0\.0\.1:\d+$/);
@@ -105,6 +109,7 @@ export async function startWorker(settings) {
     sinkFailure,
     profiler,
     databaseVersion,
+    tlsObservation,
     gcOverflow = 0,
     finished = false;
   sink.on('error', (error) => {
@@ -116,6 +121,7 @@ export async function startWorker(settings) {
       profiler?.disconnect();
       gc.disconnect();
       delay.disable();
+      tlsObservation?.close();
       const failures = [];
       if (app) {
         try {
@@ -245,6 +251,16 @@ export async function startWorker(settings) {
         bodyLimit: 1048576,
         requestTimeout: 30000,
         ajv: { customOptions: { coerceTypes: false, useDefaults: false, removeAdditional: false } },
+        ...(https
+          ? {
+              https: {
+                cert: await readFile(settings.tls.certificateFile),
+                key: await readFile(settings.tls.privateKeyFile),
+                minVersion: 'TLSv1.3',
+                handshakeTimeout: 10000,
+              },
+            }
+          : {}),
       });
       const validate = new Ajv({ strict: true, allErrors: false }).compile(responseSchema);
       const configuration = toClientConfig(parse(process.env.ARKENIVA_POSTGRES_URL));
@@ -371,7 +387,11 @@ export async function startWorker(settings) {
             : 'detailed';
       app = await createApplication({
         service,
-        http: { host: '127.0.0.1', port },
+        http: {
+          host: '127.0.0.1',
+          port,
+          ...(https ? { protocol: 'https', tls: settings.tls } : {}),
+        },
         security: { issuer: settings.issuer, audience: settings.audience, algorithms: ['RS256'] },
         ...(mode === 'off'
           ? {}
@@ -433,6 +453,7 @@ export async function startWorker(settings) {
       }
     }
     databaseVersion = (await pool.query('SHOW server_version')).rows[0].server_version;
+    if (https) tlsObservation = observeHttpsServer(native.server);
   } catch (cause) {
     try {
       await close();
@@ -446,7 +467,7 @@ export async function startWorker(settings) {
   const address = native.server.address();
   assert.ok(address && typeof address === 'object');
   return {
-    address: 'http://127.0.0.1:' + address.port,
+    address: (https ? 'https://localhost:' : 'http://127.0.0.1:') + address.port,
     startupMs: performance.now() - startup,
     versions: {
       node: process.version,
@@ -462,6 +483,7 @@ export async function startWorker(settings) {
       await telemetry?.flush();
       const logStartByte = await logWriteBoundary(sink);
       for (const name of Object.keys(counts)) counts[name] = 0;
+      tlsObservation?.reset();
       if (settings.mode === 'DETAILED') {
         profiler = new Session();
         profiler.connect();
@@ -531,6 +553,7 @@ export async function startWorker(settings) {
         telemetry: difference(telemetry?.stats?.(), measurement.telemetry),
         logs: difference(logger?.stats?.(), measurement.logs),
         api: difference(app?.api.stats(), measurement.api),
+        ...(https ? { tls: tlsObservation.snapshot() } : {}),
         measurementCoverage: [
           'CPU, RSS, heap, event loop and GC describe the server process, never an exact tenant or request allocation',
           'RSS sampled once per second; short peaks may be missed',
