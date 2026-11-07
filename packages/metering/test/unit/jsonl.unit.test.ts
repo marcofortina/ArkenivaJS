@@ -201,6 +201,13 @@ test('EK-METER-001 actual file-size exhaustion rejects acknowledgment and trunca
   const script = fileURLToPath(
     new URL('../../../test/fixtures/file-exhaustion.mjs', import.meta.url),
   );
+  const startup = join(workspace, 'untrusted-startup.sh'),
+    previousBashEnv = process.env.BASH_ENV,
+    previousEnv = process.env.ENV;
+  await writeFile(startup, 'exit 93\n', { mode: 0o600 });
+  // A noninteractive shell must not execute an inherited startup program before applying the limit.
+  process.env.BASH_ENV = startup;
+  process.env.ENV = startup;
   try {
     const result = await promisify(execFile)(
       'bash',
@@ -215,12 +222,27 @@ test('EK-METER-001 actual file-size exhaustion rejects acknowledgment and trunca
         workspace,
         JSON.stringify(event),
       ],
-      { timeout: 10_000 },
+      {
+        timeout: 10_000,
+        env: {
+          PATH: '/usr/bin:/bin',
+          LANG: 'C.UTF-8',
+          LC_ALL: 'C.UTF-8',
+          NODE_ENV: 'test',
+          ...(process.env.NODE_V8_COVERAGE
+            ? { NODE_V8_COVERAGE: process.env.NODE_V8_COVERAGE }
+            : {}),
+        },
+      },
     );
     assert.match(result.stdout, /incomplete data was rolled back/);
     assert.equal(result.stderr, '');
     await assert.rejects(stat(join(workspace, 'limited.jsonl.lock')));
   } finally {
+    if (previousBashEnv === undefined) delete process.env.BASH_ENV;
+    else process.env.BASH_ENV = previousBashEnv;
+    if (previousEnv === undefined) delete process.env.ENV;
+    else process.env.ENV = previousEnv;
     await rm(workspace, { recursive: true, force: true });
   }
 });

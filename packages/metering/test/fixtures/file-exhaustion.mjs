@@ -9,6 +9,8 @@ import { createJsonlExporter } from '@arkenivajs/metering';
 
 // Only this disposable child receives the limit; retain coverage through normal process exit.
 const [workspace, encoded, previous] = process.argv.slice(2);
+assert.equal(process.env.BASH_ENV, undefined);
+assert.equal(process.env.ENV, undefined);
 const originalLimit = previous.trim().split(/\s+/).join(':');
 process.on('SIGXFSZ', () => {});
 try {
