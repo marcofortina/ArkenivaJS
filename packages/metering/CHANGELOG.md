@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Compare exact native lock identities during JSONL shutdown so adjacent 64-bit inode or device values cannot authorize removal of a replacement lock.
 - Establish explicit unsafe permissions in the JSONL rejection fixture independently of the process umask; preserve collector policy and production behavior.
 - Capture tenant verification with its original receiver without executable metadata, and observe invalid asynchronous failures without trusting promise method overrides.
 

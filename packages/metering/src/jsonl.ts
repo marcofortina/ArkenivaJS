@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
 
-import { constants } from 'node:fs';
+import { constants, type BigIntStats } from 'node:fs';
 import { open, realpath, lstat, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { resolve, relative, dirname, sep, isAbsolute } from 'node:path';
@@ -242,9 +242,9 @@ export async function createJsonlExporter(options: JsonlExporterOptions): Promis
         } catch (cause) {
           errors.push(cause);
         }
-        let held: Awaited<ReturnType<FileHandle['stat']>> | undefined;
+        let held: BigIntStats | undefined;
         try {
-          held = await lock!.stat();
+          held = await lock!.stat({ bigint: true });
         } catch (cause) {
           errors.push(cause);
         }
@@ -254,7 +254,7 @@ export async function createJsonlExporter(options: JsonlExporterOptions): Promis
           errors.push(cause);
         }
         try {
-          const present = await lstat(lockPath);
+          const present = await lstat(lockPath, { bigint: true });
           if (!held || held.ino !== present.ino || held.dev !== present.dev)
             throw failure('Meter lock ownership changed');
           await unlink(lockPath);
