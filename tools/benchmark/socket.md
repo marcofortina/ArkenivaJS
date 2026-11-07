@@ -199,3 +199,44 @@ it does not establish sustained connection throughput, backpressure capacity,
 calibrated framework overhead, five paired trials, one-hour soak or release
 acceptance. The direct native baseline still omits framework admission, queue,
 cancellation and lifecycle policy.
+
+## UDP 256-byte client lifecycle sampling
+
+`--smoke-udp` selects the R6 UDP **256-byte**, IPv4 loopback echo scope:
+
+```sh
+ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation socket --smoke-udp /private/socket-udp-smoke
+```
+
+Each profile starts a distinct sampled UDP listener and 120 fresh independent
+client processes at concurrency one: 20 warmups and 100 retained Tinybench
+samples. A client accepts an echo only from the owned listener's actual address
+and port, waits for its own native send callback and checks every echoed byte.
+Foreign-source datagrams cannot satisfy the exchange. Missing or corrupt replies
+fail the campaign; there is no retry or silent removal of failed observations.
+
+The listener independently observes exactly **30,720 application bytes per
+direction**, 120 admitted handler calls and 120 completed native reply callbacks.
+It must close with no active handlers or socket or handler errors. The
+framework's actual application-drop counter must remain zero; the direct native
+baseline reports `observedApplicationDrops: null` with explicit
+`not-applicable-no-application-drop-queue` provenance. A UDP listener accepts no stream connections. Four profiles
+therefore retain 400 raw lifecycle samples, verify 480 client request/reply
+exchanges and observe **122,880 bytes per direction**. The five original untimed
+verification scenarios and their bytes remain separately reported.
+
+Both the direct native echo path and framework benchmark handler record bounded
+monotonic durations from handler entry through the reply callback. Twenty warmup
+and 100 measured handler observations are retained separately. These server
+handler intervals differ from the client's inner exchange and first-byte
+intervals, and from the outer Tinybench callback including process startup, IPC
+and physical client exit. Lifecycle operations per second do not establish
+sustained datagram processing capacity. Resource windows retain the server-only
+and whole-process-tree meanings described above.
+
+The framework's application-drop counter observes its own bounded admission and
+queue policy. The direct native baseline has no application drop queue. Neither
+counter measures kernel, network or remote loss; `osNetworkLoss` remains `null`
+and `deliveryGuaranteed` remains `false`. These bounded local observations do
+not establish UDP reliability, many-sender capacity, calibrated overhead,
+production budgets, five paired trials, one-hour soak or release acceptance.

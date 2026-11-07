@@ -22,7 +22,13 @@ test('Socket sampling refuses unmarked execution before PKI or report allocation
     env = { ...process.env };
   delete env.ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE;
   try {
-    for (const mode of ['--smoke', '--smoke-unix', '--smoke-tls', '--smoke-tcp64k']) {
+    for (const mode of [
+      '--smoke',
+      '--smoke-unix',
+      '--smoke-tls',
+      '--smoke-tcp64k',
+      '--smoke-udp',
+    ]) {
       await assert.rejects(
         promisify(execFile)(
           process.execPath,

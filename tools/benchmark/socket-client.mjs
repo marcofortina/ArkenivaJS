@@ -62,7 +62,8 @@ function tlsObservation(socket, { started, connected, secured, firstByte, comple
 /** The actual client lives outside the server worker and never reports payload or endpoints. */
 export async function exchangeSocket(input) {
   const { kind, size, marker, binding, caFile, wrongName = false } = input;
-  const sampleTls = input.sampleTls === true;
+  const sampleTls = input.sampleTls === true,
+    sampleUdp = input.sampleUdp === true;
   assert.ok(['tcp', 'tls', 'udp', 'unix'].includes(kind));
   assert.ok([64, 256, 4096, 65536].includes(size));
   assert.equal(typeof marker, 'string');
@@ -70,6 +71,10 @@ export async function exchangeSocket(input) {
   if (sampleTls) {
     assert.equal(kind, 'tls');
     assert.equal(input.minimumTlsVersion, 'TLSv1.3');
+  }
+  if (sampleUdp) {
+    assert.equal(kind, 'udp');
+    assert.equal(size, 256);
   }
   if (kind === 'unix') assert.ok(binding.path?.startsWith('/tmp/arkenivajs-socket-comparison-'));
   else {
@@ -100,7 +105,10 @@ export async function exchangeSocket(input) {
         : connect(options);
   try {
     const started = performance.now();
-    let firstByteMs;
+    let firstByteMs,
+      datagramsSent = 0,
+      repliesFromExpectedPeer = 0,
+      ignoredForeignDatagrams = 0;
     return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('The owned socket client timed out')), 3000);
       const fail = (cause) => {
@@ -122,18 +130,48 @@ export async function exchangeSocket(input) {
             firstByteMs,
             exchangeElapsedMs: performance.now() - started,
             ...(tls ? { tls } : {}),
+            ...(sampleUdp
+              ? {
+                  udp: {
+                    datagramsSent,
+                    repliesFromExpectedPeer,
+                    ignoredForeignDatagrams,
+                    peerTupleVerified: true,
+                  },
+                }
+              : {}),
           });
         } catch (cause) {
           fail(cause);
         }
       };
       if (kind === 'udp') {
-        socket.once('message', (bytes) => {
+        let reply;
+        const finish = () => {
+          if (datagramsSent === 1 && reply) complete(reply);
+        };
+        socket.on('message', (bytes, remote) => {
+          if (remote.address !== options.host || remote.port !== options.port) {
+            ignoredForeignDatagrams++;
+            if (ignoredForeignDatagrams > 128)
+              fail(new Error('The owned UDP client exceeded its foreign datagram bound'));
+            return;
+          }
+          repliesFromExpectedPeer++;
+          if (repliesFromExpectedPeer !== 1 || bytes.length !== size) {
+            fail(new Error('The owned UDP echo exceeded its reply bound'));
+            return;
+          }
           firstByteMs = performance.now() - started;
-          complete(bytes);
+          reply = bytes;
+          finish();
         });
         socket.send(payload, options.port, options.host, (cause) => {
           if (cause) fail(cause);
+          else {
+            datagramsSent++;
+            finish();
+          }
         });
       } else {
         const chunks = [];

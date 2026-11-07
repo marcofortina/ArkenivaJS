@@ -8,6 +8,7 @@ import { createSocket } from 'node:dgram';
 import { fork } from 'node:child_process';
 import { readFile, lstat, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 const sampledEchoes = new WeakMap();
 
@@ -17,10 +18,22 @@ export async function prepareSocketEcho(service, fixture) {
   const unix = fixture.sampleUnixEcho === true,
     tls = fixture.sampleTlsEcho === true,
     tcp64k = fixture.sampleTcp64kEcho === true,
+    udp = fixture.sampleUdpEcho === true,
     path = unix ? join(fixture.directory, 'sampled-unix4096.sock') : undefined;
-  assert.ok(Number(unix) + Number(tls) + Number(tcp64k) <= 1);
+  assert.ok(Number(unix) + Number(tls) + Number(tcp64k) + Number(udp) <= 1);
   if (unix) await assert.rejects(lstat(path), { code: 'ENOENT' });
-  const handle = service[unix ? 'createUnixServer' : tls ? 'createTlsServer' : 'createTcpServer'](
+  const udpObservation = udp
+    ? { received: 0, repliesCompleted: 0, errors: 0, active: 0, durations: [] }
+    : undefined;
+  const handle = service[
+    unix
+      ? 'createUnixServer'
+      : tls
+        ? 'createTlsServer'
+        : udp
+          ? 'createUdpServer'
+          : 'createTcpServer'
+  ](
     unix
       ? { name: 'sampled-unix4096', path, mode: 0o600 }
       : tls
@@ -34,11 +47,32 @@ export async function prepareSocketEcho(service, fixture) {
               minVersion: 'TLSv1.3',
             },
           }
-        : { name: tcp64k ? 'sampled-tcp65536' : 'sampled-tcp64', host: '127.0.0.1', port: 0 },
-    async (peer) => {
-      for await (const bytes of peer.chunks()) await peer.send(bytes);
-      await peer.end();
-    },
+        : udp
+          ? { name: 'sampled-udp256', host: '127.0.0.1', port: 0, family: 'udp4' }
+          : { name: tcp64k ? 'sampled-tcp65536' : 'sampled-tcp64', host: '127.0.0.1', port: 0 },
+    udp
+      ? async (datagram, server) => {
+          const started = performance.now();
+          udpObservation.received++;
+          udpObservation.active++;
+          try {
+            assert.ok(udpObservation.received <= 120);
+            assert.equal(datagram.bytes.length, 256);
+            await server.reply(datagram, datagram.bytes);
+            udpObservation.repliesCompleted++;
+          } catch (cause) {
+            udpObservation.errors++;
+            throw cause;
+          } finally {
+            udpObservation.active--;
+            if (udpObservation.durations.length < 128)
+              udpObservation.durations.push(performance.now() - started);
+          }
+        }
+      : async (peer) => {
+          for await (const bytes of peer.chunks()) await peer.send(bytes);
+          await peer.end();
+        },
   );
   try {
     const binding = await handle.start();
@@ -53,10 +87,11 @@ export async function prepareSocketEcho(service, fixture) {
     sampledEchoes.set(service, {
       handle,
       input: {
-        kind: unix ? 'unix' : tls ? 'tls' : 'tcp',
-        size: unix ? 4096 : tcp64k ? 65536 : 64,
+        kind: unix ? 'unix' : tls ? 'tls' : udp ? 'udp' : 'tcp',
+        size: unix ? 4096 : tcp64k ? 65536 : udp ? 256 : 64,
         binding,
         marker: fixture.marker,
+        ...(udp ? { sampleUdp: true } : {}),
         ...(tls
           ? {
               caFile: fixture.certificateFile,
@@ -71,9 +106,12 @@ export async function prepareSocketEcho(service, fixture) {
           ? 'tls64IndependentClient'
           : tcp64k
             ? 'tcp65536IndependentClient'
-            : 'tcp64IndependentClient',
+            : udp
+              ? 'udp256IndependentClient'
+              : 'tcp64IndependentClient',
       path,
       identity,
+      udpObservation,
       results: [],
       active: false,
       closed: false,
@@ -129,6 +167,12 @@ export async function completeSocketEcho(service, { measure, records }) {
       assert.ok(
         Number.isFinite(result.exchangeElapsedMs) && result.exchangeElapsedMs >= result.firstByteMs,
       );
+      if (state.input.kind === 'udp') {
+        assert.equal(result.udp.datagramsSent, 1);
+        assert.equal(result.udp.repliesFromExpectedPeer, 1);
+        assert.equal(result.udp.ignoredForeignDatagrams, 0);
+        assert.equal(result.udp.peerTupleVerified, true);
+      }
       if (state.input.kind === 'tls') {
         assert.equal(result.tls.protocol, 'TLSv1.3');
         assert.ok(typeof result.tls.cipher === 'string' && result.tls.cipher.length > 0);
@@ -163,9 +207,23 @@ export async function completeSocketEcho(service, { measure, records }) {
     if (state.identity) await assert.rejects(lstat(state.path), { code: 'ENOENT' });
     const stats = state.handle.stats();
     assert.equal(stats.state, 'CLOSED');
-    assert.equal(stats.acceptedConnections, 120);
+    assert.equal(stats.acceptedConnections, state.input.kind === 'udp' ? 0 : 120);
     assert.equal(stats.receivedApplicationBytes, 120 * state.input.size);
     assert.equal(stats.sentApplicationBytes, 120 * state.input.size);
+    if (state.udpObservation) {
+      assert.equal(state.udpObservation.received, 120);
+      assert.equal(state.udpObservation.repliesCompleted, 120);
+      assert.equal(state.udpObservation.active, 0);
+      assert.equal(state.udpObservation.errors, 0);
+      assert.equal(state.udpObservation.durations.length, 120);
+      assert.ok(
+        state.udpObservation.durations.every((value) => Number.isFinite(value) && value >= 0),
+      );
+      if (stats.droppedDatagrams === null)
+        assert.equal(stats.applicationDropObservation, 'not-applicable-no-application-drop-queue');
+      else assert.equal(stats.droppedDatagrams, 0);
+      assert.equal(stats.errors, 0);
+    }
     return {
       sampledEchoes: 100,
       warmupEchoes: 20,
@@ -185,6 +243,28 @@ export async function completeSocketEcho(service, { measure, records }) {
             unixSocketInodeStable: true,
             unixSocketMode: 0o600,
             unixPathRemoved: true,
+          }
+        : {}),
+      ...(state.udpObservation
+        ? {
+            sampledTransport: 'udp',
+            sampledFamily: 'udp4',
+            sampledPayloadBytes: 256,
+            handlerReceivedDatagrams: state.udpObservation.received,
+            handlerRepliesCompleted: state.udpObservation.repliesCompleted,
+            handlerErrors: state.udpObservation.errors,
+            activeHandlersAfterClose: state.udpObservation.active,
+            observedApplicationDrops: stats.droppedDatagrams,
+            applicationDropObservation:
+              stats.applicationDropObservation ?? 'framework-local-application-drop-counter',
+            observedSocketErrors: stats.errors,
+            handlerDurationMs: {
+              warmup: state.udpObservation.durations.slice(0, 20),
+              measured: state.udpObservation.durations.slice(20),
+            },
+            handlerTimingWindow: 'Handler entry through completion of the native reply callback',
+            osNetworkLoss: null,
+            deliveryGuaranteed: false,
           }
         : {}),
       ...(state.input.kind === 'tcp' && state.input.size === 65536
@@ -261,7 +341,7 @@ export function socketClient(input) {
 /** Direct Node servers retain byte counters from actual I/O and await their owned handlers. */
 export function nativeSocket() {
   const handles = [];
-  function create(kind, options) {
+  function create(kind, options, udpHandler) {
     let server,
       binding,
       state = 'CREATED',
@@ -287,12 +367,16 @@ export function nativeSocket() {
             own(
               (async () => {
                 received += bytes.length;
-                await new Promise((done, reject) =>
-                  server.send(bytes, remote.port, remote.address, (cause) =>
-                    cause ? reject(cause) : done(),
-                  ),
-                );
-                sent += bytes.length;
+                const reply = async (_datagram, payload) => {
+                  await new Promise((done, reject) =>
+                    server.send(payload, remote.port, remote.address, (cause) =>
+                      cause ? reject(cause) : done(),
+                    ),
+                  );
+                  sent += payload.length;
+                };
+                if (udpHandler) await udpHandler({ bytes }, { reply });
+                else await reply(undefined, bytes);
               })(),
             ),
           );
@@ -367,6 +451,13 @@ export function nativeSocket() {
         receivedApplicationBytes: received,
         sentApplicationBytes: sent,
         acceptedConnections: accepted,
+        ...(kind === 'udp'
+          ? {
+              droppedDatagrams: null,
+              applicationDropObservation: 'not-applicable-no-application-drop-queue',
+              errors: failures.length,
+            }
+          : {}),
       }),
     };
     handles.push(handle);
@@ -375,7 +466,7 @@ export function nativeSocket() {
   return {
     createTcpServer: (options) => create('tcp', options),
     createTlsServer: (options) => create('tls', options),
-    createUdpServer: (options) => create('udp', options),
+    createUdpServer: (options, handler) => create('udp', options, handler),
     createUnixServer: (options) => create('unix', options),
     close: async () => {
       for (const handle of [...handles].reverse()) await handle.stop();
@@ -463,7 +554,10 @@ export async function verifySocket(service, fixture) {
     scenarios: results,
     tlsWrongNameRejected: true,
     unixPathRemoved: true,
-    ...(fixture.sampleUnixEcho || fixture.sampleTlsEcho || fixture.sampleTcp64kEcho
+    ...(fixture.sampleUnixEcho ||
+    fixture.sampleTlsEcho ||
+    fixture.sampleTcp64kEcho ||
+    fixture.sampleUdpEcho
       ? {
           independentClientProcessesWaited: clientProcessesWaited,
           acceptedConnections,
