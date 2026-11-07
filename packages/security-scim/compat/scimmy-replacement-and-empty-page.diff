@@ -1,48 +1,101 @@
 diff --git a/dist/lib/messages.js b/dist/lib/messages.js
 --- a/dist/lib/messages.js
 +++ b/dist/lib/messages.js
-@@ -222,0 +223 @@
+@@ -220,6 +220,7 @@
+             if (sortOrder === "descending") this.Resources.reverse();
+         }
+         
 +        if (this.startIndex > this.totalResults) this.Resources = [];
-@@ -462,0 +464 @@
+         // If startIndex is within results, offset results to startIndex
+         if ((this.Resources.length >= this.startIndex) && (this.totalResults !== this.Resources.length + this.startIndex - 1)) {
+             this.Resources = this.Resources.slice(this.startIndex-1);
+@@ -460,6 +461,7 @@
+         // Work out parts of the supplied path
+         const paths = path.split(pathSeparator).filter(p => p);
+         const targets = [this.#target];
 +        const resolved = [];
-@@ -478,0 +481 @@
+         let property, attribute, multiValued;
+         
+         try {
+@@ -476,6 +478,7 @@
+             // Work out if path contains a filter expression
+             const path = paths.shift();
+             const [, key = path, filter] = multiValuedFilter.exec(path) ?? [];
 +            resolved.push(key);
-@@ -491 +494 @@
+             
+             // We have arrived at our destination
+             if (paths.length === 0) {
+@@ -488,7 +491,7 @@
+                 if (target !== undefined) try {
+                     if (filter !== undefined) {
+                         // If a filter is specified, apply it to the target and add results back to targets
 -                        targets.push(...(new Types.Filter(filter.substring(1, filter.length - 1)).match(target[key])));
 +                        targets.push(...(new Types.Filter(filter.substring(1, filter.length - 1)).match(target[key], this.#schema.attribute(resolved.join(".")))));
-@@ -650,0 +654,4 @@
+                     } else {
+                         // Add the traversed value to targets, or back out if already arrived
+                         targets.push(paths.length === 0 ? target : target[key] ?? (op === "add" ? ((target[key] = target[key] ?? {}) && target[key]) : undefined));
+@@ -648,6 +651,10 @@
+      */
+     #replace(index, path, value) {
+         try {
 +            if (path === undefined && value !== null && typeof value === "object" && !Array.isArray(value)) {
 +                for (const [key, val] of Object.entries(value)) this.#replace(index, key, val);
 +                return;
 +            }
+             // Call remove, then call add!
+             try {
+                 if (path !== undefined) this.#remove(index, path);
 diff --git a/dist/lib/types.js b/dist/lib/types.js
 --- a/dist/lib/types.js
 +++ b/dist/lib/types.js
-@@ -925 +925 @@
+@@ -922,21 +922,22 @@
+      * @param {Object[]} values - values to evaluate filters against
+      * @returns {Object[]} subset of values that match any expressions of this filter instance
+      */
 -    match(values) {
 +    match(values, schema) {
-@@ -929,2 +929,3 @@
+         // Match against any of the filters in the set
+         return values.filter(value => 
+             this.some(f => Object.entries(f).every(([attr, expressions]) => {
 -                const [,actual] = Object.entries(value).find(([key]) => key.toLowerCase() === attr.toLowerCase()) ?? [];
 -                const isActualDate = (actual instanceof Date || (new Date(actual).toString() !== "Invalid Date" && String(actual).match(isoDate)));
 +                let [,actual] = Object.entries(value).find(([key]) => key.toLowerCase() === attr.toLowerCase()) ?? [];
 +                const definition = schema instanceof SchemaDefinition ? schema.attribute(attr) : schema instanceof Attribute ? (schema.name.toLowerCase() === attr.toLowerCase() ? schema : schema.subAttributes?.find(a => a.name.toLowerCase() === attr.toLowerCase())) : undefined;
 +                const isActualDate = definition ? definition.type === "dateTime" : (actual instanceof Date || (new Date(actual).toString() !== "Invalid Date" && String(actual).match(isoDate)));
-@@ -934 +935 @@
+                 
+                 if (Array.isArray(actual)) {
+                     // Handle multivalued attributes by diving into them...
 -                    return !!(Array.isArray(expressions) ? expressions : [expressions])
 +                    return !!(Array.isArray(expressions) && typeof expressions[0] === "string" ? [expressions] : Array.isArray(expressions) ? expressions : [expressions])
-@@ -936 +937 @@
+                         // ...dealing with nested joins involving complex filter expressions
 -                        .some(e => new Filter(Array.isArray(e) ? {[attr]: e} : e).match(actual).length);
 +                        .some(e => new Filter(Array.isArray(e) ? {[attr]: e} : e).match(Array.isArray(e) ? actual.map(v => ({[attr]: v})) : actual, Array.isArray(e) ? schema : definition).length);
-@@ -939 +940 @@
+                 } else if (!Array.isArray(expressions)) {
+                     // Handle complex attributes by diving into them
 -                    return !!(new Filter([expressions]).match([actual]).length);
 +                    return !!(new Filter([expressions]).match([actual], definition).length);
-@@ -955,0 +957,3 @@
+                 } else {
+                     let result = null;
+                     
+@@ -953,6 +954,9 @@
+                         if (["eq", "ne"].includes(comparator.toLowerCase()) && typeof actual === "boolean" && typeof expected === "string")
+                             expected = (expected.toLowerCase() === "false" ? false : (expected.toLowerCase() === "true" ? true : expected));
+                         
 +                        if (definition?.type === "string" && definition.config.caseExact !== true && typeof actual === "string" && typeof expected === "string") {
 +                            actual = actual.toLowerCase(); expected = expected.toLowerCase();
 +                        }
+                         switch (comparator.toLowerCase()) {
+                             default:
+                                 result = false;
 diff --git a/dist/scimmy.d.ts b/dist/scimmy.d.ts
 --- a/dist/scimmy.d.ts
 +++ b/dist/scimmy.d.ts
-@@ -261 +261 @@
+@@ -258,7 +258,7 @@
+                  * @param values Values to evaluate filters against
+                  * @returns Subset of values that match any expressions of this filter instance
+                  */
 -                match(values: any[]): any[];
 +                match(values: any[], schema?: SCIMMY.Types.SchemaDefinition | SCIMMY.Types.Attribute): any[];
+             }
+             export namespace Filter {
+                 /**

@@ -1,7 +1,11 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it> -->
+
 # Changelog
 
 ## 0.1.0
 
+- Anchor compatibility additions so dependency rebuilds preserve the reviewed native comparisons and replacements without duplicate insertions.
 - Verify incoherent provider resources and ETags, corrupted PostgreSQL data,
   runtime authority decisions and HTTP disconnect admission ownership.
 - Add authenticated standalone provisioning and lifecycle-owned HTTP, HTTPS and HTTP/2 routes.

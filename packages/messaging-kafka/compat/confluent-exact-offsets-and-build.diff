@@ -471,13 +471,21 @@ diff --git a/package.json b/package.json
 diff --git a/src/binding.cc b/src/binding.cc
 --- a/src/binding.cc
 +++ b/src/binding.cc
-@@ -13,0 +14,2 @@
+@@ -13,3 +13,5 @@
+ #include "src/binding.h"
+-
 +
 +extern "C" const char *z_zlibVersion(void) __attribute__((visibility("hidden")));
-@@ -70,0 +73,3 @@
++
+ using NodeKafka::Producer;
+@@ -70,3 +72,6 @@
+   ConstantsInit(exports);
+-
 +  Nan::Set(exports, Nan::New("arkenivajsNativeCompatibilityVersion").ToLocalChecked(), Nan::New(3));
 +  Nan::Set(exports, Nan::New("arkenivajsNativeZlibVersion").ToLocalChecked(),
 +    Nan::New(z_zlibVersion()).ToLocalChecked());
++
+   Nan::Set(exports, Nan::New("librdkafkaVersion").ToLocalChecked(),
 diff --git a/src/callbacks.cc b/src/callbacks.cc
 --- a/src/callbacks.cc
 +++ b/src/callbacks.cc

@@ -798,6 +798,7 @@ jobs:
       - name: Compile the reviewed native binding explicitly on the target Node ABI
         run: |
           set -euo pipefail
+          pnpm test:dependency-patches
           python3 -B -m unittest discover -s tools/ci -p test_seed_kafka_source.py
           python3 -B tools/ci/seed_kafka_source.py "$GITHUB_WORKSPACE" "$ARKENIVA_TEST_REPORT_DIRECTORY"
           pnpm rebuild @confluentinc/kafka-javascript 2>&1 | tee "$ARKENIVA_TEST_REPORT_DIRECTORY/native-build.log"

@@ -5,6 +5,7 @@
 
 ## 0.1.0
 
+- Anchor compatibility additions so explicit pnpm rebuilds preserve the reviewed native source without duplicate declarations or initialization.
 - Require native compatibility format 3 and an actual private zlib 1.4 version before secret, certificate or network access.
 - Isolate the private gzip implementation with upstream symbol prefixing and hidden visibility; reject older or accessor-based metadata.
 - Add native gzip record/header/commit conformance coverage without changing framework configuration or the ordinary uncompressed benchmark workload.

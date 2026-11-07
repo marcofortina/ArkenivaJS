@@ -1,24 +1,55 @@
 diff --git a/index.js b/index.js
 --- a/index.js
 +++ b/index.js
-@@ -329,0 +330 @@
+@@ -327,6 +327,7 @@
+     this.heartbeatInterval = options.heartbeatInterval
+     this.closeCallbacks = []
+     this.serializer = options.serializer
 +    this.maxBufferBytes = options.maxBufferBytes ?? Infinity
-@@ -435 +436,3 @@
+ 
+     // Set up connection close handler
+     this.reply.raw.on('close', () => {
+@@ -432,7 +433,9 @@
+     if (!this.#headersSent) {
+       this.reply.raw.setHeader('Content-Type', 'text/event-stream')
+       this.reply.raw.setHeader('Cache-Control', 'no-cache')
 -      this.reply.raw.setHeader('Connection', 'keep-alive')
 +      if (this.reply.request.raw.httpVersionMajor < 2) {
 +        this.reply.raw.setHeader('Connection', 'keep-alive')
 +      }
-@@ -551,0 +555,5 @@
+       this.reply.raw.setHeader('X-Accel-Buffering', 'no') // Disable Nginx buffering
+ 
+       // Transfer headers set via reply.header() to the raw response
+@@ -549,6 +552,11 @@
+       // Send headers on first write
+       this.sendHeaders()
+ 
 +      if (this.reply.raw.writableLength + Buffer.byteLength(data) > this.maxBufferBytes) {
 +        reject(new RangeError('SSE buffered output exceeds its configured limit'))
 +        return
 +      }
 +
-@@ -559,0 +568 @@
+       const canWrite = this.reply.raw.write(data)
+ 
+       if (canWrite) {
+@@ -557,11 +565,13 @@
+         // Handle backpressure
+         const onDrain = () => {
+           this.reply.raw.off('error', onError)
 +          this.reply.raw.off('close', onClose)
-@@ -564,0 +574 @@
+           resolve()
+         }
+ 
+         const onError = (err) => {
+           this.reply.raw.off('drain', onDrain)
 +          this.reply.raw.off('close', onClose)
-@@ -571,0 +582,8 @@
+           // Handle all errors gracefully - client disconnection is normal
+           this.#isConnected = false
+           this.cleanup()
+@@ -569,8 +579,18 @@
+           resolve() // Resolve instead of reject for graceful handling
+         }
+ 
 +        const onClose = () => {
 +          this.reply.raw.off('drain', onDrain)
 +          this.reply.raw.off('error', onError)
@@ -27,12 +58,20 @@ diff --git a/index.js b/index.js
 +          resolve()
 +        }
 +
-@@ -573,0 +592,2 @@
+         this.reply.raw.once('drain', onDrain)
+         this.reply.raw.once('error', onError)
 +        this.reply.raw.once('close', onClose)
 +        if (this.reply.raw.destroyed || this.reply.raw.writableEnded) onClose()
-@@ -583,0 +604 @@
+       }
+     })
+   }
+@@ -581,10 +601,17 @@
+    * @private
+    */
+   startHeartbeat (interval) {
 +    let pending = false
-@@ -586,2 +607,8 @@
+     this.heartbeatTimer = setInterval(() => {
+       if (this.#isConnected) {
 -        this.sendHeaders()
 -        this.reply.raw.write(': heartbeat\n\n')
 +        if (pending) return
@@ -43,20 +82,44 @@ diff --git a/index.js b/index.js
 +          pending = false
 +          this.close()
 +        })
-@@ -656 +683,2 @@
+       } else {
+         this.stopHeartbeat()
+       }
+@@ -653,7 +680,8 @@
+ async function fastifySSE (fastify, opts) {
+   const {
+     heartbeatInterval = 30000,
 -    serializer = JSON.stringify
 +    serializer = JSON.stringify,
 +    maxBufferBytes = Infinity
-@@ -719 +747,2 @@
+   } = opts
+ 
+   // Add route-level SSE handler
+@@ -716,7 +744,8 @@
+         reply,
+         lastEventId: request.headers['last-event-id'],
+         heartbeatInterval: sseOptions.heartbeat !== false ? heartbeatInterval : 0,
 -        serializer: sseOptions.serializer || serializer
 +        serializer: sseOptions.serializer || serializer,
 +        maxBufferBytes: sseOptions.maxBufferBytes ?? maxBufferBytes
+       })
+ 
+       // Store context on reply
 diff --git a/types/index.d.ts b/types/index.d.ts
 --- a/types/index.d.ts
 +++ b/types/index.d.ts
-@@ -44,0 +45,2 @@
+@@ -42,10 +42,14 @@
+ export type SSERouteOptions = boolean | SSERouteKind | {
+   kind?: SSERouteKind
+   heartbeat?: boolean
 +  /** Bound pending output, including heartbeat comments. */
 +  maxBufferBytes?: number
-@@ -48,0 +51,2 @@
+   serializer?: (data: any) => string
+ }
+ 
+ export interface SSEPluginOptions {
 +  /** Optional output budget; an omitted value preserves the upstream default. */
 +  maxBufferBytes?: number
+   /**
+    * Interval in milliseconds for sending heartbeat comments
+    * Set to 0 to disable heartbeats

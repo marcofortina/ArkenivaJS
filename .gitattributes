@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Marco Fortina <marco_fortina@hotmail.it>
+
+# Unified patch context preserves upstream whitespace-only lines verbatim.
+packages/realtime/compat/fastify-sse-bounded-output.diff whitespace=-blank-at-eol
+packages/security-scim/compat/scimmy-replacement-and-empty-page.diff whitespace=-blank-at-eol

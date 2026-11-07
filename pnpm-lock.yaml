@@ -171,8 +171,8 @@ overrides:
 packageExtensionsChecksum: sha256-+6QzCQW/mydxB2oS8DkcoFZg8lzz/D7pLZTn4z8zdGU=
 
 patchedDependencies:
-  '@confluentinc/kafka-javascript@1.11.0': c51aeaec6611e9c4fcd129d37c44cf00584126acd437a59445a62141fcedfc36
-  '@fastify/sse@0.6.1': 2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df
+  '@confluentinc/kafka-javascript@1.11.0': 5a1f7dd5b5a77f19f5815996e94efede03c6ad054394a4447d5dc7310856302e
+  '@fastify/sse@0.6.1': 141464a1393fedacdc829a06afb92173221d45659010c9e1e1fa09e6d7720742
   '@graphiql/react@0.39.1': f92286ca9621c17b473ebe19d8ed9d55bcd5bc97dee2510268c36e9fbd92399c
   amqplib@2.2.0: 5d45a5b8ea0b717b9774ec3dbc6ff9f8b9a512997f4dde9fab3d4b912c284a36
   buildcheck@0.0.7: cee0504e84446de8efbf065c18b69cda151e12d481591dbed994338e0d5b7004
@@ -184,7 +184,7 @@ patchedDependencies:
   openid-client@6.8.8: 44db73c59877ea006f5685ab89cf8376825af3e19216af871aa6f07a19b2deaf
   png-js@2.0.0: c71ba99371851d691995bf7056ea1b426a4194634433ed44fba49ad30903c7f9
   saxes@6.0.0: 983b813a63f631c02964c4647bad7918ee8742f3b697a116892b3a1cb9d1b7d1
-  scimmy@1.3.5: 6c61f52cd5a9170a05a143599d2032244219987648c9624a0ce2a17b75000f54
+  scimmy@1.3.5: 58c98514c0af1b9286fc60e7bca8caaf09caed7d48dee7edc2aff1ed07827fa9
   soap@1.14.0: 0140406b1f7dec78ea76acc1bb2e93c9ddd0fa5e3f2905bcdd597e137a57dcf5
   ssh2@1.17.0: daf8770608cc25a112f1b7c9ce2dc798f8e4e997854f6cc701c1ae508a35baf5
 
@@ -815,7 +815,7 @@ importers:
         version: 6.2.13
       scimmy:
         specifier: 1.3.5
-        version: 1.3.5(patch_hash=6c61f52cd5a9170a05a143599d2032244219987648c9624a0ce2a17b75000f54)
+        version: 1.3.5(patch_hash=58c98514c0af1b9286fc60e7bca8caaf09caed7d48dee7edc2aff1ed07827fa9)
     devDependencies:
       '@node-saml/node-saml':
         specifier: 5.1.0
@@ -923,7 +923,7 @@ importers:
         version: 6.2.13
       scimmy:
         specifier: 1.3.5
-        version: 1.3.5(patch_hash=6c61f52cd5a9170a05a143599d2032244219987648c9624a0ce2a17b75000f54)
+        version: 1.3.5(patch_hash=58c98514c0af1b9286fc60e7bca8caaf09caed7d48dee7edc2aff1ed07827fa9)
 
   examples/sftp:
     dependencies:
@@ -1816,7 +1816,7 @@ importers:
         version: link:../core
       '@confluentinc/kafka-javascript':
         specifier: 1.11.0
-        version: 1.11.0(patch_hash=c51aeaec6611e9c4fcd129d37c44cf00584126acd437a59445a62141fcedfc36)
+        version: 1.11.0(patch_hash=5a1f7dd5b5a77f19f5815996e94efede03c6ad054394a4447d5dc7310856302e)
     devDependencies:
       '@arkenivajs/logging':
         specifier: workspace:*
@@ -1888,7 +1888,7 @@ importers:
         version: link:../database-redis
       '@fastify/sse':
         specifier: 0.6.1
-        version: 0.6.1(patch_hash=2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df)(fastify@5.12.7)
+        version: 0.6.1(patch_hash=141464a1393fedacdc829a06afb92173221d45659010c9e1e1fa09e6d7720742)(fastify@5.12.7)
       '@fastify/websocket':
         specifier: 11.3.4
         version: 11.3.4
@@ -2108,7 +2108,7 @@ importers:
         version: link:../security-apikey
       scimmy:
         specifier: 1.3.5
-        version: 1.3.5(patch_hash=6c61f52cd5a9170a05a143599d2032244219987648c9624a0ce2a17b75000f54)
+        version: 1.3.5(patch_hash=58c98514c0af1b9286fc60e7bca8caaf09caed7d48dee7edc2aff1ed07827fa9)
     devDependencies:
       '@arkenivajs/api':
         specifier: workspace:*
@@ -2560,7 +2560,7 @@ importers:
         version: link:../../packages/webhooks
       '@confluentinc/kafka-javascript':
         specifier: 1.11.0
-        version: 1.11.0(patch_hash=c51aeaec6611e9c4fcd129d37c44cf00584126acd437a59445a62141fcedfc36)
+        version: 1.11.0(patch_hash=5a1f7dd5b5a77f19f5815996e94efede03c6ad054394a4447d5dc7310856302e)
       '@fastify/helmet':
         specifier: 13.2.0
         version: 13.2.0
@@ -2572,7 +2572,7 @@ importers:
         version: 10.1.6
       '@fastify/sse':
         specifier: 0.6.1
-        version: 0.6.1(patch_hash=2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df)(fastify@5.12.7)
+        version: 0.6.1(patch_hash=141464a1393fedacdc829a06afb92173221d45659010c9e1e1fa09e6d7720742)(fastify@5.12.7)
       '@fastify/websocket':
         specifier: 11.3.4
         version: 11.3.4
@@ -2710,7 +2710,7 @@ importers:
         version: 6.0.0(patch_hash=983b813a63f631c02964c4647bad7918ee8742f3b697a116892b3a1cb9d1b7d1)
       scimmy:
         specifier: 1.3.5
-        version: 1.3.5(patch_hash=6c61f52cd5a9170a05a143599d2032244219987648c9624a0ce2a17b75000f54)
+        version: 1.3.5(patch_hash=58c98514c0af1b9286fc60e7bca8caaf09caed7d48dee7edc2aff1ed07827fa9)
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@22.20.5)
@@ -6456,7 +6456,7 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@confluentinc/kafka-javascript@1.11.0(patch_hash=c51aeaec6611e9c4fcd129d37c44cf00584126acd437a59445a62141fcedfc36)':
+  '@confluentinc/kafka-javascript@1.11.0(patch_hash=5a1f7dd5b5a77f19f5815996e94efede03c6ad054394a4447d5dc7310856302e)':
     dependencies:
       '@mapbox/node-pre-gyp': 2.0.3
       bindings: 1.5.0
@@ -6628,7 +6628,7 @@ snapshots:
       http-errors: 2.0.1
       mime: 3.0.0
 
-  '@fastify/sse@0.6.1(patch_hash=2f0c65990ebf36ebc4d7adad2fd4844d59eed4e550d2a05f8ee2f6dfae8af3df)(fastify@5.12.7)':
+  '@fastify/sse@0.6.1(patch_hash=141464a1393fedacdc829a06afb92173221d45659010c9e1e1fa09e6d7720742)(fastify@5.12.7)':
     dependencies:
       '@fastify/error': 4.2.1
       fastify: 5.12.7
@@ -9903,7 +9903,7 @@ snapshots:
 
   scheduler@0.28.0: {}
 
-  scimmy@1.3.5(patch_hash=6c61f52cd5a9170a05a143599d2032244219987648c9624a0ce2a17b75000f54): {}
+  scimmy@1.3.5(patch_hash=58c98514c0af1b9286fc60e7bca8caaf09caed7d48dee7edc2aff1ed07827fa9): {}
 
   secure-json-parse@4.1.1: {}
 
