@@ -7,6 +7,9 @@ import { Counter, Trend } from 'k6/metrics';
 
 const configuration = JSON.parse(globalThis.open(globalThis.__ENV.ARKENIVA_LOAD_CONFIG));
 const https = configuration.https === true;
+const secureHttp2 = configuration.secureHttp2 === true;
+const expectedHttp2 = secureHttp2 && configuration.http2 === true;
+if (secureHttp2 && !https) throw new Error('Secure HTTP2 requires HTTPS');
 if (
   !(https ? /^https:\/\/localhost:\d+$/ : /^http:\/\/127\.0\.0\.1:\d+$/).test(configuration.origin)
 )
@@ -26,6 +29,7 @@ const failures = new Counter('response_failures');
 const tlsMetrics = https
   ? {
       http11: new Counter('observed_http11_responses'),
+      ...(secureHttp2 ? { http2: new Counter('observed_http2_responses') } : {}),
       tls13: new Counter('observed_tls13_responses'),
       handshake: new Trend('observed_tls_handshake_ms', true),
       connecting: new Trend('observed_tcp_connect_ms', true),
@@ -107,12 +111,14 @@ function request(name) {
     else {
       valid =
         check(reply, {
-          'HTTPS uses actual HTTP1.1': (value) => value.proto === 'HTTP/1.1',
+          [expectedHttp2 ? 'HTTPS uses actual HTTP2.0' : 'HTTPS uses actual HTTP1.1']: (value) =>
+            value.proto === (expectedHttp2 ? 'HTTP/2.0' : 'HTTP/1.1'),
           'HTTPS uses actual TLS1.3': (value) => value.tls_version === http.TLS_1_3,
           'HTTPS reports a supported actual TLS1.3 cipher': (value) =>
             Object.keys(tlsMetrics.ciphers).includes(value.tls_cipher_suite),
         }) && valid;
       tlsMetrics.http11.add(reply.proto === 'HTTP/1.1' ? 1 : 0);
+      if (secureHttp2) tlsMetrics.http2.add(reply.proto === 'HTTP/2.0' ? 1 : 0);
       tlsMetrics.tls13.add(reply.tls_version === http.TLS_1_3 ? 1 : 0);
       tlsMetrics.handshake.add(reply.timings.tls_handshaking);
       tlsMetrics.connecting.add(reply.timings.connecting);

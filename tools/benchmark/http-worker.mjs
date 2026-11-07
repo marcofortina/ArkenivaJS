@@ -84,6 +84,8 @@ export async function startWorker(settings) {
   assert.ok(settings && modes.includes(settings.mode));
   assert.ok(settings.transport === undefined || ['http', 'https'].includes(settings.transport));
   const https = settings.transport === 'https';
+  const http2 = settings.http2 === true;
+  assert.ok(settings.http2 === undefined || (https && settings.http2 === true));
   if (https) assert.equal(settings.tls?.minVersion, 'TLSv1.3');
   assert.equal(process.env.ARKENIVA_POSTGRES_DISPOSABLE, '1');
   assert.ok(process.env.ARKENIVA_POSTGRES_URL);
@@ -251,6 +253,7 @@ export async function startWorker(settings) {
         bodyLimit: 1048576,
         requestTimeout: 30000,
         ajv: { customOptions: { coerceTypes: false, useDefaults: false, removeAdditional: false } },
+        ...(http2 ? { http2: true, http2SessionTimeout: 60000 } : {}),
         ...(https
           ? {
               https: {
@@ -258,6 +261,7 @@ export async function startWorker(settings) {
                 key: await readFile(settings.tls.privateKeyFile),
                 minVersion: 'TLSv1.3',
                 handshakeTimeout: 10000,
+                ...(http2 ? { allowHTTP1: true } : {}),
               },
             }
           : {}),
@@ -390,7 +394,9 @@ export async function startWorker(settings) {
         http: {
           host: '127.0.0.1',
           port,
-          ...(https ? { protocol: 'https', tls: settings.tls } : {}),
+          ...(https
+            ? { protocol: 'https', tls: settings.tls, ...(http2 ? { http2: true } : {}) }
+            : {}),
         },
         security: { issuer: settings.issuer, audience: settings.audience, algorithms: ['RS256'] },
         ...(mode === 'off'
@@ -453,7 +459,11 @@ export async function startWorker(settings) {
       }
     }
     databaseVersion = (await pool.query('SHOW server_version')).rows[0].server_version;
-    if (https) tlsObservation = observeHttpsServer(native.server);
+    if (https)
+      tlsObservation = observeHttpsServer(
+        native.server,
+        http2 ? { http2: true, expectedHttpVersion: settings.expectedHttpVersion } : undefined,
+      );
   } catch (cause) {
     try {
       await close();
@@ -479,6 +489,7 @@ export async function startWorker(settings) {
     async begin() {
       assert.equal(measurement, undefined);
       assert.equal(counts.active, 0);
+      if (http2) await tlsObservation.waitForSessionRetirement();
       await meter?.flush();
       await telemetry?.flush();
       const logStartByte = await logWriteBoundary(sink);
@@ -515,6 +526,7 @@ export async function startWorker(settings) {
     },
     async finish() {
       assert.ok(measurement && !finished);
+      if (http2) await tlsObservation.waitForSessionRetirement();
       collect();
       finished = true;
       clearInterval(timer);

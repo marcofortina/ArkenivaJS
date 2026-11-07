@@ -69,7 +69,7 @@ export async function createHttpTlsFixture() {
 }
 
 /** Owned HTTPS clients cannot inherit a global k6 configuration, proxy or verification bypass. */
-export function httpTlsLoadEnvironment(environment, fixture, untrusted = false) {
+export function httpTlsLoadEnvironment(environment, fixture, untrusted = false, http2 = false) {
   const result = { ...environment };
   for (const key of Object.keys(result))
     if (key.startsWith('K6_') || /^(?:https?|all|no)_proxy$/i.test(key)) delete result[key];
@@ -77,16 +77,22 @@ export function httpTlsLoadEnvironment(environment, fixture, untrusted = false) 
     ...result,
     SSL_CERT_FILE: untrusted ? fixture.emptyCaFile : fixture.certificateFile,
     SSL_CERT_DIR: fixture.caDirectory,
-    GODEBUG: 'http2client=0',
+    GODEBUG: http2 ? '' : 'http2client=0',
     NO_PROXY: '*',
     K6_NO_USAGE_REPORT: 'true',
   };
 }
 
 /** These aggregate native observations contain no peer identity or certificate material. */
-export function observeHttpsServer(server) {
+export function observeHttpsServer(server, options) {
+  const http2 = options?.http2 === true,
+    expectedVersion = options?.expectedHttpVersion ?? '1.1',
+    sessions = new Map();
+  assert.ok(['1.1', '2.0'].includes(expectedVersion));
+  assert.ok(http2 || expectedVersion === '1.1');
   let counters;
   const reset = () => {
+    assert.equal(sessions.size, 0, 'Owned HTTP2 sessions must retire before a measurement reset');
     counters = {
       successfulHandshakes: 0,
       resumedHandshakes: 0,
@@ -97,6 +103,14 @@ export function observeHttpsServer(server) {
       tlsVersions: {},
       ciphers: {},
       alpn: {},
+      ...(http2
+        ? {
+            http2Requests: 0,
+            http2SessionsOpened: 0,
+            http2SessionsClosed: 0,
+            http2SessionErrors: 0,
+          }
+        : {}),
     };
   };
   reset();
@@ -119,18 +133,65 @@ export function observeHttpsServer(server) {
   const failed = () => counters.handshakeErrors++;
   const received = (message) => {
     if (message.httpVersion === '1.1') counters.http11Requests++;
-    else counters.unexpectedHttpVersions++;
+    else if (http2 && message.httpVersion === '2.0') counters.http2Requests++;
+    if (message.httpVersion !== expectedVersion) counters.unexpectedHttpVersions++;
+  };
+  const connectedSession = (session) => {
+    counters.http2SessionsOpened++;
+    let resolve;
+    const closed = new Promise((done) => {
+      resolve = done;
+    });
+    const failed = () => counters.http2SessionErrors++;
+    const finished = () => {
+      counters.http2SessionsClosed++;
+      sessions.delete(session);
+      session.off('error', failed);
+      resolve();
+    };
+    sessions.set(session, {
+      closed,
+      remove: () => {
+        session.off('error', failed);
+        session.off('close', finished);
+      },
+    });
+    session.on('error', failed);
+    session.once('close', finished);
   };
   server.on('secureConnection', secure);
   server.on('tlsClientError', failed);
   server.on('request', received);
+  if (http2) server.on('session', connectedSession);
   return {
     reset,
-    snapshot: () => structuredClone(counters),
+    snapshot: () =>
+      structuredClone({ ...counters, ...(http2 ? { activeHttp2Sessions: sessions.size } : {}) }),
+    async waitForSessionRetirement() {
+      if (!sessions.size) return;
+      let timer;
+      try {
+        await Promise.race([
+          Promise.all([...sessions.values()].map((value) => value.closed)),
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(new Error('The owned HTTP2 sessions did not retire before their deadline')),
+              5000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     close() {
       server.off('secureConnection', secure);
       server.off('tlsClientError', failed);
       server.off('request', received);
+      if (http2) server.off('session', connectedSession);
+      for (const value of sessions.values()) value.remove();
+      sessions.clear();
     },
   };
 }

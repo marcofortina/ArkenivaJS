@@ -41,8 +41,21 @@ export function parseHttpBenchmarkArguments(args) {
   assert.ok(Array.isArray(args) && (args.length === 1 || args.length === 2));
   assert.ok(typeof args[0] === 'string' && args[0].length > 0, 'An evidence directory is required');
   if (args.length === 2)
-    assert.ok(['--smoke', '--soak', '--pilot', '--smoke-https'].includes(args[1]));
+    assert.ok(
+      [
+        '--smoke',
+        '--soak',
+        '--pilot',
+        '--smoke-https',
+        '--smoke-http2',
+        '--smoke-http1-fallback',
+      ].includes(args[1]),
+    );
   if (args[1] === '--smoke-https')
     return { directory: args[0], policy: 'smoke', transport: 'https' };
+  if (args[1] === '--smoke-http2')
+    return { directory: args[0], policy: 'smoke', transport: 'http2' };
+  if (args[1] === '--smoke-http1-fallback')
+    return { directory: args[0], policy: 'smoke', transport: 'http1-fallback' };
   return { directory: args[0], policy: args[1]?.slice(2) ?? 'campaign' };
 }

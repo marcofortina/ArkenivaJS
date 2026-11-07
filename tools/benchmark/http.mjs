@@ -17,6 +17,7 @@ import {
   parseHttpBenchmarkArguments,
 } from './http-policy.mjs';
 import { createHttpTlsFixture, httpTlsLoadEnvironment, verifyHttpTlsServer } from './http-tls.mjs';
+import { verifySecureHttp2Server } from './http2-tls.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const modes = ['BASELINE', 'FRAMEWORK', 'STANDARD', 'DETAILED'];
@@ -180,7 +181,12 @@ async function load(configuration, directory, phase, executable, cpu, signal, tl
     signal,
     env: {
       ...(tlsFixture
-        ? httpTlsLoadEnvironment(process.env, tlsFixture, configuration.tlsControl === 'untrusted')
+        ? httpTlsLoadEnvironment(
+            process.env,
+            tlsFixture,
+            configuration.tlsControl === 'untrusted',
+            configuration.http2 === true,
+          )
         : process.env),
       ARKENIVA_LOAD_CONFIG: configurationPath,
       GOMAXPROCS: '1',
@@ -260,8 +266,11 @@ function comparisons(runs, seed, policy, selectedRoutes = routes) {
 /** Run matched workloads in owned processes and retain raw evidence outside the checkout. */
 export async function runHttpBenchmark(path, policy = 'campaign', transport = 'http') {
   const plan = httpBenchmarkPolicy(policy);
-  assert.ok(['http', 'https'].includes(transport));
-  const https = transport === 'https',
+  assert.ok(['http', 'https', 'http2', 'http1-fallback'].includes(transport));
+  const https = transport !== 'http',
+    secureHttp2 = transport === 'http2' || transport === 'http1-fallback',
+    expectedHttp2 = transport === 'http2',
+    expectedHttpVersion = expectedHttp2 ? '2.0' : '1.1',
     selectedRoutes = https ? ['json'] : routes;
   if (https) {
     assert.equal(policy, 'smoke', 'Direct HTTPS currently supports only the bounded smoke policy');
@@ -310,12 +319,17 @@ export async function runHttpBenchmark(path, policy = 'campaign', transport = 'h
       policy,
       ...(https
         ? {
-            scenarioId: 'direct-https-http11-json128',
+            scenarioId: secureHttp2
+              ? expectedHttp2
+                ? 'direct-https-http2-json128'
+                : 'direct-https-http11-fallback-json128'
+              : 'direct-https-http11-json128',
             transport: {
               protocol: 'https',
-              httpVersion: '1.1',
+              httpVersion: expectedHttpVersion,
               minimumTlsVersion: 'TLSv1.3',
               certificateKey: 'EC P-256',
+              ...(secureHttp2 ? { http2Server: true, allowHTTP1: true } : {}),
             },
           }
         : {}),
@@ -391,7 +405,14 @@ export async function runHttpBenchmark(path, policy = 'campaign', transport = 'h
               'One connection-cold native Node control is not a handshake latency distribution; Node and Go observations remain separate',
               'Measured Go connection pools start empty after separate-process warmup; only the server remains warm',
               'Go request duration excludes TCP and TLS setup; its handshake trend includes zero observations from reused connections, not a handshake count',
-              'No HTTP2/fallback, sustained HTTPS pilot, handshake capacity, calibrated overhead, repeated acceptance or one-hour soak claim',
+              secureHttp2
+                ? 'Measured HTTP2 or HTTP1 fallback is selected explicitly against the same allowHTTP1 secure-listener configuration; no sustained pilot, handshake capacity, calibrated overhead, repeated acceptance or one-hour soak claim'
+                : 'No HTTP2/fallback, sustained HTTPS pilot, handshake capacity, calibrated overhead, repeated acceptance or one-hour soak claim',
+              ...(secureHttp2
+                ? [
+                    'Native HTTP2 session retirement is awaited at warmup and measured boundaries; server CPU includes measured load shutdown and physical session retirement',
+                  ]
+                : []),
             ]
           : []),
       ],
@@ -413,6 +434,7 @@ export async function runHttpBenchmark(path, policy = 'campaign', transport = 'h
           ...(https
             ? {
                 transport: 'https',
+                ...(secureHttp2 ? { http2: true, expectedHttpVersion } : {}),
                 tls: {
                   certificateFile: tlsFixture.certificateFile,
                   privateKeyFile: tlsFixture.privateKeyFile,
@@ -426,13 +448,15 @@ export async function runHttpBenchmark(path, policy = 'campaign', transport = 'h
       try {
         const configuration = {
           origin: server.address,
-          ...(https ? { https: true } : { token }),
+          ...(https
+            ? { https: true, ...(secureHttp2 ? { secureHttp2: true, http2: expectedHttp2 } : {}) }
+            : { token }),
           expectedBody,
           ratePerRoute: 50,
         };
         let tlsControls;
         if (https) {
-          const native = await verifyHttpTlsServer({
+          const native = await (secureHttp2 ? verifySecureHttp2Server : verifyHttpTlsServer)({
             origin: server.address,
             certificateFile: tlsFixture.certificateFile,
             expectedBody,
@@ -491,7 +515,16 @@ export async function runHttpBenchmark(path, policy = 'campaign', transport = 'h
           assert.equal(observation.counts.databaseQueries, 0);
           assert.equal(serverTls.observerFailures, 0);
           assert.equal(serverTls.handshakeErrors, 0);
-          assert.equal(serverTls.http11Requests, count);
+          assert.equal(serverTls.http11Requests, expectedHttp2 ? 0 : count);
+          if (secureHttp2) {
+            assert.equal(serverTls.http2Requests, expectedHttp2 ? count : 0);
+            assert.equal(serverTls.activeHttp2Sessions, 0);
+            assert.equal(serverTls.http2SessionsOpened, serverTls.http2SessionsClosed);
+            assert.equal(serverTls.http2SessionErrors, 0);
+            if (expectedHttp2)
+              assert.equal(serverTls.http2SessionsOpened, serverTls.successfulHandshakes);
+            else assert.equal(serverTls.http2SessionsOpened, 0);
+          }
           assert.equal(serverTls.unexpectedHttpVersions, 0);
           assert.ok(
             serverTls.successfulHandshakes > 0 &&
@@ -503,7 +536,9 @@ export async function runHttpBenchmark(path, policy = 'campaign', transport = 'h
               Object.values(counters).reduce((sum, value) => sum + value, 0),
               serverTls.successfulHandshakes,
             );
-          assert.equal(values.observed_http11_responses.values.count, count);
+          assert.equal(values.observed_http11_responses.values.count, expectedHttp2 ? 0 : count);
+          if (secureHttp2)
+            assert.equal(values.observed_http2_responses.values.count, expectedHttp2 ? count : 0);
           assert.equal(values.observed_tls13_responses.values.count, count);
           const ciphers = Object.fromEntries(
             ['TLS_AES_128_GCM_SHA256', 'TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256']
@@ -517,7 +552,14 @@ export async function runHttpBenchmark(path, policy = 'campaign', transport = 'h
           assert.deepEqual(Object.keys(ciphers).sort(), Object.keys(serverTls.ciphers).sort());
           clientTls = {
             role: 'independent-Go-k6-load',
-            http11Responses: count,
+            http11Responses: expectedHttp2 ? 0 : count,
+            ...(secureHttp2
+              ? {
+                  http2Responses: expectedHttp2 ? count : 0,
+                  expectedHttpVersion,
+                  observedAlpnOnServer: serverTls.alpn,
+                }
+              : {}),
             tls13Responses: count,
             ciphers,
             handshakeDurationMs: values.observed_tls_handshake_ms.values,
