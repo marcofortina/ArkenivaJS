@@ -77,7 +77,14 @@ test(
       expected = [binary, Buffer.alloc(0), binary, repeated, repeated],
       values: Buffer[] = [],
       offsets: string[] = [],
-      partitions: number[] = [];
+      partitions: number[] = [],
+      commitObservations: {
+        partition: number;
+        messageOffsetBefore: string;
+        requestedOffset: string;
+        messageOffsetAfter: string | null;
+        promiseFulfilled: boolean;
+      }[] = [];
     let complete!: () => void, fail!: (cause: unknown) => void;
     const received = new Promise<void>((resolve, reject) => {
       complete = resolve;
@@ -112,9 +119,21 @@ test(
             ]);
             assert.equal(Object.getPrototypeOf(message.headers), null);
             assert.match(message.offset, /^(?:0|[1-9][0-9]*)$/);
+            // Retain only offsets and completion flags, never keys, headers or values.
+            const observation = {
+              partition,
+              messageOffsetBefore: message.offset,
+              requestedOffset: (BigInt(message.offset) + 1n).toString(),
+              messageOffsetAfter: null as string | null,
+              promiseFulfilled: false,
+            };
+            assert.ok(commitObservations.length < expected.length);
+            commitObservations.push(observation);
             await consumer.commitOffsets([
-              { topic, partition, offset: (BigInt(message.offset) + 1n).toString() },
+              { topic, partition, offset: observation.requestedOffset },
             ]);
+            observation.promiseFulfilled = true;
+            observation.messageOffsetAfter = message.offset;
             values.push(Buffer.from(message.value));
             offsets.push(message.offset);
             partitions.push(partition);
@@ -152,6 +171,8 @@ test(
         committed[0]?.partitions.find((value) => value.partition === receipts[0]!.partition)
           ?.offset,
         (BigInt(offsets.at(-1)!) + 1n).toString(),
+        'Final durable offset differs from completed manual commit calls: ' +
+          JSON.stringify(commitObservations),
       );
     } finally {
       clearTimeout(timer);
