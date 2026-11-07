@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { fork, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { writeFile } from 'node:fs/promises';
+import { link, unlink, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { setInterval } from 'node:timers';
 
@@ -96,11 +96,19 @@ process.once('message', async (input) => {
   leaf.once('message', async (proof) => {
     assert.deepEqual(proof.bytes, input.bytes);
     assert.equal(proof.number, input.number);
-    if (input.readyFile)
-      await writeFile(input.readyFile, JSON.stringify({ worker: process.pid, leaf: leaf.pid }), {
+    if (input.readyFile) {
+      const pendingFile = input.readyFile + '.pending';
+      await writeFile(pendingFile, JSON.stringify({ worker: process.pid, leaf: leaf.pid }), {
         mode: 0o600,
         flag: 'wx',
       });
+      try {
+        // Publish only a closed, complete file while preserving exclusive creation.
+        await link(pendingFile, input.readyFile);
+      } finally {
+        await unlink(pendingFile);
+      }
+    }
     if (input.mode !== 'normal') return;
     await delay(100);
     leaf.send({ finish: true });
