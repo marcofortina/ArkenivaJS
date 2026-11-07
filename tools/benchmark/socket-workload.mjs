@@ -16,8 +16,9 @@ export async function prepareSocketEcho(service, fixture) {
   assert.equal(sampledEchoes.has(service), false);
   const unix = fixture.sampleUnixEcho === true,
     tls = fixture.sampleTlsEcho === true,
+    tcp64k = fixture.sampleTcp64kEcho === true,
     path = unix ? join(fixture.directory, 'sampled-unix4096.sock') : undefined;
-  assert.ok(!unix || !tls);
+  assert.ok(Number(unix) + Number(tls) + Number(tcp64k) <= 1);
   if (unix) await assert.rejects(lstat(path), { code: 'ENOENT' });
   const handle = service[unix ? 'createUnixServer' : tls ? 'createTlsServer' : 'createTcpServer'](
     unix
@@ -33,7 +34,7 @@ export async function prepareSocketEcho(service, fixture) {
               minVersion: 'TLSv1.3',
             },
           }
-        : { name: 'sampled-tcp64', host: '127.0.0.1', port: 0 },
+        : { name: tcp64k ? 'sampled-tcp65536' : 'sampled-tcp64', host: '127.0.0.1', port: 0 },
     async (peer) => {
       for await (const bytes of peer.chunks()) await peer.send(bytes);
       await peer.end();
@@ -53,7 +54,7 @@ export async function prepareSocketEcho(service, fixture) {
       handle,
       input: {
         kind: unix ? 'unix' : tls ? 'tls' : 'tcp',
-        size: unix ? 4096 : 64,
+        size: unix ? 4096 : tcp64k ? 65536 : 64,
         binding,
         marker: fixture.marker,
         ...(tls
@@ -68,7 +69,9 @@ export async function prepareSocketEcho(service, fixture) {
         ? 'unix4096IndependentClient'
         : tls
           ? 'tls64IndependentClient'
-          : 'tcp64IndependentClient',
+          : tcp64k
+            ? 'tcp65536IndependentClient'
+            : 'tcp64IndependentClient',
       path,
       identity,
       results: [],
@@ -183,6 +186,9 @@ export async function completeSocketEcho(service, { measure, records }) {
             unixSocketMode: 0o600,
             unixPathRemoved: true,
           }
+        : {}),
+      ...(state.input.kind === 'tcp' && state.input.size === 65536
+        ? { sampledTransport: 'tcp', sampledPayloadBytes: 65536 }
         : {}),
       ...(state.input.kind === 'tls'
         ? {
@@ -457,7 +463,7 @@ export async function verifySocket(service, fixture) {
     scenarios: results,
     tlsWrongNameRejected: true,
     unixPathRemoved: true,
-    ...(fixture.sampleUnixEcho || fixture.sampleTlsEcho
+    ...(fixture.sampleUnixEcho || fixture.sampleTlsEcho || fixture.sampleTcp64kEcho
       ? {
           independentClientProcessesWaited: clientProcessesWaited,
           acceptedConnections,

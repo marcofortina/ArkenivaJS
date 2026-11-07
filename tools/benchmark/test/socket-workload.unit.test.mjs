@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:net';
+import { setImmediate } from 'node:timers';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
@@ -121,3 +122,51 @@ test(
     }
   },
 );
+
+test('Independent TCP64KiB client reassembles arbitrary echo chunks and rejects a corrupted final byte', async () => {
+  let corrupt = false;
+  const peers = new Set(),
+    server = createServer({ allowHalfOpen: true }, (peer) => {
+      peers.add(peer);
+      peer.once('close', () => peers.delete(peer));
+      const chunks = [];
+      let received = 0;
+      peer.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > 65536) peer.destroy();
+        else chunks.push(chunk);
+      });
+      peer.once('end', () => {
+        const payload = Buffer.concat(chunks);
+        if (payload.length !== 65536) return peer.destroy();
+        if (corrupt) payload[payload.length - 1] ^= 1;
+        peer.write(payload.subarray(0, 17));
+        setImmediate(() => {
+          peer.write(payload.subarray(17, 32769));
+          setImmediate(() => peer.end(payload.subarray(32769)));
+        });
+      });
+    });
+  await new Promise((done, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', done);
+  });
+  const input = {
+    kind: 'tcp',
+    size: 65536,
+    marker: 'owned-fragmented-tcp65536-control',
+    binding: { network: server.address() },
+  };
+  try {
+    const result = await socketClient(input);
+    assert.equal(result.receivedBytes, 65536);
+    assert.equal(result.byteIdentityVerified, true);
+    assert.ok(result.firstByteMs >= 0);
+    assert.ok(result.exchangeElapsedMs >= result.firstByteMs);
+    corrupt = true;
+    await assert.rejects(socketClient(input));
+  } finally {
+    for (const peer of peers) peer.destroy();
+    await new Promise((done) => server.close(done));
+  }
+});

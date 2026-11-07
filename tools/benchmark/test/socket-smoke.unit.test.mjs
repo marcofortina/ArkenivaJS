@@ -22,7 +22,7 @@ test('Socket sampling refuses unmarked execution before PKI or report allocation
     env = { ...process.env };
   delete env.ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE;
   try {
-    for (const mode of ['--smoke', '--smoke-unix', '--smoke-tls']) {
+    for (const mode of ['--smoke', '--smoke-unix', '--smoke-tls', '--smoke-tcp64k']) {
       await assert.rejects(
         promisify(execFile)(
           process.execPath,
@@ -95,6 +95,47 @@ test('Sampled TCP echo awaits an actual independent client and rejects incomplet
     assert.ok(value.exchangeElapsedMs >= value.firstByteMs);
     await assert.rejects(completeSocketEcho(service, { measure: true, records: [] }));
     await assert.rejects(callback());
+    assert.throws(() => socketEchoWorkload(service));
+  } finally {
+    await service.close();
+  }
+});
+
+test('Sampled TCP64KiB echo verifies every byte and retires its listener after incomplete evidence', async () => {
+  const service = nativeSocket();
+  try {
+    await prepareSocketEcho(service, {
+      marker: 'owned-tcp65536-sampling-control',
+      sampleTcp64kEcho: true,
+    });
+    const callback = socketEchoWorkload(service).tcp65536IndependentClient,
+      running = callback();
+    await assert.rejects(callback());
+    const value = await running;
+    assert.equal(value.receivedBytes, 65536);
+    assert.equal(value.byteIdentityVerified, true);
+    assert.ok(value.firstByteMs >= 0);
+    assert.ok(value.exchangeElapsedMs >= value.firstByteMs);
+    assert.equal(value.tls, undefined);
+    await assert.rejects(completeSocketEcho(service, { measure: true, records: [] }));
+    await assert.rejects(callback());
+    assert.throws(() => socketEchoWorkload(service));
+  } finally {
+    await service.close();
+  }
+});
+
+test('TCP64KiB sampling rejects conflicting transport selectors before opening a listener', async () => {
+  const service = nativeSocket();
+  try {
+    for (const other of ['sampleUnixEcho', 'sampleTlsEcho'])
+      await assert.rejects(
+        prepareSocketEcho(service, {
+          directory: '/tmp/arkenivajs-socket-comparison-unused',
+          sampleTcp64kEcho: true,
+          [other]: true,
+        }),
+      );
     assert.throws(() => socketEchoWorkload(service));
   } finally {
     await service.close();

@@ -167,3 +167,35 @@ remain accessible and SDK privacy/drop checks must pass. This bounded sample
 does not establish TLS-engine handshake capacity, calibrated protocol-equivalent
 framework overhead, production resource budgets, five paired repetitions,
 one-hour soak or release acceptance.
+
+## TCP 64 KiB client lifecycle sampling
+
+`--smoke-tcp64k` adds the separate R6 TCP **64 KiB** echo scope:
+
+```sh
+ARKENIVA_SOCKET_BENCHMARK_DISPOSABLE=1 pnpm --filter @arkenivajs/benchmark-foundation socket --smoke-tcp64k /private/socket-tcp64k-smoke
+```
+
+The original TCP `--smoke` continues to use **64 bytes**. This explicit mode uses
+one distinct sampled listener and 120 fresh independent client processes per
+profile: 20 warmups and 100 retained Tinybench samples, at concurrency one. Each
+client reassembles arbitrary stream chunks and verifies the complete 65,536-byte
+echo. The listener independently requires 120 accepted connections and exactly
+**7,864,320 application bytes in each direction**, then closes. The 100 measured
+callbacks account for 6,553,600 bytes per direction; warmups account for 1,310,720.
+These portions derive from checked callback counts and fixed payload size.
+
+Four profiles therefore retain 400 raw latency samples and verify 480 sampled
+client lifecycles with **31,457,280 observed bytes per direction**. The five
+original verification scenarios, their 24 additional waited client processes and
+280,064 bytes per direction remain separate from sampled counters. Neither
+stream chunks nor calls to native `write` are treated as application frames.
+
+The outer callback includes client startup, IPC, connect, complete echo and
+physical client exit. Inner first-byte and exchange timings exclude startup and
+IPC. Existing server-only and whole-process-tree resource windows remain
+separate. Lifecycle throughput includes process creation and connection setup;
+it does not establish sustained connection throughput, backpressure capacity,
+calibrated framework overhead, five paired trials, one-hour soak or release
+acceptance. The direct native baseline still omits framework admission, queue,
+cancellation and lifecycle policy.
