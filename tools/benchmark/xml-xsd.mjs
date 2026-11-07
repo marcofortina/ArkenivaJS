@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, mkdtemp, open, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { networkInterfaces, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -126,23 +127,43 @@ export async function assertXmlAssets(configuration) {
   await assertXmlNamespace(configuration.namespaceInode);
   for (const [id, artifact] of Object.entries(xmlSchemaArtifacts)) {
     const path = configuration.schemas[id],
-      info = await lstat(path);
-    assert.ok(
-      info.isFile() &&
-        !info.isSymbolicLink() &&
-        info.uid === process.getuid() &&
-        !(info.mode & 0o077) &&
-        info.size > 0 &&
-        info.size <= 4096,
-    );
+      info = await lstat(path, { bigint: true }),
+      valid = (entry) =>
+        entry.isFile() &&
+        !entry.isSymbolicLink() &&
+        entry.uid === BigInt(process.getuid()) &&
+        !(entry.mode & 0o077n) &&
+        entry.size > 0n &&
+        entry.size <= 4096n,
+      same = (entry) =>
+        ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].every((field) => entry[field] === info[field]),
+      message = 'The private XML schema artifact changed';
+    assert.ok(valid(info));
     assert.equal(await realpath(path), path);
-    assert.equal(
-      createHash('sha256')
-        .update(await readFile(path))
-        .digest('hex'),
-      artifact.sha256,
-      'The private XML schema artifact changed',
-    );
+    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const captured = await file.stat({ bigint: true });
+      assert.ok(valid(captured) && same(captured), message);
+      const bytes = Buffer.alloc(Number(captured.size)),
+        extra = Buffer.alloc(1);
+      try {
+        let position = 0;
+        while (position < bytes.length) {
+          const { bytesRead } = await file.read(bytes, position, bytes.length - position, position);
+          assert.ok(bytesRead > 0, message);
+          position += bytesRead;
+        }
+        assert.equal((await file.read(extra, 0, 1, position)).bytesRead, 0, message);
+        const after = await file.stat({ bigint: true });
+        assert.ok(valid(after) && same(after), message);
+        assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256, message);
+      } finally {
+        bytes.fill(0);
+        extra.fill(0);
+      }
+    } finally {
+      await file.close();
+    }
   }
 }
 
